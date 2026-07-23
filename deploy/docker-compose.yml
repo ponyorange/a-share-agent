@@ -1,0 +1,33 @@
+services:
+  share-data:
+    # 直接使用本地已 load 的镜像（打包脚本会写入实际标签）
+    image: share-data:latest
+    pull_policy: never
+    container_name: share-data-app
+    restart: always
+    ports:
+      - "8000:8000"
+
+    # 线上秘钥文件（服务器本地文件，不进镜像）
+    env_file:
+      - .env
+
+    environment:
+      - STATIC_ROOT=/app/static
+      - PORT=8000
+      - CORS_ORIGINS=*
+
+  committee-worker:
+    # 与主应用复用同一镜像和部署机 .env；Redis 必须由外部提供。
+    image: share-data:latest
+    pull_policy: never
+    container_name: share-data-committee-worker
+    restart: on-failure
+
+    env_file:
+      - .env
+
+    command:
+      - python
+      - -m
+      - app.advisor.committee.worker

@@ -1,0 +1,46 @@
+"""Example default parameters for frequently used AKShare interfaces."""
+
+EXAMPLE_DEFAULTS: dict[str, dict] = {
+    "stock_zh_a_hist": {
+        "symbol": "000001",
+        "period": "daily",
+        "start_date": "20240101",
+        "end_date": "20241231",
+        "adjust": "qfq",
+    },
+    "stock_zh_a_spot_em": {},
+    "stock_individual_info_em": {"symbol": "000001"},
+    "stock_bid_ask_em": {"symbol": "000001"},
+    "stock_individual_spot_xq": {"symbol": "SZ000001"},
+    "stock_news_em": {"symbol": "000001"},
+    "stock_zh_index_daily": {"symbol": "sh000001"},
+    "stock_zh_index_spot_em": {},
+    "fund_etf_hist_em": {
+        "symbol": "510300",
+        "period": "daily",
+        "start_date": "20240101",
+        "end_date": "20241231",
+        "adjust": "",
+    },
+    "fund_etf_spot_em": {},
+    "futures_main_sina": {"symbol": "V0"},
+    "bond_zh_hs_cov_spot": {},
+    "macro_china_gdp": {},
+    "macro_china_cpi_yearly": {},
+    "fx_spot_quote": {},
+    "index_zh_a_hist": {
+        "symbol": "000300",
+        "period": "daily",
+        "start_date": "20240101",
+        "end_date": "20241231",
+    },
+    "option_finance_board": {"symbol": "50ETF", "end_month": "2503"},
+    "tool_trade_date_hist_sina": {},
+    # 港股人气榜：symbol 为 5 位港股代码，不要带 HK_ 前缀，也不是 A 股代码
+    "stock_hk_hot_rank_detail_em": {"symbol": "00700"},
+    "stock_hk_hot_rank_detail_realtime_em": {"symbol": "00700"},
+    "stock_hk_hot_rank_latest_em": {"symbol": "00700"},
+    "stock_hot_rank_detail_em": {"symbol": "SZ000665"},
+    "stock_hot_rank_detail_realtime_em": {"symbol": "SZ000665"},
+    "stock_hot_rank_latest_em": {"symbol": "SZ000665"},
+}

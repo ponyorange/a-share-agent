@@ -1,0 +1,154 @@
+# =============================================================================
+# 短期交易顾问 V2 多因子配置
+# 修改后一般需重启后端（或等进程热重载）后生效；权重之和不必严格为 1，评分时会按权重归一化。
+# =============================================================================
+
+# 前端/API 返回的免责声明文案（多行）
+disclaimer: >-
+  本系统基于历史量价、资金、板块与估值规则评分，仅供研究参考，不构成投资建议。
+  次日涨跌无法保证；请自行判断风险。
+
+# ---------- 多分析师委员会 ----------
+committee:
+  models:
+    # 与用户 API Key/base_url 分离；这里只配置 OpenAI-compatible 模型名。
+    quick: deepseek-chat
+    deep: deepseek-reasoner
+  budget:
+    max_calls: 20
+    max_tokens: 100000
+    # 候选池展开与回测取数都可能超过 3 分钟；过短会在 snapshot/backtest 触发 TimeoutError。
+    node_timeout_seconds: 300
+    total_timeout_seconds: 840
+  max_debate_rounds: 2
+  # 委员会专用组合回测；字段缺失或非法时拒绝运行，不回退旧摘要回测。
+  backtest:
+    initial_cash: 100000
+    commission_rate: 0.0003
+    minimum_commission: 5
+    stamp_tax_rate: 0.001
+    etf_stamp_tax_exempt: true
+    slippage_bps: 10
+    lot_size: 100
+    min_samples: 40
+    min_trades: 3
+    min_hit_rate: 0.50
+    min_sharpe: 0.0
+    max_drawdown: 0.20
+    max_weight_deviation: 0.02
+    # AKQuant 与内部引擎按小数收益/回撤、年化 Sharpe、双边成交额换手核对。
+    akquant_return_tolerance: 0.002
+    akquant_drawdown_tolerance: 0.002
+    akquant_sharpe_tolerance: 0.50
+    akquant_turnover_tolerance: 0.02
+    require_akquant: true
+    # 历史涨跌停：权威逐日涨/跌停池为主，未复权 OHLCV 一字板仅交叉核验。
+    historical_limit_model: asset_specific
+    # 必须查询权威逐日涨/跌停状态；源失败或执行日缺失时关闭运行，不允许关闭。
+    exact_historical_limit_rules: true
+    stock_historical_limit_model: exact_daily_limit_pool
+    etf_historical_limit_model: ohlcv_locked_board
+    # ETF MVP 不声明 exact 日涨跌停池；调用方要求 exact ETF 时配置校验必须失败。
+    exact_etf_historical_limit_rules: false
+  # 硬风控均不可被模型或主席覆盖；任一命中即仓位归零。
+  risk_limits:
+    max_single_position: 0.20
+    max_total_exposure: 0.70
+    max_sector_concentration: 0.35
+    min_average_turnover: 20000000
+    max_annualized_volatility: 0.40
+    max_portfolio_drawdown: 0.20
+    min_samples: 40
+    min_trades: 3
+    min_evidence_quality: 0.80
+    max_data_age_seconds: 86400
+    max_market_status_age_seconds: 30
+    max_price_deviation: 0.03
+    t_plus_one: true
+
+# ---------- 动作阈值（综合分 score 范围约 0~1）----------
+# 无持仓时：score >= 该值 → 建议「可买 / 值得关注」，否则「观望」
+buy_threshold: 0.55
+# 有持仓时：score >= 该值 → 建议「加仓」
+add_threshold: 0.65
+# 有持仓时：score <= 该值 → 建议「卖出 / 减仓」；介于 sell 与 add 之间则为「持有」
+sell_threshold: 0.35
+
+# ---------- 分层权重（个股综合分 = Σ layer * 子分）----------
+layer_weights:
+  tech: 0.40      # 量价/动量/均线
+  flow: 0.25      # 个股主力资金
+  sector: 0.20    # 所属行业相对强弱
+  value: 0.15     # 估值分位（便宜加分）
+
+# 市场状态对总分的缩放：final = stock * (base + scale * market_score)
+# 默认 0.85 + 0.30 * market → market=0.5 时约 ×1.0
+market_scale:
+  base: 0.85
+  scale: 0.30
+
+# ---------- tech 子因子权重（仅影响 tech_score）----------
+weights:
+  # 近 1 个交易日涨跌幅（隔夜/当日动量，最敏感）
+  mom_1: 0.12
+  # 近 5 个交易日涨跌幅动量（偏短）
+  mom_5: 0.16
+  # 近 10 个交易日涨跌幅动量
+  mom_10: 0.12
+  # 近 20 个交易日涨跌幅动量（偏中）
+  mom_20: 0.08
+  # 相对沪深300代理（510300）近 10 日超额收益，衡量相对强弱
+  rs_300: 0.16
+  # 收盘相对 20 日均线偏离（趋势位置）
+  ma20_bias: 0.10
+  # 成交额（用收盘价×成交量近似）相对近 20 日的 z-score，温和放量偏正面
+  vol_z: 0.12
+  # 量比近似：当日成交量 / 前 5 日均量
+  vol_ratio: 0.08
+  # 低波动偏好：近 20 日年化波动越低越好（过高会另受下方惩罚）
+  low_vol: 0.06
+
+# ---------- 高波动惩罚 ----------
+# 当年化波动超过 high_vol_ann_threshold 时，总分再乘以此系数（<1 表示降权）
+high_vol_penalty: 0.75
+# 触发高波动惩罚的年化波动阈值（约 0.45 = 45%）
+high_vol_ann_threshold: 0.45
+
+# ---------- 回测 / 命中率校验（策略表现页、缓存摘要）----------
+backtest:
+  # 回测用日线回看长度（根 K 线，约一年交易日量级）
+  lookback_bars: 240
+  # 计入「高分信号」的最低评分；信号日收盘买入、次日收盘衡量是否上涨
+  signal_threshold: 0.55
+  # 回测摘要接口结果缓存秒数，避免每次请求全量重算
+  cache_ttl_seconds: 3600
+  # 从全市场候选池（ETF+沪深）每板取样数量做事件研究
+  max_symbols_per_board: 12
+  # 事件研究每隔 N 根 K 线评估一次信号（1=全量，越大越快）
+  sample_step: 5
+  # 参与回测的板块
+  boards:
+    - etf
+    - hs
+# ---------- 今日关注（推荐列表）----------
+recommendations:
+  # 默认每板返回的推荐条数（可被 API 的 top 参数覆盖）
+  default_top: 15
+  # AKShare 候选池缓存秒数（成交额榜不必每次全量重拉）
+  universe_cache_ttl_seconds: 1800
+  # 大池：按成交额取前 N（只做 spot 粗筛，不拉日 K）
+  pool:
+    etf: 200
+    hs: 250
+    star: 150
+  # 精算：粗筛后每板最多对 M 只拉日 K 做完整因子评分（持仓强制进入精算）
+  precise:
+    etf: 25
+    hs: 30
+    star: 20
+  # 粗筛权重（仅用行情快照字段）
+  coarse_weights:
+    pct_chg: 0.35       # 当日涨跌幅
+    volume_ratio: 0.25  # 量比
+    turnover: 0.15      # 换手率
+    amount: 0.25        # 成交额（log）
