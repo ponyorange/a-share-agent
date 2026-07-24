@@ -16,12 +16,14 @@ import docker
 import requests
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.responses import JSONResponse
 
 
 MAX_INPUT_BYTES = 50 * 1024 * 1024
 MAX_TIMEOUT_SECONDS = 30
 MAX_MEMORY_MB = 512
 MAX_OUTPUT_BYTES = 1024 * 1024
+MAX_ARCHIVE_BYTES = 2 * 1024 * 1024
 CLEANUP_BUFFER_SECONDS = 5
 DATASET_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 SAFE_RUNNER_ERRORS = {
@@ -68,6 +70,66 @@ class HealthResponse(BaseModel):
     runner_image_available: bool
 
 
+class RawBodyLimitMiddleware:
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if (
+            scope["type"] != "http"
+            or scope.get("method") != "POST"
+            or scope.get("path") != "/v1/execute"
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        for name, value in scope.get("headers", []):
+            if name.lower() != b"content-length":
+                continue
+            try:
+                if int(value) > MAX_INPUT_BYTES:
+                    await self._reject(scope, receive, send)
+                    return
+            except (TypeError, ValueError):
+                pass
+
+        messages: list[dict[str, Any]] = []
+        received_bytes = 0
+        while True:
+            message = await receive()
+            messages.append(message)
+            if message["type"] == "http.disconnect":
+                break
+            if message["type"] != "http.request":
+                continue
+            received_bytes += len(message.get("body", b""))
+            if received_bytes > MAX_INPUT_BYTES:
+                await self._reject(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+
+        next_message = 0
+
+        async def replay_receive() -> dict[str, Any]:
+            nonlocal next_message
+            if next_message >= len(messages):
+                return {"type": "http.disconnect"}
+            message = messages[next_message]
+            next_message += 1
+            return message
+
+        await self.app(scope, replay_receive, send)
+
+    @staticmethod
+    async def _reject(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        response = JSONResponse(
+            status_code=413,
+            content={"detail": "input_too_large"},
+        )
+        await response(scope, receive, send)
+
+
 def serialized_request_size(request: ExecuteRequest) -> int:
     return len(request.model_dump_json().encode("utf-8"))
 
@@ -96,9 +158,19 @@ def _read_json_archive(
     *,
     expected_name: str,
     max_bytes: int = MAX_OUTPUT_BYTES,
+    archive_size: Any = None,
 ) -> Any:
-    raw_archive = b"".join(chunks)
-    with tarfile.open(fileobj=io.BytesIO(raw_archive), mode="r:*") as archive:
+    if isinstance(archive_size, int) and archive_size > MAX_ARCHIVE_BYTES:
+        raise OverflowError("output_too_large")
+    raw_archive = io.BytesIO()
+    received_bytes = 0
+    for chunk in chunks:
+        received_bytes += len(chunk)
+        if received_bytes > MAX_ARCHIVE_BYTES:
+            raise OverflowError("output_too_large")
+        raw_archive.write(chunk)
+    raw_archive.seek(0)
+    with tarfile.open(fileobj=raw_archive, mode="r:*") as archive:
         members = archive.getmembers()
         if len(members) != 1:
             raise ValueError("invalid_output_archive")
@@ -174,10 +246,10 @@ class DockerExecutor:
             container = self._docker.containers.create(
                 image=self._settings.runner_image,
                 entrypoint=["sh", "-c"],
-                command=(
+                command=[
                     "while [ ! -f /input/task.json ]; do sleep 0.05; done; "
                     "python /runner/entrypoint.py"
-                ),
+                ],
                 network_disabled=True,
                 read_only=True,
                 user="65532:65532",
@@ -226,12 +298,20 @@ class DockerExecutor:
                 return response(False, error="execution_timeout")
 
             if int(status.get("StatusCode", 1)) == 0:
-                stream, _ = container.get_archive("/output/result.json")
-                result = _read_json_archive(stream, expected_name="result.json")
+                stream, stat = container.get_archive("/output/result.json")
+                result = _read_json_archive(
+                    stream,
+                    expected_name="result.json",
+                    archive_size=stat.get("size"),
+                )
                 return response(True, result=result)
 
-            stream, _ = container.get_archive("/output/error.json")
-            error_payload = _read_json_archive(stream, expected_name="error.json")
+            stream, stat = container.get_archive("/output/error.json")
+            error_payload = _read_json_archive(
+                stream,
+                expected_name="error.json",
+                archive_size=stat.get("size"),
+            )
             error_code = (
                 error_payload.get("error")
                 if isinstance(error_payload, dict)
@@ -263,6 +343,7 @@ def get_executor(
 
 
 app = FastAPI()
+app.add_middleware(RawBodyLimitMiddleware)
 
 
 @app.post("/v1/execute", response_model=ExecuteResponse)

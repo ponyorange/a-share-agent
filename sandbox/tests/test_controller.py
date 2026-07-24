@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import tarfile
@@ -20,14 +21,26 @@ REQUEST = {
 
 
 class FakeExecutor:
+    def __init__(self):
+        self.calls = 0
+
     def execute(self, request):
+        self.calls += 1
         return {"ok": True, "result": {"sum": 3}, "metrics": {"elapsed_ms": 5}}
 
 
 class FakeContainer:
-    def __init__(self, *, wait_result=None, archives=None, wait_error=None):
+    def __init__(
+        self,
+        *,
+        wait_result=None,
+        archives=None,
+        archive_stats=None,
+        wait_error=None,
+    ):
         self.wait_result = wait_result or {"StatusCode": 0}
         self.archives = archives or {}
+        self.archive_stats = archive_stats or {}
         self.wait_error = wait_error
         self.started = False
         self.killed = False
@@ -52,7 +65,9 @@ class FakeContainer:
         self.killed = True
 
     def get_archive(self, path):
-        return iter([self.archives[path]]), {}
+        archive = self.archives[path]
+        chunks = archive if hasattr(archive, "__next__") else iter([archive])
+        return chunks, self.archive_stats.get(path, {})
 
     def remove(self, force=False):
         assert force is True
@@ -94,6 +109,45 @@ def _executor(container):
     client = FakeDockerClient(container)
     settings = controller.Settings(runner_image="fixed-runner:test")
     return controller.DockerExecutor(client, settings), client
+
+
+def _asgi_post(messages, *, content_length=None):
+    sent = []
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"x-sandbox-token", TOKEN.encode()),
+    ]
+    if content_length is not None:
+        headers.append((b"content-length", str(content_length).encode()))
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/v1/execute",
+        "raw_path": b"/v1/execute",
+        "query_string": b"",
+        "headers": headers,
+        "client": ("test", 123),
+        "server": ("testserver", 80),
+    }
+    pending = iter(messages)
+
+    async def receive():
+        return next(pending, {"type": "http.disconnect"})
+
+    async def send(message):
+        sent.append(message)
+
+    asyncio.run(controller.app(scope, receive, send))
+    status = next(message["status"] for message in sent if message["type"] == "http.response.start")
+    body = b"".join(
+        message.get("body", b"")
+        for message in sent
+        if message["type"] == "http.response.body"
+    )
+    return status, json.loads(body)
 
 
 def test_execute_requires_token():
@@ -142,6 +196,75 @@ def test_execute_rejects_client_controlled_container_options(field):
     assert response.status_code == 422
 
 
+def test_raw_body_limit_rejects_large_json_whitespace_before_executor(monkeypatch):
+    monkeypatch.setattr(controller, "MAX_INPUT_BYTES", 128)
+    monkeypatch.setattr(controller, "serialized_request_size", lambda request: 1)
+    executor = FakeExecutor()
+    controller.app.dependency_overrides[controller.get_executor] = lambda: executor
+    raw_body = (b" " * 129) + json.dumps(REQUEST).encode()
+
+    response = TestClient(controller.app).post(
+        "/v1/execute",
+        content=raw_body,
+        headers={"Content-Type": "application/json", "X-Sandbox-Token": TOKEN},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "input_too_large"
+    assert executor.calls == 0
+
+
+def test_raw_body_limit_rejects_oversized_content_length_without_receiving(monkeypatch):
+    monkeypatch.setattr(controller, "MAX_INPUT_BYTES", 128)
+    executor = FakeExecutor()
+    controller.app.dependency_overrides[controller.get_executor] = lambda: executor
+
+    status, payload = _asgi_post([], content_length=129)
+
+    assert status == 413
+    assert payload["detail"] == "input_too_large"
+    assert executor.calls == 0
+
+
+def test_raw_body_limit_counts_chunks_despite_forged_small_content_length(monkeypatch):
+    raw_body = json.dumps(REQUEST).encode()
+    monkeypatch.setattr(controller, "MAX_INPUT_BYTES", len(raw_body) - 1)
+    executor = FakeExecutor()
+    controller.app.dependency_overrides[controller.get_executor] = lambda: executor
+    split = len(raw_body) // 2
+
+    status, payload = _asgi_post(
+        [
+            {"type": "http.request", "body": raw_body[:split], "more_body": True},
+            {"type": "http.request", "body": raw_body[split:], "more_body": False},
+        ],
+        content_length=1,
+    )
+
+    assert status == 413
+    assert payload["detail"] == "input_too_large"
+    assert executor.calls == 0
+
+
+def test_raw_body_limit_allows_streaming_client_without_content_length(monkeypatch):
+    raw_body = json.dumps(REQUEST).encode()
+    monkeypatch.setattr(controller, "MAX_INPUT_BYTES", len(raw_body))
+    executor = FakeExecutor()
+    controller.app.dependency_overrides[controller.get_executor] = lambda: executor
+    split = len(raw_body) // 2
+
+    status, payload = _asgi_post(
+        [
+            {"type": "http.request", "body": raw_body[:split], "more_body": True},
+            {"type": "http.request", "body": raw_body[split:], "more_body": False},
+        ]
+    )
+
+    assert status == 200
+    assert payload["ok"] is True
+    assert executor.calls == 1
+
+
 def test_execute_rejects_serialized_input_over_50_mib(monkeypatch):
     monkeypatch.setattr(controller, "serialized_request_size", lambda request: 50 * 1024 * 1024 + 1)
     controller.app.dependency_overrides[controller.get_executor] = lambda: FakeExecutor()
@@ -176,10 +299,10 @@ def test_executor_uses_fixed_security_create_kwargs_and_hard_caps():
     assert client.create_kwargs == {
         "image": "fixed-runner:test",
         "entrypoint": ["sh", "-c"],
-        "command": (
+        "command": [
             "while [ ! -f /input/task.json ]; do sleep 0.05; done; "
             "python /runner/entrypoint.py"
-        ),
+        ],
         "network_disabled": True,
         "read_only": True,
         "user": "65532:65532",
@@ -198,6 +321,9 @@ def test_executor_uses_fixed_security_create_kwargs_and_hard_caps():
     }
     assert container.wait_timeout == 35
     assert container.removed is True
+    assert len(client.create_kwargs["command"]) == 1
+    assert "while [ ! -f /input/task.json ]" in client.create_kwargs["command"][0]
+    assert "python /runner/entrypoint.py" in client.create_kwargs["command"][0]
 
     _, archive_bytes = container.put_calls[0]
     with tarfile.open(fileobj=io.BytesIO(archive_bytes)) as archive:
@@ -352,6 +478,45 @@ def test_executor_rejects_output_over_one_mib():
                 "result.json", {"value": "x" * (1_048_576 + 1)}
             )
         }
+    )
+    executor, _ = _executor(container)
+
+    response = executor.execute(controller.ExecuteRequest(**REQUEST))
+
+    assert response["ok"] is False
+    assert response["error"] == "output_too_large"
+    assert container.removed is True
+
+
+def test_output_archive_limit_stops_consuming_chunks_at_two_mib():
+    consumed = []
+
+    def oversized_chunks():
+        consumed.append(1)
+        yield b"x" * controller.MAX_ARCHIVE_BYTES
+        consumed.append(2)
+        yield b"x"
+        raise AssertionError("archive stream was consumed after crossing limit")
+
+    with pytest.raises(OverflowError, match="^output_too_large$"):
+        controller._read_json_archive(
+            oversized_chunks(),
+            expected_name="result.json",
+        )
+
+    assert consumed == [1, 2]
+
+
+def test_executor_rejects_get_archive_stat_size_before_consuming_stream():
+    def must_not_read():
+        raise AssertionError("oversized archive stream was consumed")
+        yield b""
+
+    container = FakeContainer(
+        archives={"/output/result.json": must_not_read()},
+        archive_stats={
+            "/output/result.json": {"size": controller.MAX_ARCHIVE_BYTES + 1}
+        },
     )
     executor, _ = _executor(container)
 
