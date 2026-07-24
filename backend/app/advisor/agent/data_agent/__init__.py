@@ -1,3 +1,3 @@
-from .delegate import build_delegate_data_tool
+"""Data agent package. build_delegate_data_tool export deferred to Task 6."""
 
-__all__ = ["build_delegate_data_tool"]
+__all__: list[str] = []
