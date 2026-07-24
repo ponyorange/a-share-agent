@@ -226,21 +226,42 @@ services:
       - PORT=8000
       - CORS_ORIGINS=*
       - SANDBOX_URL=http://sandbox-controller:8090
-      - SANDBOX_TOKEN=\${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set}
+      - SANDBOX_TOKEN=\${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set to at least 32 bytes}
 
     depends_on:
       sandbox-controller:
         condition: service_healthy
 
   committee-worker:
-    # 复用应用镜像和外部 Redis；不会在本机创建 Redis 服务。
+    # 与主应用复用同一镜像；只从部署机 .env 显式读取 worker 所需变量。
     image: ${FULL_TAG}
     pull_policy: never
     container_name: share-data-committee-worker
     restart: on-failure
 
-    env_file:
-      - .env
+    environment:
+      - APP_ENV=\${APP_ENV:-production}
+      - MONGODB_URI=\${MONGODB_URI:-}
+      - JWT_SECRET=\${JWT_SECRET:-}
+      - LLM_ENCRYPTION_KEY=\${LLM_ENCRYPTION_KEY:-}
+      - LLM_ENCRYPTION_KEY_PREVIOUS=\${LLM_ENCRYPTION_KEY_PREVIOUS:-}
+      - DEV_SEED_ENABLED=\${DEV_SEED_ENABLED:-0}
+      - DEV_SEED_USERNAME=\${DEV_SEED_USERNAME:-}
+      - DEV_SEED_PASSWORD=\${DEV_SEED_PASSWORD:-}
+      - TUSHARE_TOKEN=\${TUSHARE_TOKEN:-}
+      - CORS_ORIGINS=\${CORS_ORIGINS:-*}
+      - COMMITTEE_ENABLED=\${COMMITTEE_ENABLED:-0}
+      - REDIS_HOST=\${REDIS_HOST:-}
+      - REDIS_PORT=\${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=\${REDIS_PASSWORD:-}
+      - REDIS_SSL=\${REDIS_SSL:-0}
+      - REDIS_DB=\${REDIS_DB:-0}
+      - COMMITTEE_QUEUE_NAME=\${COMMITTEE_QUEUE_NAME:-committee}
+      - COMMITTEE_JOB_TIMEOUT=\${COMMITTEE_JOB_TIMEOUT:-900}
+      - COMMITTEE_KEY_PREFIX=\${COMMITTEE_KEY_PREFIX:-sharedata:committee}
+      - COMMITTEE_RESULT_TTL=\${COMMITTEE_RESULT_TTL:-86400}
+      - COMMITTEE_FAILURE_TTL=\${COMMITTEE_FAILURE_TTL:-604800}
+      - COMMITTEE_LOCK_TTL=\${COMMITTEE_LOCK_TTL:-300}
 
     command:
       - python
@@ -253,11 +274,8 @@ services:
     container_name: share-data-sandbox-controller
     restart: always
 
-    env_file:
-      - .env
-
     environment:
-      - SANDBOX_TOKEN=\${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set}
+      - SANDBOX_TOKEN=\${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set to at least 32 bytes}
       - SANDBOX_RUNNER_IMAGE=${RUNNER_FULL_TAG}
 
     volumes:

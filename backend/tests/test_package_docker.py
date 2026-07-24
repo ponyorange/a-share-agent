@@ -76,21 +76,25 @@ def test_packaging_produces_worker_compose_and_committee_env(tmp_path):
         "PORT=8000",
         "CORS_ORIGINS=*",
         "SANDBOX_URL=http://sandbox-controller:8090",
-        "SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set}",
+        "SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set to at least 32 bytes}",
     ]
     assert "volumes" not in services["share-data"]
     assert services["share-data"]["depends_on"] == {
         "sandbox-controller": {"condition": "service_healthy"}
     }
     assert services["committee-worker"]["image"] == "share-data:test-review"
-    assert services["committee-worker"]["env_file"] == [".env"]
+    assert "env_file" not in services["committee-worker"]
+    assert "SANDBOX_TOKEN" not in "\n".join(
+        services["committee-worker"]["environment"]
+    )
     assert "sandbox-runner" not in services
     assert "redis" not in services
 
     controller = services["sandbox-controller"]
     assert controller["image"] == "share-data-sandbox-controller:test-review"
+    assert "env_file" not in controller
     assert controller["environment"] == [
-        "SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set}",
+        "SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set to at least 32 bytes}",
         "SANDBOX_RUNNER_IMAGE=share-data-python-sandbox:test-review",
     ]
     assert controller["volumes"] == ["/var/run/docker.sock:/var/run/docker.sock"]
