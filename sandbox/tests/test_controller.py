@@ -386,6 +386,34 @@ def test_raw_body_limit_replays_one_normalized_request_message():
     ]
 
 
+def test_raw_body_limit_delegates_receive_after_normalized_body():
+    received = []
+    real_followup = {"type": "http.disconnect", "marker": "fake-server-event"}
+
+    async def downstream(scope, receive, send):
+        received.append(await receive())
+        received.append(await receive())
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware = controller.RawBodyLimitMiddleware(downstream)
+
+    status, _ = _asgi_post(
+        [
+            {"type": "http.request", "body": b'{"a":', "more_body": True},
+            {"type": "http.request", "body": b"1}", "more_body": False},
+            real_followup,
+        ],
+        app=middleware,
+    )
+
+    assert status == 204
+    assert received == [
+        {"type": "http.request", "body": b'{"a":1}', "more_body": False},
+        real_followup,
+    ]
+
+
 def test_execute_rejects_serialized_input_over_50_mib(monkeypatch):
     monkeypatch.setattr(controller, "serialized_request_size", lambda request: 50 * 1024 * 1024 + 1)
     controller.app.dependency_overrides[controller.get_executor] = lambda: FakeExecutor()

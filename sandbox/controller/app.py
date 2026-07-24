@@ -166,7 +166,7 @@ class RawBodyLimitMiddleware:
         async def replay_receive() -> dict[str, Any]:
             nonlocal replayed
             if replayed:
-                return {"type": "http.disconnect"}
+                return await receive()
             replayed = True
             return {
                 "type": "http.request",
