@@ -40,6 +40,50 @@ class LimitIgnoringProvider:
         }
 
 
+class OversizedMetadataProvider:
+    def list_interfaces(self, category=None, keyword=None):
+        return [
+            {
+                "name": "prices",
+                "category": "market",
+                "category_label": "行情",
+                "doc": "x" * 100_000,
+                "param_count": 200,
+                "authorization": "Bearer secret",
+                "irrelevant_blob": {"raw": "do-not-return"},
+            }
+        ]
+
+    def get_interface(self, name):
+        nested = "leaf"
+        for _ in range(12):
+            nested = {"child": nested}
+        return {
+            "name": name,
+            "category": "market",
+            "category_label": "行情",
+            "doc": "d" * 100_000,
+            "docstring": "s" * 100_000,
+            "params": [
+                {
+                    "name": f"p{index}",
+                    "required": False,
+                    "default": nested,
+                    "annotation": "str",
+                    "description": "p" * 10_000,
+                    "token": "secret",
+                }
+                for index in range(200)
+            ],
+            "example_params": {
+                "symbol": "600519",
+                "nested": nested,
+                "api_key": "secret",
+            },
+            "raw_schema": {"do": "not return"},
+        }
+
+
 def test_provider_tools_discover_and_store_without_exposing_full_dataset(tmp_path):
     with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
         tools = {tool.name: tool for tool in build_provider_tools(workspace)}
@@ -53,16 +97,21 @@ def test_provider_tools_discover_and_store_without_exposing_full_dataset(tmp_pat
                 return_value=FakeProvider(),
             ),
         ):
-            assert json.loads(tools["list_data_sources"].invoke({}))[0]["id"] == "fake"
+            listed = json.loads(tools["list_data_sources"].invoke({}))
+            assert listed[0]["id"] == "fake"
+            assert listed[0]["trust"] == "untrusted_provider_metadata"
             searched = json.loads(
                 tools["search_data_interfaces"].invoke(
                     {"source": "fake", "keyword": "price", "category": "market"}
                 )
             )
             assert searched["count"] == 1
-            assert json.loads(
+            assert searched["trust"] == "untrusted_provider_metadata"
+            detail = json.loads(
                 tools["get_data_interface"].invoke({"source": "fake", "name": "prices"})
-            )["interface"]["name"] == "prices"
+            )
+            assert detail["interface"]["name"] == "prices"
+            assert detail["trust"] == "untrusted_provider_metadata"
             fetched = json.loads(
                 tools["fetch_provider_data"].invoke(
                     {
@@ -78,6 +127,77 @@ def test_provider_tools_discover_and_store_without_exposing_full_dataset(tmp_pat
         assert len(fetched["dataset"]["sample"]) == 5
         exported = workspace.export([fetched["dataset"]["dataset_id"]])
         assert len(exported[fetched["dataset"]["dataset_id"]]) == 100
+
+
+def test_provider_metadata_is_whitelisted_truncated_and_byte_bounded(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
+        tools = {tool.name: tool for tool in build_provider_tools(workspace)}
+        with patch(
+            "app.advisor.agent.data_agent.provider_tools.providers.get_provider",
+            return_value=OversizedMetadataProvider(),
+        ):
+            search_raw = tools["search_data_interfaces"].invoke(
+                {"source": "fake", "keyword": "", "category": ""}
+            )
+            detail_raw = tools["get_data_interface"].invoke(
+                {"source": "fake", "name": "prices"}
+            )
+
+    assert len(search_raw.encode("utf-8")) <= 64 * 1024
+    search = json.loads(search_raw)
+    item = search["interfaces"][0]
+    assert item["trust"] == "untrusted_provider_metadata"
+    assert len(item["doc"]) <= 2_048
+    assert "authorization" not in item
+    assert "irrelevant_blob" not in item
+
+    assert len(detail_raw.encode("utf-8")) <= 64 * 1024
+    detail = json.loads(detail_raw)
+    interface = detail["interface"]
+    assert detail["trust"] == "untrusted_provider_metadata"
+    assert set(interface) <= {
+        "name",
+        "category",
+        "category_label",
+        "doc",
+        "docstring",
+        "params",
+        "example_params",
+        "truncated",
+    }
+    assert len(interface["doc"]) <= 2_048
+    assert len(interface["docstring"]) <= 2_048
+    assert len(interface["params"]) <= 64
+    assert "secret" not in detail_raw
+    assert "raw_schema" not in interface
+    assert "truncated" in detail_raw
+
+
+def test_data_source_metadata_is_truncated_to_total_byte_limit(tmp_path):
+    oversized_sources = [
+        {
+            "id": f"source-{index}",
+            "label": "x" * 10_000,
+            "features": ["y" * 10_000] * 100,
+        }
+        for index in range(100)
+    ]
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
+        tool = {
+            item.name: item for item in build_provider_tools(workspace)
+        }["list_data_sources"]
+        with patch(
+            "app.advisor.agent.data_agent.provider_tools.providers.list_sources",
+            return_value=oversized_sources,
+        ):
+            raw = tool.invoke({})
+
+    assert len(raw.encode("utf-8")) <= 64 * 1024
+    payload = json.loads(raw)
+    assert isinstance(payload, list)
+    assert payload
+    assert all(item["trust"] == "untrusted_provider_metadata" for item in payload)
+    assert payload[-1].get("truncated") is True
 
 
 def test_fetch_provider_data_bounds_limit_to_workspace_limits(tmp_path):

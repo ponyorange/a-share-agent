@@ -2,7 +2,13 @@
 
 from .delegate import build_delegate_data_tool
 from .graph import DATA_AGENT_PROMPT, parse_data_agent_result, run_data_agent
-from .models import DataAgentFailure, DataAgentLimits, DataAgentResult, DatasetMeta
+from .models import (
+    DataAgentFailure,
+    DataAgentLimits,
+    DataAgentResult,
+    DataAgentSource,
+    DatasetMeta,
+)
 from .provider_tools import build_provider_tools
 from .sandbox import SandboxClient, build_python_tool
 from .workspace import DatasetWorkspace
@@ -12,6 +18,7 @@ __all__ = [
     "DataAgentFailure",
     "DataAgentLimits",
     "DataAgentResult",
+    "DataAgentSource",
     "DatasetMeta",
     "DatasetWorkspace",
     "SandboxClient",

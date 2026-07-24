@@ -2,6 +2,7 @@ import json
 import logging
 from unittest.mock import patch
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.advisor.agent.data_agent.graph import (
@@ -21,6 +22,26 @@ class FakeSandbox:
     }
 
 
+def _result_json(**overrides):
+    payload = {
+        "answer": "完成",
+        "data": {"close": 10.5, "pe_ttm": 12.3},
+        "sources": [
+            {
+                "source": "akshare",
+                "interface": "stock_zh_a_hist",
+                "params_summary": {"symbol": "600519", "period": "daily"},
+                "data_time": "2026-07-24",
+            }
+        ],
+        "computation": ["按交易日对齐"],
+        "warnings": [],
+        "failures": [],
+    }
+    payload.update(overrides)
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def test_parse_data_agent_result_accepts_fenced_json():
     result = parse_data_agent_result(
         """```json
@@ -30,6 +51,75 @@ def test_parse_data_agent_result_accepts_fenced_json():
     )
     assert result.answer == "完成"
     assert result.data == {"x": 1}
+
+
+def test_parse_data_agent_result_accepts_normal_market_and_financial_data():
+    result = parse_data_agent_result(_result_json())
+    assert result.data == {"close": 10.5, "pe_ttm": 12.3}
+    assert result.sources[0].params_summary == {
+        "symbol": "600519",
+        "period": "daily",
+    }
+
+
+def test_parse_data_agent_result_rejects_extra_fields():
+    result = parse_data_agent_result(_result_json(debug_dump={"raw": "not allowed"}))
+    assert result.failures[0].code == "invalid_agent_result"
+
+
+def test_parse_data_agent_result_rejects_more_than_one_mibibyte():
+    result = parse_data_agent_result(_result_json(answer="x" * (1024 * 1024)))
+    assert result.failures[0].code == "invalid_agent_result"
+
+
+def test_parse_data_agent_result_rejects_depth_21():
+    nested = "leaf"
+    for _ in range(21):
+        nested = {"level": nested}
+    result = parse_data_agent_result(_result_json(data=nested))
+    assert result.failures[0].code == "invalid_agent_result"
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_parse_data_agent_result_rejects_non_finite_numbers(constant):
+    raw = _result_json().replace("10.5", constant, 1)
+    result = parse_data_agent_result(raw)
+    assert result.failures[0].code == "invalid_agent_result"
+
+
+@pytest.mark.parametrize(
+    "sensitive_key",
+    ["api_key", "token", "authorization", "password", "secret", "credential"],
+)
+def test_parse_data_agent_result_rejects_sensitive_keys(sensitive_key):
+    result = parse_data_agent_result(
+        _result_json(data={"quote": 1, "nested": {sensitive_key: "do-not-return"}})
+    )
+    assert result.failures[0].code == "invalid_agent_result"
+    assert "do-not-return" not in result.to_tool_json()
+
+
+def test_parse_data_agent_result_filters_sensitive_params_summary_recursively():
+    result = parse_data_agent_result(
+        _result_json(
+            sources=[
+                {
+                    "source": "tushare",
+                    "interface": "daily",
+                    "params_summary": {
+                        "ts_code": "600519.SH",
+                        "nested": {"token": "secret-value", "period": "D"},
+                    },
+                }
+            ]
+        )
+    )
+    assert result.failures == []
+    assert result.sources[0].params_summary == {
+        "ts_code": "600519.SH",
+        "nested": {"period": "D"},
+    }
+    assert "secret-value" not in result.to_tool_json()
 
 
 def test_parse_data_agent_result_returns_stable_failure_without_raw_text():

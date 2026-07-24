@@ -16,6 +16,9 @@ def _failure(code: str, message: str) -> DataAgentResult:
     return DataAgentResult(
         answer="",
         data={},
+        sources=[],
+        computation=[],
+        warnings=[],
         failures=[DataAgentFailure(code=code, message=message)],
     )
 

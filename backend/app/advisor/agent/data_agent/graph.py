@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import math
 import re
 from typing import Any
 
@@ -9,7 +11,7 @@ from langgraph.prebuilt import create_react_agent
 from pydantic import ValidationError
 
 from ..llm import build_chat_model
-from .models import DataAgentFailure, DataAgentResult
+from .models import SENSITIVE_KEYS, DataAgentFailure, DataAgentResult
 from .provider_tools import build_provider_tools
 from .sandbox import SandboxClient, build_python_tool
 from .workspace import DatasetWorkspace
@@ -17,6 +19,8 @@ from .workspace import DatasetWorkspace
 logger = logging.getLogger(__name__)
 
 _JSON_FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL | re.IGNORECASE)
+_MAX_FINAL_RESULT_BYTES = 1024 * 1024
+_MAX_JSON_DEPTH = 20
 _ALLOWED_SANDBOX_METRICS = {
     "elapsed_ms",
     "cpu_time_ms",
@@ -40,20 +44,67 @@ def _failure(code: str, message: str) -> DataAgentResult:
     return DataAgentResult(
         answer="",
         data={},
+        sources=[],
+        computation=[],
+        warnings=[],
         failures=[DataAgentFailure(code=code, message=message)],
     )
 
 
 def parse_data_agent_result(text: str) -> DataAgentResult:
     """Parse the final model JSON without exposing invalid model output."""
-    candidate = text or ""
-    match = _JSON_FENCE.fullmatch(candidate)
-    if match:
-        candidate = match.group(1)
     try:
-        return DataAgentResult.model_validate_json(candidate)
-    except (ValidationError, ValueError, TypeError):
+        candidate = text or ""
+        if len(candidate.encode("utf-8")) > _MAX_FINAL_RESULT_BYTES:
+            raise ValueError("agent_result_too_large")
+        match = _JSON_FENCE.fullmatch(candidate)
+        if match:
+            candidate = match.group(1)
+        payload = json.loads(
+            candidate,
+            parse_constant=lambda _value: (_ for _ in ()).throw(
+                ValueError("non_finite_number")
+            ),
+            object_pairs_hook=_reject_duplicate_keys,
+        )
+        _validate_final_json(payload)
+        return DataAgentResult.model_validate(payload)
+    except (UnicodeError, ValidationError, ValueError, TypeError):
         return _failure("invalid_agent_result", "数据子 Agent 未返回有效 JSON")
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate_json_key")
+        result[key] = value
+    return result
+
+
+def _validate_final_json(
+    value: Any,
+    depth: int = 0,
+    path: tuple[str | int, ...] = (),
+) -> None:
+    if depth > _MAX_JSON_DEPTH:
+        raise ValueError("agent_result_too_deep")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("non_finite_number")
+    if isinstance(value, dict):
+        params_summary = (
+            len(path) >= 3
+            and path[0] == "sources"
+            and isinstance(path[1], int)
+            and path[2] == "params_summary"
+        )
+        for key, child in value.items():
+            if key.casefold() in SENSITIVE_KEYS and not params_summary:
+                raise ValueError("sensitive_key")
+            _validate_final_json(child, depth + 1, (*path, key))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _validate_final_json(child, depth + 1, (*path, index))
 
 
 def _message_text(message: AIMessage) -> str:

@@ -7,6 +7,7 @@ from app.advisor.agent.data_agent.models import (
     DataAgentFailure,
     DataAgentLimits,
     DataAgentResult,
+    DataAgentSource,
 )
 
 
@@ -47,6 +48,63 @@ def test_data_agent_limits_reject_overrides_above_hard_caps(overrides):
         DataAgentLimits.from_config(overrides)
 
 
+def test_all_data_agent_models_forbid_extra_fields():
+    with pytest.raises(ValidationError):
+        DataAgentLimits.model_validate({"unexpected": True})
+    with pytest.raises(ValidationError):
+        DataAgentFailure.model_validate(
+            {"code": "x", "message": "x", "raw_exception": "secret"}
+        )
+    with pytest.raises(ValidationError):
+        DataAgentSource.model_validate(
+            {"source": "x", "interface": "y", "raw_response": {}}
+        )
+    with pytest.raises(ValidationError):
+        DataAgentResult.model_validate(
+            {"answer": "x", "data": {}, "unexpected": True}
+        )
+
+
+def test_data_agent_result_requires_all_contract_fields():
+    with pytest.raises(ValidationError):
+        DataAgentResult.model_validate({"answer": "x", "data": {}})
+
+
+def test_data_agent_result_rejects_non_json_python_values():
+    base = {
+        "answer": "x",
+        "sources": [],
+        "computation": [],
+        "warnings": [],
+        "failures": [],
+    }
+    with pytest.raises(ValidationError):
+        DataAgentResult(**base, data=object())
+    with pytest.raises(ValidationError):
+        DataAgentResult(**base, data=float("nan"))
+
+
+def test_data_agent_result_enforces_text_and_item_limits():
+    with pytest.raises(ValidationError):
+        DataAgentResult(
+            answer="x" * 16_385,
+            data={},
+            sources=[],
+            computation=[],
+            warnings=[],
+            failures=[],
+        )
+    with pytest.raises(ValidationError):
+        DataAgentResult(
+            answer="x",
+            data={},
+            sources=[],
+            computation=[],
+            warnings=["x"] * 51,
+            failures=[],
+        )
+
+
 def test_tool_json_keeps_provenance_and_failures():
     result = DataAgentResult(
         answer="两源收益率差为 0.3 个百分点",
@@ -59,3 +117,28 @@ def test_tool_json_keeps_provenance_and_failures():
     payload = json.loads(result.to_tool_json())
     assert payload["data"]["difference_pct_points"] == 0.3
     assert payload["failures"][0]["code"] == "source_unavailable"
+
+
+def test_source_params_summary_filters_secrets_and_bounds_depth():
+    source = DataAgentSource(
+        source="tushare",
+        interface="daily",
+        params_summary={
+            "ts_code": "600519.SH",
+            "nested": {"authorization": "Bearer secret", "period": "D"},
+        },
+    )
+    assert source.params_summary == {
+        "ts_code": "600519.SH",
+        "nested": {"period": "D"},
+    }
+
+    nested = "leaf"
+    for _ in range(7):
+        nested = {"level": nested}
+    with pytest.raises(ValidationError):
+        DataAgentSource(
+            source="tushare",
+            interface="daily",
+            params_summary={"nested": nested},
+        )
