@@ -44,6 +44,23 @@ def test_sandbox_client_maps_timeout():
         client.execute("result={}", {}, DataAgentLimits())
 
 
+def test_sandbox_client_maps_controller_execution_timeout_string_error():
+    def handler(_request):
+        return httpx.Response(
+            200,
+            json={"ok": False, "error": "execution_timeout", "metrics": {"elapsed_ms": 30_000}},
+        )
+
+    client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="^sandbox_timeout$") as exc_info:
+        client.execute("secret_code()", {"a": [{"secret": "row"}]}, DataAgentLimits())
+
+    assert exc_info.value.__cause__ is None
+    encoded = str(exc_info.value)
+    assert "secret_code" not in encoded
+    assert "row" not in encoded
+
+
 def test_sandbox_client_maps_connect_timeout():
     def handler(_request):
         raise httpx.ConnectTimeout("late")
@@ -94,16 +111,101 @@ def test_sandbox_client_rejects_non_string_keys_after_parse():
         client.execute("result={}", {}, DataAgentLimits())
 
 
-def test_sandbox_client_maps_controller_rejection_code():
+def test_sandbox_client_maps_controller_string_runner_rejection_code():
     def handler(_request):
         return httpx.Response(
-            400,
-            json={"ok": False, "error": {"code": "invalid_request", "message": "bad"}},
+            200,
+            json={"ok": False, "error": "invalid_dataset_name", "metrics": {"elapsed_ms": 1}},
         )
+
+    client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="^sandbox_rejected:invalid_dataset_name$"):
+        client.execute("result={}", {}, DataAgentLimits())
+
+
+def test_sandbox_client_maps_http_error_status_with_string_error():
+    def handler(_request):
+        return httpx.Response(400, json={"ok": False, "error": "invalid_request"})
 
     client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
     with pytest.raises(RuntimeError, match="^sandbox_rejected:invalid_request$"):
         client.execute("result={}", {}, DataAgentLimits())
+
+
+def test_sandbox_client_runtime_errors_drop_original_exception_chain():
+    secret_token = "token-" + ("x" * 40)
+    secret_code = "print('code-secret')"
+    secret_data = {"a": [{"secret": "data-secret"}]}
+
+    def handler(request):
+        raise httpx.ConnectError(
+            f"{request.headers['X-Sandbox-Token']} {secret_code} {secret_data}",
+            request=request,
+        )
+
+    client = SandboxClient("http://sandbox", secret_token, transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="^sandbox_unavailable$") as exc_info:
+        client.execute(secret_code, secret_data, DataAgentLimits())
+
+    assert exc_info.value.__cause__ is None
+    encoded = str(exc_info.value)
+    assert secret_token not in encoded
+    assert "code-secret" not in encoded
+    assert "data-secret" not in encoded
+
+
+def test_sandbox_client_invalid_json_drops_original_exception_chain():
+    def handler(_request):
+        return httpx.Response(200, content=b"{not-json")
+
+    client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="^sandbox_invalid_output$") as exc_info:
+        client.execute("secret_code()", {"a": [{"secret": "data-secret"}]}, DataAgentLimits())
+
+    assert exc_info.value.__cause__ is None
+    encoded = str(exc_info.value)
+    assert "secret_code" not in encoded
+    assert "data-secret" not in encoded
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        ({"SANDBOX_TOKEN": "x" * 32}, "sandbox_config_missing"),
+        ({"SANDBOX_URL": "http://sandbox.test"}, "sandbox_config_missing"),
+        (
+            {"SANDBOX_URL": "http://sandbox.test", "SANDBOX_TOKEN": "short"},
+            "sandbox_config_invalid",
+        ),
+        (
+            {"SANDBOX_URL": "ftp://sandbox.test", "SANDBOX_TOKEN": "x" * 32},
+            "sandbox_config_invalid",
+        ),
+        (
+            {"SANDBOX_URL": "http:///missing-host", "SANDBOX_TOKEN": "x" * 32},
+            "sandbox_config_invalid",
+        ),
+    ],
+)
+def test_sandbox_client_from_env_fails_closed(monkeypatch, env, expected):
+    monkeypatch.delenv("SANDBOX_URL", raising=False)
+    monkeypatch.delenv("SANDBOX_TOKEN", raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+
+    with pytest.raises(RuntimeError, match=f"^{expected}$") as exc_info:
+        SandboxClient.from_env()
+
+    assert exc_info.value.__cause__ is None
+
+
+def test_sandbox_client_from_env_accepts_valid_http_values(monkeypatch):
+    monkeypatch.setenv("SANDBOX_URL", "https://sandbox.test")
+    monkeypatch.setenv("SANDBOX_TOKEN", "x" * 32)
+
+    client = SandboxClient.from_env()
+
+    assert client.last_metrics == {}
 
 
 def test_python_analysis_tool_exports_only_requested_workspace_datasets(tmp_path):

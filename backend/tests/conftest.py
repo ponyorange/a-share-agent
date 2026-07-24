@@ -16,4 +16,4 @@ os.environ.setdefault(
 )
 os.environ.setdefault("DEV_SEED_ENABLED", "0")
 os.environ.setdefault("SANDBOX_URL", "http://sandbox.test")
-os.environ.setdefault("SANDBOX_TOKEN", "test-sandbox-token")
+os.environ.setdefault("SANDBOX_TOKEN", "test-sandbox-token-with-32-chars")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from typing import Any
 
 import httpx
@@ -68,6 +69,20 @@ class SandboxClient:
         self.last_metrics: dict[str, int | float] = {}
         self._client = httpx.Client(base_url=base_url, transport=transport)
 
+    @classmethod
+    def from_env(cls) -> "SandboxClient":
+        base_url = (os.environ.get("SANDBOX_URL") or "").strip()
+        token = (os.environ.get("SANDBOX_TOKEN") or "").strip()
+        if not base_url or not token:
+            raise RuntimeError("sandbox_config_missing") from None
+        try:
+            url = httpx.URL(base_url)
+        except httpx.InvalidURL:
+            raise RuntimeError("sandbox_config_invalid") from None
+        if url.scheme not in {"http", "https"} or not url.host or len(token) < 32:
+            raise RuntimeError("sandbox_config_invalid") from None
+        return cls(base_url=base_url, token=token)
+
     def execute(
         self,
         code: str,
@@ -88,25 +103,32 @@ class SandboxClient:
                 headers={"X-Sandbox-Token": self.token},
                 timeout=httpx.Timeout(limits.sandbox_timeout_seconds + 10, connect=5),
             )
-        except httpx.TimeoutException as exc:
-            raise RuntimeError("sandbox_timeout") from exc
-        except httpx.HTTPError as exc:
-            raise RuntimeError("sandbox_unavailable") from exc
+        except httpx.TimeoutException:
+            raise RuntimeError("sandbox_timeout") from None
+        except httpx.HTTPError:
+            raise RuntimeError("sandbox_unavailable") from None
 
         if len(response.content) > limits.max_output_bytes + _RESPONSE_OVERHEAD_BYTES:
-            raise RuntimeError("sandbox_invalid_output")
+            raise RuntimeError("sandbox_invalid_output") from None
         try:
             payload = response.json()
-        except ValueError as exc:
-            raise RuntimeError("sandbox_invalid_output") from exc
+        except ValueError:
+            raise RuntimeError("sandbox_invalid_output") from None
         if not isinstance(payload, dict):
-            raise RuntimeError("sandbox_invalid_output")
+            raise RuntimeError("sandbox_invalid_output") from None
 
         if response.status_code >= 400 or not payload.get("ok"):
             error = payload.get("error") or {}
-            code_value = error.get("code") if isinstance(error, dict) else None
+            if isinstance(error, str):
+                code_value = error
+            elif isinstance(error, dict):
+                code_value = error.get("code")
+            else:
+                code_value = None
             code = str(code_value or response.status_code)
-            raise RuntimeError(f"sandbox_rejected:{code}")
+            if code == "execution_timeout":
+                raise RuntimeError("sandbox_timeout") from None
+            raise RuntimeError(f"sandbox_rejected:{code}") from None
 
         result = payload.get("result")
         _validate_value(result)
@@ -117,8 +139,8 @@ class SandboxClient:
 def _parse_dataset_ids(dataset_ids_json: str) -> list[str]:
     try:
         dataset_ids = json.loads(dataset_ids_json)
-    except ValueError as exc:
-        raise ValueError("invalid_dataset_ids") from exc
+    except ValueError:
+        raise ValueError("invalid_dataset_ids") from None
     if not isinstance(dataset_ids, list) or not dataset_ids:
         raise ValueError("invalid_dataset_ids")
     if any(not isinstance(dataset_id, str) for dataset_id in dataset_ids):
