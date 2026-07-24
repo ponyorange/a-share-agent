@@ -26,6 +26,7 @@ _ERROR_MESSAGES = {
     "sandbox_timeout": "计算超时",
     "sandbox_unavailable": "计算服务暂不可用",
     "sandbox_invalid_output": "计算结果无效",
+    "python_retry_limit_exceeded": "Python 分析重试次数已达上限",
 }
 
 
@@ -161,10 +162,13 @@ def build_python_tool(workspace: DatasetWorkspace, client: SandboxClient) -> Bas
     @tool
     def run_python_analysis(code: str, dataset_ids_json: str) -> str:
         """在沙箱中运行只读 Python 分析代码，仅可使用本次请求已保存的数据集。"""
+        if not workspace.begin_python_analysis():
+            return _tool_error("python_retry_limit_exceeded")
         try:
             dataset_ids = _parse_dataset_ids(dataset_ids_json)
             datasets = workspace.export(dataset_ids)
             result = client.execute(code, datasets, workspace.limits)
+            workspace.record_sandbox_result(result)
             return json.dumps({"result": result}, ensure_ascii=False)
         except ValueError:
             return _tool_error("invalid_dataset_ids")

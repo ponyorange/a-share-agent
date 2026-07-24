@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
@@ -41,13 +41,16 @@ class DatasetMeta(BaseModel):
     dataset_id: str
     source: str
     interface: str
-    params: dict[str, Any]
+    params_summary: dict[str, JsonValue]
+    data_time: Annotated[str, Field(max_length=128)] | None = None
     columns: list[str]
     returned: int
     total: int
     truncated: bool
     byte_size: int
-    sample: list[dict[str, Any]]
+    sample: list[dict[str, JsonValue]]
+    sample_trust: Literal["untrusted_provider_data"] = "untrusted_provider_data"
+    sample_truncated: bool
 
 
 class DataAgentFailure(BaseModel):
@@ -88,6 +91,16 @@ def _filter_params_summary(value: Any, depth: int = 0) -> JsonValue:
     raise ValueError("params_summary_not_json")
 
 
+def sanitize_params_summary(value: Any) -> dict[str, JsonValue]:
+    filtered = _filter_params_summary({} if value is None else value)
+    if not isinstance(filtered, dict):
+        raise ValueError("params_summary_must_be_object")
+    encoded = json.dumps(filtered, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    if len(encoded) > _MAX_PARAMS_BYTES:
+        raise ValueError("params_summary_too_large")
+    return filtered
+
+
 class DataAgentSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -101,13 +114,7 @@ class DataAgentSource(BaseModel):
     @field_validator("params_summary", mode="before")
     @classmethod
     def validate_params_summary(cls, value: Any) -> dict[str, JsonValue]:
-        filtered = _filter_params_summary({} if value is None else value)
-        if not isinstance(filtered, dict):
-            raise ValueError("params_summary_must_be_object")
-        encoded = json.dumps(filtered, ensure_ascii=False, allow_nan=False).encode("utf-8")
-        if len(encoded) > _MAX_PARAMS_BYTES:
-            raise ValueError("params_summary_too_large")
-        return filtered
+        return sanitize_params_summary(value)
 
 
 class DataAgentResult(BaseModel):

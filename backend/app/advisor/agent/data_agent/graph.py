@@ -51,7 +51,9 @@ def _failure(code: str, message: str) -> DataAgentResult:
     )
 
 
-def parse_data_agent_result(text: str) -> DataAgentResult:
+def parse_data_agent_result(
+    text: str, *, workspace: DatasetWorkspace | None = None
+) -> DataAgentResult:
     """Parse the final model JSON without exposing invalid model output."""
     try:
         candidate = text or ""
@@ -68,7 +70,19 @@ def parse_data_agent_result(text: str) -> DataAgentResult:
             object_pairs_hook=_reject_duplicate_keys,
         )
         _validate_final_json(payload)
-        return DataAgentResult.model_validate(payload)
+        result = DataAgentResult.model_validate(payload)
+        if workspace is not None:
+            _validate_result_evidence(result, workspace)
+            if (
+                _has_target_data(result.data)
+                and not result.sources
+                and not workspace.has_sandbox_result
+            ):
+                return _failure(
+                    "incomplete_agent_result",
+                    "数据子 Agent 未取得可验证的请求证据",
+                )
+        return result
     except (UnicodeError, ValidationError, ValueError, TypeError):
         return _failure("invalid_agent_result", "数据子 Agent 未返回有效 JSON")
 
@@ -105,6 +119,30 @@ def _validate_final_json(
     elif isinstance(value, list):
         for index, child in enumerate(value):
             _validate_final_json(child, depth + 1, (*path, index))
+
+
+def _has_target_data(value: Any) -> bool:
+    return value not in (None, {}, [])
+
+
+def _validate_result_evidence(
+    result: DataAgentResult, workspace: DatasetWorkspace
+) -> None:
+    datasets = workspace.datasets
+    for source in result.sources:
+        if not any(
+            source.source == dataset.source
+            and source.interface == dataset.interface
+            and source.params_summary == dataset.params_summary
+            and source.data_time == dataset.data_time
+            and (source.rows is None or source.rows == dataset.returned)
+            and (
+                source.truncated is None
+                or source.truncated == dataset.truncated
+            )
+            for dataset in datasets
+        ):
+            raise ValueError("source_not_in_request_evidence")
 
 
 def _message_text(message: AIMessage) -> str:
@@ -218,6 +256,6 @@ def run_data_agent(
     if final is None:
         result = _failure("missing_agent_result", "数据子 Agent 未返回最终结果")
     else:
-        result = parse_data_agent_result(_message_text(final))
+        result = parse_data_agent_result(_message_text(final), workspace=workspace)
     _log_completion(request_id, messages, workspace, sandbox_client, result)
     return result

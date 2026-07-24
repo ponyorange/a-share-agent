@@ -130,6 +130,116 @@ def test_parse_data_agent_result_returns_stable_failure_without_raw_text():
     assert secret not in result.to_tool_json()
 
 
+@pytest.mark.parametrize(
+    "source_override",
+    [
+        {"source": "tushare"},
+        {"interface": "daily"},
+        {"params_summary": {"symbol": "000001", "period": "daily"}},
+        {"data_time": "2026-07-23"},
+    ],
+)
+def test_parse_data_agent_result_rejects_sources_not_created_in_workspace(
+    tmp_path, source_override
+):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        workspace.create_dataset(
+            "akshare",
+            "stock_zh_a_hist",
+            {"symbol": "600519", "period": "daily"},
+            {
+                "columns": ["close"],
+                "rows": [{"close": 10.5}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+                "data_time": "2026-07-24",
+            },
+        )
+        claimed_source = {
+            "source": "akshare",
+            "interface": "stock_zh_a_hist",
+            "params_summary": {"symbol": "600519", "period": "daily"},
+            "data_time": "2026-07-24",
+        }
+        claimed_source.update(source_override)
+        result = parse_data_agent_result(
+            _result_json(sources=[claimed_source]),
+            workspace=workspace,
+        )
+
+    assert result.failures[0].code == "invalid_agent_result"
+    assert result.data == {}
+    assert result.sources == []
+
+
+def test_parse_data_agent_result_rejects_success_data_without_request_evidence(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        result = parse_data_agent_result(_result_json(sources=[]), workspace=workspace)
+
+    assert result.failures[0].code == "incomplete_agent_result"
+    assert result.data == {}
+
+
+def test_parse_data_agent_result_requires_source_for_direct_provider_data(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        workspace.create_dataset(
+            "akshare",
+            "stock_zh_a_hist",
+            {"symbol": "600519"},
+            {
+                "columns": ["close"],
+                "rows": [{"close": 10.5}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+            },
+        )
+        result = parse_data_agent_result(_result_json(sources=[]), workspace=workspace)
+
+    assert result.failures[0].code == "incomplete_agent_result"
+    assert result.data == {}
+
+
+def test_parse_data_agent_result_allows_partial_real_data_with_failures(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        workspace.create_dataset(
+            "akshare",
+            "stock_zh_a_hist",
+            {"symbol": "600519", "period": "daily", "token": "secret"},
+            {
+                "columns": ["close"],
+                "rows": [{"close": 10.5}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+                "data_time": "2026-07-24",
+            },
+        )
+        result = parse_data_agent_result(
+            _result_json(
+                warnings=["另一数据源不可用"],
+                failures=[
+                    {
+                        "code": "source_unavailable",
+                        "message": "数据源暂不可用",
+                        "source": "tushare",
+                        "interface": "daily",
+                    }
+                ],
+            ),
+            workspace=workspace,
+        )
+
+    assert result.data == {"close": 10.5, "pe_ttm": 12.3}
+    assert result.sources[0].params_summary == {
+        "symbol": "600519",
+        "period": "daily",
+    }
+    assert result.failures[0].code == "source_unavailable"
+    assert result.warnings == ["另一数据源不可用"]
+
+
 def test_data_agent_prompt_treats_all_provider_content_as_untrusted_data():
     for untrusted_kind in ("文本", "新闻", "文档", "样例"):
         assert untrusted_kind in DATA_AGENT_PROMPT

@@ -178,7 +178,10 @@ def test_provider_tools_discover_and_store_without_exposing_full_dataset(tmp_pat
             )
         assert fetched["dataset"]["returned"] == 100
         assert "rows" not in fetched["dataset"]
+        assert "params" not in fetched["dataset"]
+        assert fetched["dataset"]["params_summary"] == {"symbol": "000001"}
         assert len(fetched["dataset"]["sample"]) == 5
+        assert fetched["dataset"]["sample_trust"] == "untrusted_provider_data"
         exported = workspace.export([fetched["dataset"]["dataset_id"]])
         assert len(exported[fetched["dataset"]["dataset_id"]]) == 100
 

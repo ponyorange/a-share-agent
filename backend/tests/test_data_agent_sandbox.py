@@ -245,6 +245,47 @@ def test_python_analysis_tool_exports_only_requested_workspace_datasets(tmp_path
     assert [{"x": 1}, {"x": 3}] != payload.get("result")
 
 
+def test_python_analysis_tool_rejects_third_call_without_executing_client(tmp_path):
+    class CountingClient:
+        def __init__(self):
+            self.execute_calls = 0
+
+        def execute(self, code, datasets, limits):
+            self.execute_calls += 1
+            return {"call": self.execute_calls}
+
+    with DatasetWorkspace(DataAgentLimits(max_python_retries=2), root=tmp_path / "r") as workspace:
+        meta = workspace.create_dataset(
+            "akshare",
+            "demo",
+            {},
+            {
+                "columns": ["x"],
+                "rows": [{"x": 1}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+            },
+        )
+        client = CountingClient()
+        tool = build_python_tool(workspace, client)
+        arguments = {
+            "code": "result={'ok': True}",
+            "dataset_ids_json": json.dumps([meta.dataset_id]),
+        }
+
+        assert json.loads(tool.invoke(arguments)) == {"result": {"call": 1}}
+        assert json.loads(tool.invoke(arguments)) == {"result": {"call": 2}}
+        assert json.loads(tool.invoke(arguments)) == {
+            "error": {
+                "code": "python_retry_limit_exceeded",
+                "message": "Python 分析重试次数已达上限",
+            }
+        }
+
+    assert client.execute_calls == 2
+
+
 @pytest.mark.parametrize(
     "dataset_ids_json",
     [

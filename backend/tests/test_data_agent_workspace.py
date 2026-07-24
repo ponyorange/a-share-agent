@@ -1,7 +1,17 @@
+import json
+
 import pytest
 
 from app.advisor.agent.data_agent.models import DataAgentLimits
 from app.advisor.agent.data_agent.workspace import DatasetWorkspace
+
+
+class Evil:
+    calls = 0
+
+    def __str__(self):
+        type(self).calls += 1
+        return "EVIL_SECRET"
 
 
 def test_workspace_enforces_total_rows_and_removes_files(tmp_path):
@@ -130,3 +140,74 @@ def test_workspace_removes_files_after_failure(tmp_path):
             assert path.exists()
             raise RuntimeError("boom")
     assert not path.exists()
+
+
+def test_dataset_metadata_bounds_and_sanitizes_untrusted_samples(tmp_path):
+    Evil.calls = 0
+    rows = [
+        {
+            "evil": Evil(),
+            "not_finite": float("nan"),
+            "large": "x" * 20_000,
+            **{f"field_{field}": field for field in range(100)},
+        }
+        for _ in range(20)
+    ]
+
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "request") as workspace:
+        meta = workspace.create_dataset(
+            "akshare",
+            "wide",
+            {},
+            {
+                "columns": list(rows[0]),
+                "rows": rows,
+                "returned": len(rows),
+                "total": len(rows),
+                "truncated": False,
+            },
+        )
+
+        assert meta.sample_trust == "untrusted_provider_data"
+        assert meta.sample_truncated is True
+        assert len(meta.sample) <= 5
+        assert all(len(row) <= 16 for row in meta.sample)
+        assert all(
+            len(json.dumps(row, ensure_ascii=False, allow_nan=False).encode("utf-8"))
+            <= 4_096
+            for row in meta.sample
+        )
+        assert meta.sample[0]["evil"] == "[unsupported]"
+        assert meta.sample[0]["not_finite"] == "[unsupported]"
+        assert Evil.calls == 0
+        assert "EVIL_SECRET" not in json.dumps(meta.model_dump(mode="json"), ensure_ascii=False)
+
+
+def test_dataset_metadata_returns_only_redacted_params_summary(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "request") as workspace:
+        meta = workspace.create_dataset(
+            "tushare",
+            "daily",
+            {
+                "ts_code": "600519.SH",
+                "token": "secret-token",
+                "nested": {"authorization": "Bearer secret", "period": "D"},
+            },
+            {
+                "columns": ["close"],
+                "rows": [{"close": 100}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+                "data_time": "2026-07-24",
+            },
+        )
+
+        payload = meta.model_dump(mode="json")
+        assert "params" not in payload
+        assert payload["params_summary"] == {
+            "ts_code": "600519.SH",
+            "nested": {"period": "D"},
+        }
+        assert payload["data_time"] == "2026-07-24"
+        assert "secret" not in json.dumps(payload, ensure_ascii=False)
