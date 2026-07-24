@@ -21,6 +21,10 @@ vi.mock('./committee/CommitteePage', () => ({
   default: () => <h1>投委会实时工作台</h1>,
 }))
 
+vi.mock('./pages/KnowledgePage', () => ({
+  default: () => <h1>知识库</h1>,
+}))
+
 beforeEach(() => {
   localStorage.clear()
   authState.token = null
@@ -39,16 +43,28 @@ it('收到统一认证变更事件后立即返回登录页', async () => {
   expect(screen.queryByRole('link', { name: '投委会' })).not.toBeInTheDocument()
 })
 
-it('Agent 导航包含投委会并路由到工作台', () => {
+it('Agent 导航包含知识库且不含投委会；直链投委会仍可用', () => {
   const { container } = render(
     <MemoryRouter initialEntries={['/agent/committee']}>
       <App />
     </MemoryRouter>,
   )
-  expect(screen.getByRole('link', { name: '投委会' })).toHaveAttribute(
+  expect(screen.queryByRole('link', { name: '投委会' })).not.toBeInTheDocument()
+  expect(screen.getByRole('link', { name: '知识库' })).toHaveAttribute(
     'href',
-    '/agent/committee',
+    '/agent/knowledge',
   )
   expect(screen.getByRole('heading', { name: '投委会实时工作台' })).toBeInTheDocument()
   expect(container.querySelector('.app-shell')).toHaveClass('app-shell--agent-chat')
+})
+
+it('知识库路由渲染知识库页且非 chat shell', () => {
+  const { container } = render(
+    <MemoryRouter initialEntries={['/agent/knowledge']}>
+      <App />
+    </MemoryRouter>,
+  )
+  expect(screen.getByRole('heading', { name: '知识库' })).toBeInTheDocument()
+  expect(container.querySelector('.app-shell')).toHaveClass('app-shell--agent')
+  expect(container.querySelector('.app-shell')).not.toHaveClass('app-shell--agent-chat')
 })

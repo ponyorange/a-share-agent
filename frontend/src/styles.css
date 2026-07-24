@@ -399,6 +399,10 @@ pre {
   color: #c084fc;
 }
 
+.kline-avg {
+  color: #f0c27a;
+}
+
 .kline-body {
   display: block;
   width: 100%;

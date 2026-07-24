@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import math
 from typing import Any, Literal
 
 import akshare as ak
@@ -71,6 +72,7 @@ def _bar(
     low: float,
     close: float,
     volume: float | None = None,
+    avg_price: float | None = None,
 ) -> dict[str, Any]:
     item: dict[str, Any] = {
         "time": time,
@@ -81,7 +83,38 @@ def _bar(
     }
     if volume is not None and not pd.isna(volume):
         item["volume"] = float(volume)
+    safe_avg = _safe_avg_price(avg_price)
+    if safe_avg is not None:
+        item["avg_price"] = safe_avg
     return item
+
+
+def _safe_avg_price(raw: Any) -> float | None:
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value) or value <= 0:
+        return None
+    return value
+
+
+def _parse_trend_row(row: Any) -> dict[str, Any] | None:
+    parts = str(row).split(",")
+    if len(parts) < 6:
+        return None
+    avg_price = _safe_avg_price(parts[7]) if len(parts) >= 8 else None
+    return _bar(
+        parts[0],
+        float(parts[1]),
+        float(parts[3]),
+        float(parts[4]),
+        float(parts[2]),
+        float(parts[5]),
+        avg_price=avg_price,
+    )
 
 
 def _fetch_trends(symbol: str, ndays: int) -> tuple[str, float | None, list[dict[str, Any]]]:
@@ -100,20 +133,10 @@ def _fetch_trends(symbol: str, ndays: int) -> tuple[str, float | None, list[dict
     pre_close = data.get("preClose")
     bars: list[dict[str, Any]] = []
     for row in data.get("trends") or []:
-        parts = str(row).split(",")
-        if len(parts) < 6:
-            continue
         # 时间,开,收,高,低,成交量,成交额,均价
-        bars.append(
-            _bar(
-                parts[0],
-                float(parts[1]),
-                float(parts[3]),
-                float(parts[4]),
-                float(parts[2]),
-                float(parts[5]),
-            )
-        )
+        bar = _parse_trend_row(row)
+        if bar is not None:
+            bars.append(bar)
     return name, float(pre_close) if pre_close is not None else None, bars
 
 

@@ -19,9 +19,12 @@ import {
   type BusinessDay,
 } from 'lightweight-charts'
 import {
+  AVG_PRICE_COLOR,
   priceDecimals,
   computeSma,
   DAILY_MA_COLORS,
+  isValidAvgPrice,
+  shouldShowAvgPrice,
   type KlineBar,
   type KlineRange,
   type KlineResponse,
@@ -34,6 +37,7 @@ export type HoverBar = {
   low: number
   close: number
   volume?: number
+  avgPrice?: number
   ma5?: number | null
   ma10?: number | null
   ma20?: number | null
@@ -369,6 +373,7 @@ export function KlineChart({ data, onHover }: Props) {
           low: b.low,
           close: b.close,
           volume: b.volume,
+          avgPrice: isValidAvgPrice(b.avg_price) ? b.avg_price : undefined,
           ma5: showDailyMa ? ma5Vals[i] : undefined,
           ma10: showDailyMa ? ma10Vals[i] : undefined,
           ma20: showDailyMa ? ma20Vals[i] : undefined,
@@ -403,6 +408,30 @@ export function KlineChart({ data, onHover }: Props) {
             axisLabelVisible: true,
             title: '昨收',
           })
+        }
+        if (shouldShowAvgPrice(data.range, bars)) {
+          const avgPoints: LineData[] = []
+          for (const bar of bars) {
+            if (!isValidAvgPrice(bar.avg_price)) continue
+            avgPoints.push({
+              time: toChartTime(bar.time, useUnix),
+              value: bar.avg_price,
+            })
+          }
+          if (avgPoints.length > 0) {
+            const avgSeries = chart.addSeries(LineSeries, {
+              color: AVG_PRICE_COLOR,
+              lineWidth: 1,
+              lastValueVisible: true,
+              priceLineVisible: false,
+              priceScaleId: 'left',
+              crosshairMarkerVisible: false,
+              title: '均价',
+              priceFormat,
+            })
+            seriesRef.current.push(avgSeries)
+            avgSeries.setData(avgPoints)
+          }
         }
       } else {
         const series = chart.addSeries(CandlestickSeries, {

@@ -4,7 +4,15 @@ import { KlineChart, type HoverBar } from './components/KlineChart'
 import { PageNav } from './components/PageNav'
 import { QuotePanel } from './components/QuotePanel'
 import { useSources } from './hooks/useSources'
-import { fetchKline, formatPrice, computeSma, type KlineRange, type KlineResponse } from './klineApi'
+import {
+  computeSma,
+  fetchKline,
+  formatPrice,
+  isValidAvgPrice,
+  shouldShowAvgPrice,
+  type KlineRange,
+  type KlineResponse,
+} from './klineApi'
 import { DEFAULT_SOURCE, hasFeature } from './sources'
 
 const ALL_RANGES: { id: KlineRange; label: string }[] = [
@@ -100,19 +108,29 @@ export default function KlinePage() {
     commit(symbolInput, range)
   }
 
-  const active = useMemo(() => {
-    const base = hover ?? data?.last ?? null
-    if (!base) return null
+  const active = useMemo<HoverBar | null>(() => {
     if (hover) return hover
-    if (range !== 'daily' || !data?.bars?.length) return base
+    const base = data?.last
+    if (!base) return null
+    const withAvg: HoverBar = {
+      ...base,
+      avgPrice:
+        range === 'realtime' && isValidAvgPrice(base.avg_price)
+          ? base.avg_price
+          : undefined,
+    }
+    if (range !== 'daily' || !data?.bars?.length) return withAvg
     const i = data.bars.length - 1
     return {
-      ...base,
+      ...withAvg,
       ma5: computeSma(data.bars, 5)[i],
       ma10: computeSma(data.bars, 10)[i],
       ma20: computeSma(data.bars, 20)[i],
     }
   }, [hover, data, range])
+  const showAvgPrice = data
+    ? shouldShowAvgPrice(range, data.bars)
+    : false
   const change = active && data?.pre_close != null && !hover
     ? active.close - data.pre_close
     : active
@@ -215,6 +233,11 @@ export default function KlinePage() {
                     {active.volume != null ? (
                       <span>量 {Math.round(active.volume).toLocaleString()}</span>
                     ) : null}
+                    {range === 'realtime' && active.avgPrice != null ? (
+                      <span className="kline-ma kline-avg">
+                        均价 {formatPrice(active.avgPrice, symbol)}
+                      </span>
+                    ) : null}
                     {range === 'daily' && active.ma5 != null ? (
                       <span className="kline-ma kline-ma5">
                         MA5 {formatPrice(active.ma5, symbol)}
@@ -236,6 +259,11 @@ export default function KlinePage() {
                       <span className="kline-ma kline-ma5">MA5</span>
                       <span className="kline-ma kline-ma10">MA10</span>
                       <span className="kline-ma kline-ma20">MA20</span>
+                    </p>
+                  ) : null}
+                  {showAvgPrice ? (
+                    <p className="kline-ma-legend" aria-hidden>
+                      <span className="kline-ma kline-avg">均价</span>
                     </p>
                   ) : null}
                 </>

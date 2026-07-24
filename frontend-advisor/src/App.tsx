@@ -14,6 +14,7 @@ import AgentSettingsPage from './pages/AgentSettingsPage'
 import AgentStrategyPage from './pages/AgentStrategyPage'
 import CommitteePage from './committee/CommitteePage'
 import HistoryPage from './pages/HistoryPage'
+import KnowledgePage from './pages/KnowledgePage'
 import LeaderboardPage from './pages/LeaderboardPage'
 import LoginPage from './pages/LoginPage'
 import PaperPage from './pages/PaperPage'
@@ -145,7 +146,7 @@ export default function App() {
               <NavLink to="/agent" end>
                 投研助手
               </NavLink>
-              <NavLink to="/agent/committee">投委会</NavLink>
+              <NavLink to="/agent/knowledge">知识库</NavLink>
               <NavLink to="/agent/strategy">策略副驾</NavLink>
               <NavLink to="/agent/settings">DeepSeek 配置</NavLink>
             </>
@@ -191,6 +192,7 @@ export default function App() {
           <Route path="/strategy" element={<StrategyPage />} />
           <Route path="/agent" element={<AgentChatPage />} />
           <Route path="/agent/committee" element={<CommitteePage />} />
+          <Route path="/agent/knowledge" element={<KnowledgePage />} />
           <Route path="/agent/strategy" element={<AgentStrategyPage />} />
           <Route path="/agent/settings" element={<AgentSettingsPage />} />
           <Route path="/agent/focus" element={<Navigate to="/agent" replace />} />

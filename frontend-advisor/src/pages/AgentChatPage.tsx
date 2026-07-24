@@ -36,7 +36,22 @@ const QUICK_PROMPTS: { label: string; message: string }[] = [
   },
 ]
 
-const ChatBubble = memo(function ChatBubble({ m }: { m: Msg }) {
+export const ChatBubble = memo(function ChatBubble({ m }: { m: Msg }) {
+  const [copied, setCopied] = useState(false)
+  const canCopy =
+    m.role === 'assistant' && Boolean(m.content.trim()) && !m.streaming
+
+  async function handleCopy() {
+    if (!canCopy) return
+    try {
+      await navigator.clipboard.writeText(m.content)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setCopied(false)
+    }
+  }
+
   return (
     <div className={`agent-bubble ${m.role}`}>
       <div className="agent-bubble-role">{m.role === 'user' ? '你' : '投研助手'}</div>
@@ -61,6 +76,32 @@ const ChatBubble = memo(function ChatBubble({ m }: { m: Msg }) {
             ))}
           </ul>
         </details>
+      ) : null}
+      {canCopy ? (
+        <div className="agent-bubble-actions">
+          <button
+            type="button"
+            className="btn ghost agent-copy-btn"
+            aria-label={copied ? '已复制' : '复制'}
+            title={copied ? '已复制' : '复制'}
+            onClick={() => void handleCopy()}
+          >
+            {copied ? (
+              <span aria-hidden="true">✓</span>
+            ) : (
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <rect x="8" y="8" width="11" height="11" rx="2" />
+                <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+              </svg>
+            )}
+          </button>
+        </div>
       ) : null}
     </div>
   )

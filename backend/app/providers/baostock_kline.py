@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import math
 from typing import Any
 
 import pandas as pd
@@ -48,6 +49,7 @@ def _bar(
     low: float,
     close: float,
     volume: float | None = None,
+    avg_price: float | None = None,
 ) -> dict[str, Any]:
     item: dict[str, Any] = {
         "time": time,
@@ -58,6 +60,13 @@ def _bar(
     }
     if volume is not None and not pd.isna(volume):
         item["volume"] = float(volume)
+    if (
+        avg_price is not None
+        and not pd.isna(avg_price)
+        and math.isfinite(float(avg_price))
+        and float(avg_price) > 0
+    ):
+        item["avg_price"] = float(avg_price)
     return item
 
 
@@ -129,11 +138,40 @@ def _bars_from_day_df(df: pd.DataFrame) -> list[dict[str, Any]]:
 
 def _bars_from_min_df(df: pd.DataFrame) -> list[dict[str, Any]]:
     bars: list[dict[str, Any]] = []
+    current_day: str | None = None
+    cumulative_amount = 0.0
+    cumulative_volume = 0.0
+    last_avg: float | None = None
     for _, row in df.iterrows():
         try:
             date = str(row["date"])
             t = _parse_minute_time(date, row.get("time", ""))
             vol = _f(row["volume"]) if "volume" in row and str(row["volume"]) != "" else None
+            amount = (
+                _f(row["amount"])
+                if "amount" in row and str(row["amount"]) != ""
+                else None
+            )
+            if date != current_day:
+                current_day = date
+                cumulative_amount = 0.0
+                cumulative_volume = 0.0
+                last_avg = None
+            avg_price: float | None = None
+            if (
+                vol is not None
+                and amount is not None
+                and math.isfinite(vol)
+                and math.isfinite(amount)
+                and vol > 0
+                and amount > 0
+            ):
+                cumulative_volume += vol
+                cumulative_amount += amount
+                last_avg = cumulative_amount / cumulative_volume
+                avg_price = last_avg
+            elif last_avg is not None:
+                avg_price = last_avg
             bars.append(
                 _bar(
                     t,
@@ -142,6 +180,7 @@ def _bars_from_min_df(df: pd.DataFrame) -> list[dict[str, Any]]:
                     _f(row["low"]),
                     _f(row["close"]),
                     vol,
+                    avg_price=avg_price,
                 )
             )
         except (TypeError, ValueError):

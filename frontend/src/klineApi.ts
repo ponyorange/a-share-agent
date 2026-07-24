@@ -20,6 +20,7 @@ export type KlineBar = {
   low: number
   close: number
   volume?: number
+  avg_price?: number
 }
 
 export type KlineResponse = {
@@ -68,6 +69,19 @@ export function computeSma(
     if (i >= period - 1) out[i] = sum / period
   }
   return out
+}
+
+export const AVG_PRICE_COLOR = '#f0c27a'
+
+export function isValidAvgPrice(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
+export function shouldShowAvgPrice(
+  range: KlineRange,
+  bars: KlineBar[],
+): boolean {
+  return range === 'realtime' && bars.some((bar) => isValidAvgPrice(bar.avg_price))
 }
 
 export const DAILY_MA_COLORS = {
