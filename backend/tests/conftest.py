@@ -15,3 +15,5 @@ os.environ.setdefault(
     "test-only-llm-encryption-key-with-32-bytes",
 )
 os.environ.setdefault("DEV_SEED_ENABLED", "0")
+os.environ.setdefault("SANDBOX_URL", "http://sandbox.test")
+os.environ.setdefault("SANDBOX_TOKEN", "test-sandbox-token")
