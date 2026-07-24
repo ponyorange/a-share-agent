@@ -26,6 +26,20 @@ class FakeProvider:
         }
 
 
+class LimitIgnoringProvider:
+    def fetch(self, name, params, limit):
+        rows = [{"close": value} for value in range(5_001)]
+        return {
+            "name": name,
+            "params": params,
+            "columns": ["close"],
+            "rows": rows,
+            "returned": len(rows),
+            "total": len(rows),
+            "truncated": False,
+        }
+
+
 def test_provider_tools_discover_and_store_without_exposing_full_dataset(tmp_path):
     with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
         tools = {tool.name: tool for tool in build_provider_tools(workspace)}
@@ -80,6 +94,29 @@ def test_fetch_provider_data_bounds_limit_to_workspace_limits(tmp_path):
                 )
             )
         assert fetched["dataset"]["returned"] == 3
+
+
+def test_fetch_provider_data_rejects_provider_that_ignores_bounded_limit(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
+        tools = {tool.name: tool for tool in build_provider_tools(workspace)}
+        with patch(
+            "app.advisor.agent.data_agent.provider_tools.providers.get_provider",
+            return_value=LimitIgnoringProvider(),
+        ):
+            payload = json.loads(
+                tools["fetch_provider_data"].invoke(
+                    {"source": "fake", "name": "prices", "params_json": "{}", "limit": 100}
+                )
+            )
+        assert payload == {
+            "error": {
+                "code": "invalid_params",
+                "message": "参数错误",
+                "source": "fake",
+                "interface": "prices",
+            }
+        }
+        assert workspace.datasets == []
 
 
 def test_provider_errors_are_stable_and_do_not_leak_details(tmp_path):

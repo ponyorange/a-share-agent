@@ -58,6 +58,27 @@ def test_workspace_enforces_input_bytes_without_storing_dataset(tmp_path):
         assert workspace.total_bytes == 0
 
 
+def test_workspace_enforces_rows_per_fetch_without_storing_dataset(tmp_path):
+    limits = DataAgentLimits(max_rows_per_fetch=2)
+    with DatasetWorkspace(limits, root=tmp_path / "request") as workspace:
+        with pytest.raises(ValueError, match="^max_rows_per_fetch exceeded$"):
+            workspace.create_dataset(
+                "akshare",
+                "ignored-limit",
+                {},
+                {
+                    "columns": ["x"],
+                    "rows": [{"x": 1}, {"x": 2}, {"x": 3}],
+                    "returned": 3,
+                    "total": 3,
+                    "truncated": False,
+                },
+            )
+        assert workspace.datasets == []
+        assert workspace.total_rows == 0
+        assert workspace.total_bytes == 0
+
+
 def test_workspace_isolates_dataset_ids_between_requests(tmp_path):
     with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "request-a") as first:
         first_meta = first.create_dataset(

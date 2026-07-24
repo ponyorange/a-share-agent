@@ -41,6 +41,8 @@ class DatasetWorkspace:
         self, source: str, interface: str, params: dict[str, Any], payload: dict[str, Any]
     ) -> DatasetMeta:
         rows = list(payload.get("rows") or [])
+        if len(rows) > self.limits.max_rows_per_fetch:
+            raise ValueError("max_rows_per_fetch exceeded")
         encoded = json.dumps(rows, ensure_ascii=False, default=str).encode()
         if self._total_rows + len(rows) > self.limits.max_total_rows:
             raise ValueError("max_total_rows exceeded")
