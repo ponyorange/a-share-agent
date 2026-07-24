@@ -75,6 +75,7 @@ def clean_overrides(monkeypatch):
     monkeypatch.setenv("SANDBOX_TOKEN", TOKEN)
     monkeypatch.setenv("SANDBOX_RUNNER_IMAGE", "fixed-runner:test")
     controller.app.dependency_overrides.clear()
+    controller.app.dependency_overrides[controller.get_executor] = lambda: FakeExecutor()
     yield
     controller.app.dependency_overrides.clear()
 
