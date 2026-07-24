@@ -19,13 +19,15 @@ _MAX_METADATA_STRING = 512
 _MAX_DOC_STRING = 2_048
 _MAX_INTERFACES = 50
 _MAX_PARAMS = 64
+_UNSUPPORTED = "[unsupported]"
 
 
 def _truncate_text(value: Any, limit: int = _MAX_METADATA_STRING) -> tuple[str, bool]:
-    text = str(value or "")
-    if len(text) <= limit:
-        return text, False
-    return text[:limit], True
+    if type(value) is not str:
+        return _UNSUPPORTED, True
+    if len(value) <= limit:
+        return value, False
+    return value[:limit], True
 
 
 def _sanitize_metadata_value(
@@ -40,13 +42,14 @@ def _sanitize_metadata_value(
         return "[truncated]", True
     if depth > _MAX_METADATA_DEPTH:
         return "[truncated]", True
-    if value is None or isinstance(value, (bool, int)):
+    value_type = type(value)
+    if value is None or value_type in (bool, int):
         return value, False
-    if isinstance(value, float):
-        return (value, False) if math.isfinite(value) else ("[truncated]", True)
-    if isinstance(value, str):
+    if value_type is float:
+        return (value, False) if math.isfinite(value) else (_UNSUPPORTED, True)
+    if value_type is str:
         return _truncate_text(value)
-    if isinstance(value, list):
+    if value_type in (list, tuple):
         truncated = len(value) > _MAX_METADATA_ITEMS
         output = []
         for child in value[:_MAX_METADATA_ITEMS]:
@@ -56,10 +59,13 @@ def _sanitize_metadata_value(
             output.append(safe)
             truncated = truncated or child_truncated
         return output, truncated
-    if isinstance(value, dict):
+    if value_type is dict:
         truncated = len(value) > _MAX_METADATA_ITEMS
         output: dict[str, Any] = {}
         for raw_key, child in list(value.items())[:_MAX_METADATA_ITEMS]:
+            if type(raw_key) is not str:
+                truncated = True
+                continue
             key, key_truncated = _truncate_text(raw_key, 128)
             if key.casefold() in SENSITIVE_KEYS:
                 truncated = True
@@ -70,7 +76,7 @@ def _sanitize_metadata_value(
             output[key] = safe
             truncated = truncated or key_truncated or child_truncated
         return output, truncated
-    return _truncate_text(value)
+    return _UNSUPPORTED, True
 
 
 def _bounded_value(value: Any, byte_limit: int) -> tuple[Any, bool]:
@@ -81,9 +87,9 @@ def _bounded_value(value: Any, byte_limit: int) -> tuple[Any, bool]:
 
 
 def _source_item(item: Any) -> dict[str, Any]:
-    raw = item if isinstance(item, dict) else {}
+    raw = item if type(item) is dict else {}
     output: dict[str, Any] = {"trust": _METADATA_TRUST}
-    truncated = not isinstance(item, dict)
+    truncated = type(item) is not dict
     for key in ("id", "label", "ready", "version", "interface_count", "error"):
         if key not in raw:
             continue
@@ -98,9 +104,9 @@ def _source_item(item: Any) -> dict[str, Any]:
 
 
 def _interface_summary(item: Any) -> tuple[dict[str, Any], bool]:
-    raw = item if isinstance(item, dict) else {}
+    raw = item if type(item) is dict else {}
     output: dict[str, Any] = {"trust": _METADATA_TRUST}
-    truncated = False
+    truncated = type(item) is not dict
     for key in ("name", "category", "category_label"):
         if key in raw:
             output[key], item_truncated = _truncate_text(raw[key], 256)
@@ -109,17 +115,18 @@ def _interface_summary(item: Any) -> tuple[dict[str, Any], bool]:
         output["doc"], item_truncated = _truncate_text(raw["doc"], _MAX_DOC_STRING)
         truncated = truncated or item_truncated
     if "param_count" in raw:
-        try:
-            output["param_count"] = max(0, min(int(raw["param_count"]), 100_000))
-        except (TypeError, ValueError):
+        if type(raw["param_count"]) is int:
+            output["param_count"] = max(0, min(raw["param_count"], 100_000))
+        else:
+            output["param_count"] = _UNSUPPORTED
             truncated = True
     return output, truncated
 
 
 def _parameter_definition(item: Any) -> tuple[dict[str, Any], bool]:
-    raw = item if isinstance(item, dict) else {}
+    raw = item if type(item) is dict else {}
     output: dict[str, Any] = {}
-    truncated = False
+    truncated = type(item) is not dict
     for key in ("name", "annotation", "type"):
         if key in raw:
             output[key], item_truncated = _truncate_text(raw[key], 256)
@@ -129,19 +136,24 @@ def _parameter_definition(item: Any) -> tuple[dict[str, Any], bool]:
             output[key], item_truncated = _truncate_text(raw[key], 512)
             truncated = truncated or item_truncated
     if "required" in raw:
-        output["required"] = bool(raw["required"])
+        if type(raw["required"]) is bool:
+            output["required"] = raw["required"]
+        else:
+            output["required"] = _UNSUPPORTED
+            truncated = True
     for key in ("default", "enum", "choices"):
         if key in raw:
             output[key], item_truncated = _bounded_value(raw[key], 2_048)
             truncated = truncated or item_truncated
-    if any(str(key).casefold() in SENSITIVE_KEYS for key in raw):
-        truncated = True
+    for key in raw:
+        if type(key) is not str or key.casefold() in SENSITIVE_KEYS:
+            truncated = True
     return output, truncated
 
 
 def _interface_detail(item: Any) -> dict[str, Any]:
-    if not isinstance(item, dict):
-        raise LookupError("interface_not_found")
+    if type(item) is not dict:
+        return {"truncated": True}
     output: dict[str, Any] = {}
     truncated = False
     for key in ("name", "category", "category_label"):
@@ -154,7 +166,7 @@ def _interface_detail(item: Any) -> dict[str, Any]:
             truncated = truncated or item_truncated
 
     params = item.get("params")
-    if isinstance(params, list):
+    if type(params) in (list, tuple):
         truncated = truncated or len(params) > _MAX_PARAMS
         output["params"] = []
         for raw_param in params[:_MAX_PARAMS]:
@@ -165,23 +177,27 @@ def _interface_detail(item: Any) -> dict[str, Any]:
                 break
             output["params"].append(param)
             truncated = truncated or param_truncated
+    elif "params" in item:
+        output["params"] = []
+        truncated = True
     if "example_params" in item:
         output["example_params"], item_truncated = _bounded_value(
             item["example_params"], 4_096
         )
         truncated = truncated or item_truncated
-    output["truncated"] = truncated or any(
-        key not in {
-            "name",
-            "category",
-            "category_label",
-            "doc",
-            "docstring",
-            "params",
-            "example_params",
-        }
-        for key in item
-    )
+    allowed = {
+        "name",
+        "category",
+        "category_label",
+        "doc",
+        "docstring",
+        "params",
+        "example_params",
+    }
+    output["truncated"] = truncated
+    for key in item:
+        if type(key) is not str or key not in allowed:
+            output["truncated"] = True
     return output
 
 
@@ -230,7 +246,12 @@ def build_provider_tools(workspace: DatasetWorkspace) -> list[BaseTool]:
     def list_data_sources() -> str:
         """列出所有已注册数据源及就绪状态。"""
         try:
-            raw_sources = list(providers.list_sources())
+            raw_value = providers.list_sources()
+            if type(raw_value) not in (list, tuple):
+                raw_sources = []
+                sources = [{"trust": _METADATA_TRUST, "truncated": True}]
+                return _metadata_json(sources)
+            raw_sources = raw_value
             sources = []
             for raw_item in raw_sources[:50]:
                 item = _source_item(raw_item)
@@ -253,12 +274,18 @@ def build_provider_tools(workspace: DatasetWorkspace) -> list[BaseTool]:
             items = providers.get_provider(source).list_interfaces(
                 category=category or None, keyword=keyword or None
             )
+            if type(items) not in (list, tuple):
+                items = ()
+                collection_truncated = True
+            else:
+                collection_truncated = False
             output = {
                 "source": _truncate_text(source, 128)[0],
                 "trust": _METADATA_TRUST,
                 "interfaces": [],
                 "count": len(items),
-                "truncated": len(items) > _MAX_INTERFACES,
+                "truncated": collection_truncated
+                or len(items) > _MAX_INTERFACES,
             }
             for raw_item in items[:_MAX_INTERFACES]:
                 item, item_truncated = _interface_summary(raw_item)
