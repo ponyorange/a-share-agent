@@ -7,6 +7,8 @@
 | 文件 | 说明 |
 |------|------|
 | `share-data-<tag>.tar.gz` | `docker save` 导出的应用镜像 |
+| `share-data-sandbox-controller-<tag>.tar.gz` | `docker save` 导出的沙箱 Controller 镜像 |
+| `share-data-python-sandbox-<tag>.tar.gz` | `docker save` 导出的沙箱 Runner 镜像（一次性容器使用，不作为常驻 service） |
 | `docker-compose.yml` | 编排文件（`pull_policy: never`，用本地镜像） |
 | `.env.example` | 秘钥 / Mongo 等环境变量模板 |
 | `IMAGE_TAG.txt` | 本次打包的镜像标签 |
@@ -15,7 +17,24 @@
 
 ## 部署步骤
 
-从仓库根目录构建三类镜像。先复制 `deploy/.env.example` 为 `deploy/.env`，
+### 构建发布包
+
+从仓库根目录执行打包脚本。脚本会构建并导出三类镜像：应用、
+`sandbox-controller` 和一次性 Runner；默认目标平台为 `linux/amd64`：
+
+```bash
+DOCKER_MIRROR=docker.1ms.run PLATFORM=linux/amd64 ./scripts/package-docker.sh
+```
+
+发布目录 `dist/` 可整体复制到部署机：
+
+```bash
+scp -r dist/ user@host:/opt/share-data/
+```
+
+### 从源码直接部署
+
+若不使用发布包，也可从仓库根目录构建三类镜像。先复制 `deploy/.env.example` 为 `deploy/.env`，
 填入 `MONGODB_URI`、`JWT_SECRET`、`LLM_ENCRYPTION_KEY` 和至少 32 字节的
 `SANDBOX_TOKEN`；若当前 shell 未自动读取 `deploy/.env`，先导出其中变量或用
 Compose 的 `--env-file deploy/.env` 选项。Runner 只作为一次性执行镜像构建，
@@ -28,9 +47,11 @@ docker build -f deploy/Dockerfile -t share-data:latest .
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
+### 在部署机启动发布包
+
 ```bash
-# 1. 加载镜像
-gunzip -c share-data-*.tar.gz | docker load
+# 1. 加载所有镜像
+for image in *.tar.gz; do gunzip -c "$image" | docker load; done
 
 # 2. 配置秘钥（不进镜像）
 cp .env.example .env
@@ -48,7 +69,9 @@ curl -s -H "Authorization: Bearer <token>" \
   http://127.0.0.1:8000/api/advisor/committee/health
 ```
 
-或直接：`./load-and-run.sh`
+或直接：`./load-and-run.sh`。首次运行若没有 `.env`，脚本会复制
+`.env.example` 为 `.env` 后退出；填入 `MONGODB_URI`、`JWT_SECRET`、
+`LLM_ENCRYPTION_KEY`、至少 32 字节的 `SANDBOX_TOKEN` 后再执行一次。
 
 生产必须保持 `APP_ENV=production` 与 `DEV_SEED_ENABLED=0`。
 `MONGODB_URI`、`JWT_SECRET`、`LLM_ENCRYPTION_KEY` 均由部署机密钥系统注入；

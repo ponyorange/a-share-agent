@@ -17,7 +17,7 @@ services:
       - PORT=8000
       - CORS_ORIGINS=*
       - SANDBOX_URL=http://sandbox-controller:8090
-      - SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set}
+      - SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set to at least 32 bytes}
 
     depends_on:
       sandbox-controller:
@@ -48,7 +48,7 @@ services:
       - .env
 
     environment:
-      - SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set}
+      - SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set to at least 32 bytes}
       - SANDBOX_RUNNER_IMAGE=share-data-python-sandbox:2026-07-24
 
     volumes:

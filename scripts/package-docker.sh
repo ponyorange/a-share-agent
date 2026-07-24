@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 将本应用打包为 Docker 镜像，并把镜像包与 compose 部署文件输出到 dist/
+# 将本应用与沙箱镜像打包为 Docker 镜像，并把镜像包与 compose 部署文件输出到 dist/
 #
 # 用法：
 #   ./scripts/package-docker.sh
@@ -17,11 +17,19 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="${ROOT}/dist"
 DEPLOY="${ROOT}/deploy"
 DOCKERFILE="${DEPLOY}/Dockerfile"
+RUNNER_DOCKERFILE="${ROOT}/sandbox/runner/Dockerfile"
+CONTROLLER_DOCKERFILE="${ROOT}/sandbox/controller/Dockerfile"
 
 IMAGE_NAME="${IMAGE_NAME:-share-data}"
+RUNNER_IMAGE_NAME="${RUNNER_IMAGE_NAME:-share-data-python-sandbox}"
+CONTROLLER_IMAGE_NAME="${CONTROLLER_IMAGE_NAME:-share-data-sandbox-controller}"
 IMAGE_TAG="${IMAGE_TAG:-$(date +%Y%m%d%H%M)}"
 FULL_TAG="${IMAGE_NAME}:${IMAGE_TAG}"
 LATEST_TAG="${IMAGE_NAME}:latest"
+RUNNER_FULL_TAG="${RUNNER_IMAGE_NAME}:${IMAGE_TAG}"
+RUNNER_LATEST_TAG="${RUNNER_IMAGE_NAME}:latest"
+CONTROLLER_FULL_TAG="${CONTROLLER_IMAGE_NAME}:${IMAGE_TAG}"
+CONTROLLER_LATEST_TAG="${CONTROLLER_IMAGE_NAME}:latest"
 # 绿联 NAS（Intel）等 x86 机器请用 amd64；本机 Apple Silicon 调试可改 arm64
 PLATFORM="${PLATFORM:-linux/amd64}"
 
@@ -49,11 +57,21 @@ if [[ ! -f "$DOCKERFILE" ]]; then
   echo "错误: 缺少 ${DOCKERFILE}" >&2
   exit 1
 fi
+if [[ ! -f "$RUNNER_DOCKERFILE" ]]; then
+  echo "错误: 缺少 ${RUNNER_DOCKERFILE}" >&2
+  exit 1
+fi
+if [[ ! -f "$CONTROLLER_DOCKERFILE" ]]; then
+  echo "错误: 缺少 ${CONTROLLER_DOCKERFILE}" >&2
+  exit 1
+fi
 
 mkdir -p "$DIST"
 # 清理旧的打包产物（保留目录）
 rm -f \
   "${DIST}/${IMAGE_NAME}-"*.tar.gz \
+  "${DIST}/${RUNNER_IMAGE_NAME}-"*.tar.gz \
+  "${DIST}/${CONTROLLER_IMAGE_NAME}-"*.tar.gz \
   "${DIST}/docker-compose.yml" \
   "${DIST}/.env.example" \
   "${DIST}/README.md" \
@@ -62,6 +80,8 @@ rm -f \
   "${DIST}/load-and-run.sh"
 
 echo "==> 镜像: ${FULL_TAG}"
+echo "==> 沙箱 Controller: ${CONTROLLER_FULL_TAG}"
+echo "==> 沙箱 Runner: ${RUNNER_FULL_TAG}"
 
 # 基础镜像（可选）：DOCKER_MIRROR=docker.1ms.run 或自行指定 NODE_IMAGE / PYTHON_IMAGE
 NODE_IMAGE="${NODE_IMAGE:-}"
@@ -84,6 +104,7 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
   PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
   PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST:-mirrors.aliyun.com}"
   if docker buildx version >/dev/null 2>&1; then
+    echo "==> 构建应用镜像…"
     docker buildx build \
       --platform "$PLATFORM" \
       --load \
@@ -96,7 +117,32 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
       -t "$FULL_TAG" \
       -t "$LATEST_TAG" \
       "$ROOT"
+    echo "==> 构建沙箱 Runner 镜像…"
+    docker buildx build \
+      --platform "$PLATFORM" \
+      --load \
+      --progress=plain \
+      -f "$RUNNER_DOCKERFILE" \
+      --build-arg "PYTHON_IMAGE=${PYTHON_IMAGE}" \
+      --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
+      --build-arg "PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}" \
+      -t "$RUNNER_FULL_TAG" \
+      -t "$RUNNER_LATEST_TAG" \
+      "$ROOT"
+    echo "==> 构建沙箱 Controller 镜像…"
+    docker buildx build \
+      --platform "$PLATFORM" \
+      --load \
+      --progress=plain \
+      -f "$CONTROLLER_DOCKERFILE" \
+      --build-arg "PYTHON_IMAGE=${PYTHON_IMAGE}" \
+      --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
+      --build-arg "PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}" \
+      -t "$CONTROLLER_FULL_TAG" \
+      -t "$CONTROLLER_LATEST_TAG" \
+      "$ROOT"
   else
+    echo "==> 构建应用镜像…"
     docker build \
       --platform "$PLATFORM" \
       --progress=plain \
@@ -108,20 +154,52 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
       -t "$FULL_TAG" \
       -t "$LATEST_TAG" \
       "$ROOT"
+    echo "==> 构建沙箱 Runner 镜像…"
+    docker build \
+      --platform "$PLATFORM" \
+      --progress=plain \
+      -f "$RUNNER_DOCKERFILE" \
+      --build-arg "PYTHON_IMAGE=${PYTHON_IMAGE}" \
+      --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
+      --build-arg "PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}" \
+      -t "$RUNNER_FULL_TAG" \
+      -t "$RUNNER_LATEST_TAG" \
+      "$ROOT"
+    echo "==> 构建沙箱 Controller 镜像…"
+    docker build \
+      --platform "$PLATFORM" \
+      --progress=plain \
+      -f "$CONTROLLER_DOCKERFILE" \
+      --build-arg "PYTHON_IMAGE=${PYTHON_IMAGE}" \
+      --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
+      --build-arg "PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}" \
+      -t "$CONTROLLER_FULL_TAG" \
+      -t "$CONTROLLER_LATEST_TAG" \
+      "$ROOT"
   fi
 else
-  if ! docker image inspect "$FULL_TAG" >/dev/null 2>&1; then
-    echo "错误: 本地不存在镜像 ${FULL_TAG}，请去掉 --skip-build" >&2
-    exit 1
-  fi
-  echo "==> 跳过构建，使用已有镜像 ${FULL_TAG}"
+  for image in "$FULL_TAG" "$RUNNER_FULL_TAG" "$CONTROLLER_FULL_TAG"; do
+    if ! docker image inspect "$image" >/dev/null 2>&1; then
+      echo "错误: 本地不存在镜像 ${image}，请去掉 --skip-build" >&2
+      exit 1
+    fi
+  done
+  echo "==> 跳过构建，使用已有镜像 ${FULL_TAG} / ${CONTROLLER_FULL_TAG} / ${RUNNER_FULL_TAG}"
 fi
 
 TAR_NAME="${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
 TAR_PATH="${DIST}/${TAR_NAME}"
+RUNNER_TAR_NAME="${RUNNER_IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
+RUNNER_TAR_PATH="${DIST}/${RUNNER_TAR_NAME}"
+CONTROLLER_TAR_NAME="${CONTROLLER_IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
+CONTROLLER_TAR_PATH="${DIST}/${CONTROLLER_TAR_NAME}"
 
 echo "==> 导出镜像 → dist/${TAR_NAME}"
 docker save "$FULL_TAG" | gzip -1 > "$TAR_PATH"
+echo "==> 导出镜像 → dist/${CONTROLLER_TAR_NAME}"
+docker save "$CONTROLLER_FULL_TAG" | gzip -1 > "$CONTROLLER_TAR_PATH"
+echo "==> 导出镜像 → dist/${RUNNER_TAR_NAME}"
+docker save "$RUNNER_FULL_TAG" | gzip -1 > "$RUNNER_TAR_PATH"
 
 echo "==> 写入 compose 部署文件…"
 cp "${DEPLOY}/.env.example" "${DIST}/.env.example"
@@ -147,6 +225,12 @@ services:
       - STATIC_ROOT=/app/static
       - PORT=8000
       - CORS_ORIGINS=*
+      - SANDBOX_URL=http://sandbox-controller:8090
+      - SANDBOX_TOKEN=\${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set}
+
+    depends_on:
+      sandbox-controller:
+        condition: service_healthy
 
   committee-worker:
     # 复用应用镜像和外部 Redis；不会在本机创建 Redis 服务。
@@ -162,6 +246,35 @@ services:
       - python
       - -m
       - app.advisor.committee.worker
+
+  sandbox-controller:
+    image: ${CONTROLLER_FULL_TAG}
+    pull_policy: never
+    container_name: share-data-sandbox-controller
+    restart: always
+
+    env_file:
+      - .env
+
+    environment:
+      - SANDBOX_TOKEN=\${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set}
+      - SANDBOX_RUNNER_IMAGE=${RUNNER_FULL_TAG}
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    expose:
+      - "8090"
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')
+      interval: 30s
+      timeout: 5s
+      retries: 3
 EOF
 
 printf '%s\n' "$FULL_TAG" > "${DIST}/IMAGE_TAG.txt"
@@ -175,17 +288,20 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
 shopt -s nullglob
-TARS=(share-data-*.tar.gz)
+TARS=(*.tar.gz)
 if [[ ${#TARS[@]} -eq 0 ]]; then
-  echo "未找到 share-data-*.tar.gz" >&2
+  echo "未找到 *.tar.gz 镜像包" >&2
   exit 1
 fi
-echo "加载镜像: ${TARS[0]}"
-gunzip -c "${TARS[0]}" | docker load
+for tar in "${TARS[@]}"; do
+  echo "加载镜像: ${tar}"
+  gunzip -c "${tar}" | docker load
+done
 
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  echo "已生成 .env，请从密钥系统配置 MONGODB_URI / JWT_SECRET / LLM_ENCRYPTION_KEY；启用委员会时还需配置外部 Redis。" >&2
+  echo "已生成 .env，请从密钥系统配置 MONGODB_URI / JWT_SECRET / LLM_ENCRYPTION_KEY / SANDBOX_TOKEN；启用委员会时还需配置外部 Redis。" >&2
+  echo "SANDBOX_TOKEN 至少 32 字节，可用 openssl rand -hex 32 生成。" >&2
   exit 1
 fi
 
@@ -195,15 +311,21 @@ EOF
 chmod +x "${DIST}/load-and-run.sh"
 
 SIZE="$(du -h "$TAR_PATH" | awk '{print $1}')"
+CONTROLLER_SIZE="$(du -h "$CONTROLLER_TAR_PATH" | awk '{print $1}')"
+RUNNER_SIZE="$(du -h "$RUNNER_TAR_PATH" | awk '{print $1}')"
 echo
 echo "打包完成 → ${DIST}/"
-echo "  镜像包:     ${TAR_NAME} (${SIZE})"
-echo "  镜像标签:   ${FULL_TAG}"
-echo "  目标架构:   ${PLATFORM}"
-echo "  编排:       docker-compose.yml"
-echo "  环境模板:   .env.example"
-echo "  说明:       README.md"
-echo "  一键脚本:   load-and-run.sh"
+echo "  应用镜像包:       ${TAR_NAME} (${SIZE})"
+echo "  Controller 镜像包: ${CONTROLLER_TAR_NAME} (${CONTROLLER_SIZE})"
+echo "  Runner 镜像包:     ${RUNNER_TAR_NAME} (${RUNNER_SIZE})"
+echo "  应用镜像标签:     ${FULL_TAG}"
+echo "  Controller 标签:  ${CONTROLLER_FULL_TAG}"
+echo "  Runner 标签:      ${RUNNER_FULL_TAG}"
+echo "  目标架构:         ${PLATFORM}"
+echo "  编排:             docker-compose.yml"
+echo "  环境模板:         .env.example"
+echo "  说明:             README.md"
+echo "  一键脚本:         load-and-run.sh"
 echo
 echo "部署机示例:"
 echo "  scp -r dist/ user@host:/opt/share-data/"

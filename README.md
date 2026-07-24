@@ -17,6 +17,22 @@
 - Python **>= 3.10**（推荐 3.12）
 - Node.js **>= 18**
 
+## Docker 发布包
+
+从仓库根目录运行 `./scripts/package-docker.sh` 会在 `dist/` 生成离线发布包，
+包含应用镜像、沙箱 Controller 镜像、沙箱 Runner 镜像、`docker-compose.yml`、
+`.env.example` 和 `load-and-run.sh`。部署机复制整个 `dist/` 后执行：
+
+```bash
+cd /opt/share-data
+./load-and-run.sh
+```
+
+首次运行会生成 `.env` 并退出；填入 `MONGODB_URI`、`JWT_SECRET`、
+`LLM_ENCRYPTION_KEY` 和至少 32 字节的 `SANDBOX_TOKEN` 后再次运行脚本。
+发布包 compose 保持 API 无 Docker socket、Controller 仅在 Compose 内网
+`expose: 8090`、Runner 只由 Controller 拉起为一次性容器。
+
 ## 启动后端
 
 ```bash
