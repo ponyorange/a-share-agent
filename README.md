@@ -17,6 +17,22 @@
 - Python **>= 3.10**（推荐 3.12）
 - Node.js **>= 18**
 
+## Docker 发布包
+
+从仓库根目录运行 `./scripts/package-docker.sh` 会在 `dist/` 生成离线发布包，
+包含应用镜像、沙箱 Controller 镜像、沙箱 Runner 镜像、`docker-compose.yml`、
+`.env.example` 和 `load-and-run.sh`。部署机复制整个 `dist/` 后执行：
+
+```bash
+cd /opt/share-data
+./load-and-run.sh
+```
+
+首次运行会生成 `.env` 并退出；填入 `MONGODB_URI`、`JWT_SECRET`、
+`LLM_ENCRYPTION_KEY` 和至少 32 字节的 `SANDBOX_TOKEN` 后再次运行脚本。
+发布包 compose 保持 API 无 Docker socket、Controller 仅在 Compose 内网
+`expose: 8090`、Runner 只由 Controller 拉起为一次性容器。
+
 ## 启动后端
 
 ```bash
@@ -53,6 +69,21 @@ cp .env.example .env
 
 健康检查：<http://127.0.0.1:8000/api/health>  
 数据源列表：<http://127.0.0.1:8000/api/sources>
+
+### 数据 Agent
+
+主顾问在识别到 Provider 外部数据查询或跨源计算需求时，会自动委派给数据
+Agent，不需要用户指定底层接口名。数据 Agent 会从运行时 Provider 目录动态
+发现 AKShare、Tushare、BaoStock 以及后续注册的新 Provider；新增 Provider
+完成后端注册后即可进入发现流程，无需为数据 Agent 单独维护工具清单。
+Tushare 调用仍需在 `.env` 中配置 `TUSHARE_TOKEN`。
+
+数据 Agent 只读运行，不写业务数据，也不持久化请求内临时数据。外部查询和
+沙箱计算受默认预算保护：单次最多 5,000 行、请求累计最多 50,000 行、输入
+最多 50 MiB、沙箱最多 30 秒 / 512 MiB、Python 重试最多 2 次、输出最多
+1 MiB，Agent 默认最多 24 步。完整数据只通过请求内 dataset ID 进入沙箱，
+不放入主 Agent 上下文。最终回答会说明使用的数据来源、数据时间、计算步骤、
+截断或预算限制，以及 Provider 部分失败和口径差异。
 
 ### 启用投委会 worker
 

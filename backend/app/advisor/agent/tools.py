@@ -40,6 +40,7 @@ from ..user_strategy import (
     update_user_strategy,
 )
 from . import unstructured as ustr
+from .data_agent.delegate import build_delegate_data_tool
 
 
 def _need_confirm(action: str, preview: dict[str, Any]) -> str:
@@ -1040,4 +1041,5 @@ def build_tools(user_id: str) -> list[Any]:
         fetch_index_extremes,
         fetch_symbol_daily_ma,
         load_knowledge,
+        build_delegate_data_tool(user_id),
     ]
