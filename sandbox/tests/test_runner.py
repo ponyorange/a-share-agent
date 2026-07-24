@@ -76,15 +76,15 @@ def test_execute_task_exposes_common_safe_builtins():
 
 
 @pytest.mark.parametrize(
-    ("code", "message"),
+    "code",
     [
-        ("import subprocess\nresult = {}", "import_not_allowed: subprocess"),
-        ("from os import environ\nresult = {}", "import_not_allowed: os"),
-        ("from . import sibling\nresult = {}", "import_not_allowed: "),
+        "import subprocess\nresult = {}",
+        "from os import environ\nresult = {}",
+        "from . import sibling\nresult = {}",
     ],
 )
-def test_execute_task_rejects_disallowed_import(code: str, message: str):
-    with pytest.raises(ValueError, match=f"^{message}$"):
+def test_execute_task_rejects_disallowed_import(code: str):
+    with pytest.raises(ValueError, match="^import_not_allowed$"):
         execute_task(code, {}, max_output_bytes=1024)
 
 
@@ -106,8 +106,9 @@ def test_execute_task_rejects_oversized_output_at_exact_boundary():
 
 @pytest.mark.parametrize("forbidden", ["open", "eval", "compile", "input"])
 def test_execute_task_does_not_expose_dangerous_builtins(forbidden: str):
-    with pytest.raises(NameError):
+    with pytest.raises(entrypoint.GeneratedCodeError) as caught:
         execute_task(f"result = {forbidden}", {}, max_output_bytes=1024)
+    assert caught.value.exception_type == "NameError"
 
 
 def _configure_main_paths(monkeypatch, tmp_path: Path):
@@ -148,11 +149,17 @@ def test_main_atomically_writes_success(monkeypatch, tmp_path: Path):
 
 def test_main_atomically_writes_sanitized_failure(monkeypatch, tmp_path: Path):
     input_dir, output_dir, _ = _configure_main_paths(monkeypatch, tmp_path)
-    long_secret = "secret-" * 100
+    secret = "TOKEN-sk_live_DO_NOT_LEAK"
+    large_table_value = "PRIVATE_TABLE_VALUE_" + ("x" * 2000)
+    datasets = [{"secret": secret, "payload": large_table_value} for _ in range(50)]
+    (input_dir / "datasets" / "huge.json").write_text(
+        json.dumps(datasets),
+        encoding="utf-8",
+    )
     (input_dir / "task.json").write_text(
         json.dumps(
             {
-                "code": f"result = {{}}[{long_secret!r}]",
+                "code": "result = {}[datasets['huge'].to_string()]",
                 "max_output_bytes": 100,
             }
         ),
@@ -161,9 +168,63 @@ def test_main_atomically_writes_sanitized_failure(monkeypatch, tmp_path: Path):
 
     assert entrypoint.main() == 1
     error = json.loads((output_dir / "error.json").read_text())
-    assert error["error"] == "KeyError"
-    assert len(error["message"]) == 500
-    assert "Traceback" not in error["message"]
-    assert "<generated>" not in error["message"]
+    assert error == {
+        "error": "generated_code_failed",
+        "message": "generated_code_failed",
+        "exception_type": "KeyError",
+    }
+    encoded_error = json.dumps(error)
+    assert secret not in encoded_error
+    assert large_table_value not in encoded_error
+    assert "huge" not in encoded_error
+    assert "Traceback" not in encoded_error
+    assert "<generated>" not in encoded_error
     assert not (output_dir / "result.json").exists()
     assert not list(output_dir.glob("*.tmp"))
+
+
+def test_main_hard_caps_requested_output_limit(monkeypatch, tmp_path: Path):
+    input_dir, output_dir, _ = _configure_main_paths(monkeypatch, tmp_path)
+    (input_dir / "task.json").write_text(
+        json.dumps(
+            {
+                "code": "result = 'x' * 1_048_577",
+                "max_output_bytes": 10_000_000,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert entrypoint.main() == 1
+    assert json.loads((output_dir / "error.json").read_text()) == {
+        "error": "output_too_large",
+        "message": "output_too_large",
+    }
+    assert not (output_dir / "result.json").exists()
+
+
+def test_main_reports_syntax_error_without_source(monkeypatch, tmp_path: Path):
+    input_dir, output_dir, _ = _configure_main_paths(monkeypatch, tmp_path)
+    secret_source = "TOKEN-secret-source ="
+    (input_dir / "task.json").write_text(
+        json.dumps({"code": secret_source}),
+        encoding="utf-8",
+    )
+
+    assert entrypoint.main() == 1
+    error = json.loads((output_dir / "error.json").read_text())
+    assert error == {
+        "error": "syntax_error",
+        "message": "syntax_error",
+        "line": 1,
+    }
+    assert secret_source not in json.dumps(error)
+
+
+def test_generated_exception_type_is_allowlisted():
+    error = entrypoint._error_payload(
+        entrypoint.GeneratedCodeError("SecretTokenError")
+    )
+
+    assert error["exception_type"] == "Exception"
+    assert "SecretTokenError" not in json.dumps(error)

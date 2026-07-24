@@ -26,6 +26,51 @@ OUTPUT_DIR = Path("/output")
 DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
 
 ALLOWED_IMPORT_ROOTS = {"pandas", "numpy", "math", "statistics", "datetime"}
+VALIDATION_ERROR_CODES = {
+    "import_not_allowed",
+    "invalid_output_limit",
+    "output_too_large",
+    "result_not_assigned",
+    "result_not_finite",
+}
+SAFE_EXCEPTION_TYPES = {
+    "ArithmeticError",
+    "AttributeError",
+    "Exception",
+    "ImportError",
+    "IndexError",
+    "KeyError",
+    "LookupError",
+    "ModuleNotFoundError",
+    "NameError",
+    "RuntimeError",
+    "TypeError",
+    "ValueError",
+    "ZeroDivisionError",
+}
+
+
+class RunnerValidationError(ValueError):
+    def __init__(self, code: str) -> None:
+        if code not in VALIDATION_ERROR_CODES:
+            raise ValueError("unknown_validation_error")
+        self.code = code
+        super().__init__(code)
+
+
+class GeneratedCodeError(Exception):
+    def __init__(self, exception_type: str) -> None:
+        self.exception_type = (
+            exception_type
+            if exception_type in SAFE_EXCEPTION_TYPES
+            else "Exception"
+        )
+        super().__init__("generated_code_failed")
+
+
+def _safe_exception_type(exc: Exception) -> str:
+    name = type(exc).__name__
+    return name if name in SAFE_EXCEPTION_TYPES else "Exception"
 
 
 def _safe_import(
@@ -38,7 +83,7 @@ def _safe_import(
     del globals, locals
     root = name.split(".", 1)[0]
     if level != 0 or root not in ALLOWED_IMPORT_ROOTS:
-        raise ValueError(f"import_not_allowed: {root}")
+        raise RunnerValidationError("import_not_allowed")
     module = importlib.import_module(name)
     return module if fromlist else importlib.import_module(root)
 
@@ -82,12 +127,12 @@ def _validate_imports(tree: ast.AST) -> None:
         for name in names:
             root = name.split(".", 1)[0]
             if level != 0 or root not in ALLOWED_IMPORT_ROOTS:
-                raise ValueError(f"import_not_allowed: {root}")
+                raise RunnerValidationError("import_not_allowed")
 
 
 def _reject_non_finite(value: Any) -> None:
     if isinstance(value, (float, np.floating)) and not math.isfinite(float(value)):
-        raise ValueError("result_not_finite")
+        raise RunnerValidationError("result_not_finite")
     if isinstance(value, dict):
         for key, item in value.items():
             _reject_non_finite(key)
@@ -124,6 +169,16 @@ def execute_task(
     *,
     max_output_bytes: int,
 ) -> Any:
+    if (
+        not isinstance(max_output_bytes, int)
+        or isinstance(max_output_bytes, bool)
+        or max_output_bytes < 0
+    ):
+        raise RunnerValidationError("invalid_output_limit")
+    effective_max_output_bytes = min(
+        max_output_bytes,
+        DEFAULT_MAX_OUTPUT_BYTES,
+    )
     tree = ast.parse(code, mode="exec")
     _validate_imports(tree)
     datasets = {key: pd.DataFrame(rows) for key, rows in raw_datasets.items()}
@@ -133,15 +188,20 @@ def execute_task(
         "np": np,
         "__builtins__": SAFE_BUILTINS,
     }
-    exec(compile(tree, "<generated>", "exec"), scope, scope)
+    try:
+        exec(compile(tree, "<generated>", "exec"), scope, scope)
+    except RunnerValidationError:
+        raise
+    except Exception as exc:
+        raise GeneratedCodeError(_safe_exception_type(exc)) from None
     if "result" not in scope:
-        raise ValueError("result_not_assigned")
+        raise RunnerValidationError("result_not_assigned")
 
     _reject_non_finite(scope["result"])
     safe = json_safe(_normalize_numpy_scalars(scope["result"]))
     encoded = json.dumps(safe, ensure_ascii=False, allow_nan=False).encode("utf-8")
-    if len(encoded) > max_output_bytes:
-        raise ValueError("output_too_large")
+    if len(encoded) > effective_max_output_bytes:
+        raise RunnerValidationError("output_too_large")
     return safe
 
 
@@ -174,6 +234,26 @@ def _load_datasets() -> dict[str, list[dict[str, Any]]]:
     return datasets
 
 
+def _error_payload(exc: Exception) -> dict[str, Any]:
+    if isinstance(exc, SyntaxError):
+        payload: dict[str, Any] = {
+            "error": "syntax_error",
+            "message": "syntax_error",
+        }
+        if isinstance(exc.lineno, int) and exc.lineno > 0:
+            payload["line"] = exc.lineno
+        return payload
+    if isinstance(exc, RunnerValidationError):
+        return {"error": exc.code, "message": exc.code}
+    if isinstance(exc, GeneratedCodeError):
+        return {
+            "error": "generated_code_failed",
+            "message": "generated_code_failed",
+            "exception_type": exc.exception_type,
+        }
+    return {"error": "runner_failed", "message": "runner_failed"}
+
+
 def main() -> int:
     try:
         with TASK_PATH.open(encoding="utf-8") as source:
@@ -190,11 +270,7 @@ def main() -> int:
         (OUTPUT_DIR / "error.json").unlink(missing_ok=True)
         return 0
     except Exception as exc:
-        error = {
-            "error": type(exc).__name__,
-            "message": str(exc)[:500],
-        }
-        _atomic_write_json(OUTPUT_DIR / "error.json", error)
+        _atomic_write_json(OUTPUT_DIR / "error.json", _error_payload(exc))
         (OUTPUT_DIR / "result.json").unlink(missing_ok=True)
         return 1
 
