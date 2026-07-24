@@ -142,6 +142,28 @@ def test_workspace_removes_files_after_failure(tmp_path):
     assert not path.exists()
 
 
+def test_workspace_records_bounded_canonical_sandbox_evidence(tmp_path):
+    with DatasetWorkspace(
+        DataAgentLimits(max_python_retries=2), root=tmp_path / "request"
+    ) as workspace:
+        first = workspace.record_sandbox_result({"z": 1, "a": [2.0]})
+        second = workspace.record_sandbox_result({"ok": True})
+
+        assert first.result == {"a": [2.0], "z": 1}
+        assert first.result_id != second.result_id
+        assert first.summary == {"type": "object", "bytes": 17}
+        assert workspace.matches_sandbox_result({"a": [2.0], "z": 1})
+        assert workspace.matches_sandbox_result(
+            {
+                "result_id": first.result_id,
+                "payload": {"z": 1, "a": [2.0]},
+            }
+        )
+        assert not workspace.matches_sandbox_result({"z": 999, "a": [2.0]})
+        with pytest.raises(ValueError, match="sandbox_result_limit_exceeded"):
+            workspace.record_sandbox_result({"third": True})
+
+
 def test_dataset_metadata_bounds_and_sanitizes_untrusted_samples(tmp_path):
     Evil.calls = 0
     rows = [

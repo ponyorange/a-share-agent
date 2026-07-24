@@ -177,7 +177,7 @@ def test_parse_data_agent_result_rejects_success_data_without_request_evidence(t
     with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
         result = parse_data_agent_result(_result_json(sources=[]), workspace=workspace)
 
-    assert result.failures[0].code == "incomplete_agent_result"
+    assert result.failures[0].code == "invalid_agent_result"
     assert result.data == {}
 
 
@@ -197,11 +197,11 @@ def test_parse_data_agent_result_requires_source_for_direct_provider_data(tmp_pa
         )
         result = parse_data_agent_result(_result_json(sources=[]), workspace=workspace)
 
-    assert result.failures[0].code == "incomplete_agent_result"
+    assert result.failures[0].code == "invalid_agent_result"
     assert result.data == {}
 
 
-def test_parse_data_agent_result_allows_partial_real_data_with_failures(tmp_path):
+def test_parse_data_agent_result_rejects_forged_data_with_valid_source(tmp_path):
     with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
         workspace.create_dataset(
             "akshare",
@@ -216,6 +216,68 @@ def test_parse_data_agent_result_allows_partial_real_data_with_failures(tmp_path
                 "data_time": "2026-07-24",
             },
         )
+        result = parse_data_agent_result(
+            _result_json(),
+            workspace=workspace,
+        )
+
+    assert result.failures[0].code == "invalid_agent_result"
+    assert result.data == {}
+
+
+def test_parse_data_agent_result_rejects_forged_data_after_any_sandbox_success(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        workspace.record_sandbox_result({"mean": 2.0})
+        result = parse_data_agent_result(
+            _result_json(data={"mean": 999.0}, sources=[]),
+            workspace=workspace,
+        )
+
+    assert result.failures[0].code == "invalid_agent_result"
+    assert result.data == {}
+
+
+def test_parse_data_agent_result_accepts_exact_sandbox_data_and_result_reference(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        evidence = workspace.record_sandbox_result({"rows": [{"value": 2.0}], "count": 1})
+        exact = parse_data_agent_result(
+            _result_json(data={"count": 1, "rows": [{"value": 2.0}]}, sources=[]),
+            workspace=workspace,
+        )
+        referenced = parse_data_agent_result(
+            _result_json(
+                data={
+                    "result_id": evidence.result_id,
+                    "payload": {"count": 1, "rows": [{"value": 2.0}]},
+                },
+                sources=[],
+            ),
+            workspace=workspace,
+        )
+
+    assert exact.data == {"count": 1, "rows": [{"value": 2.0}]}
+    assert referenced.data == {
+        "result_id": evidence.result_id,
+        "payload": {"count": 1, "rows": [{"value": 2.0}]},
+    }
+
+
+def test_parse_data_agent_result_allows_real_sandbox_data_with_partial_failures(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        workspace.create_dataset(
+            "akshare",
+            "stock_zh_a_hist",
+            {"symbol": "600519", "period": "daily", "token": "secret"},
+            {
+                "columns": ["close"],
+                "rows": [{"close": 10.5}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+                "data_time": "2026-07-24",
+            },
+        )
+        workspace.record_sandbox_result({"close": 10.5, "pe_ttm": 12.3})
         result = parse_data_agent_result(
             _result_json(
                 warnings=["另一数据源不可用"],
@@ -267,7 +329,9 @@ def test_run_data_agent_only_gives_provider_and_python_tools(tmp_path, caplog):
                                 "sources": [],
                                 "computation": [],
                                 "warnings": [],
-                                "failures": [],
+                                "failures": [
+                                    {"code": "no_data", "message": "未取得数据"}
+                                ],
                             }
                         )
                     ),

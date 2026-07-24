@@ -168,8 +168,19 @@ def build_python_tool(workspace: DatasetWorkspace, client: SandboxClient) -> Bas
             dataset_ids = _parse_dataset_ids(dataset_ids_json)
             datasets = workspace.export(dataset_ids)
             result = client.execute(code, datasets, workspace.limits)
-            workspace.record_sandbox_result(result)
-            return json.dumps({"result": result}, ensure_ascii=False)
+            try:
+                evidence = workspace.record_sandbox_result(result)
+            except ValueError:
+                return _tool_error("sandbox_invalid_output")
+            return json.dumps(
+                {
+                    "result_id": evidence.result_id,
+                    "result_summary": evidence.summary,
+                    "result": evidence.result,
+                },
+                ensure_ascii=False,
+                allow_nan=False,
+            )
         except ValueError:
             return _tool_error("invalid_dataset_ids")
         except KeyError:

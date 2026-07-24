@@ -41,3 +41,27 @@
 
 - 唯一警告是既有依赖 `passlib` 导入 Python `crypt` 的弃用警告，与本次改动无关。
 - 未调用真实 LLM、Provider 或 Sandbox Controller；验证范围为隔离单元测试。
+
+## 2026-07-25 全分支复审 Important 修复
+
+### 状态
+
+- `DatasetWorkspace` 现在为每次成功沙箱执行保存规范化 JSON、唯一 `result_id` 与有限摘要；证据条数受 Python 重试上限约束，单条大小受 `max_output_bytes` 约束。
+- `run_python_analysis` 成功响应包含 `result_id`、`result_summary` 与规范化 `result`。
+- 最终非空 `data` 必须规范化后精确匹配本请求某个成功沙箱结果，或使用仅含 `result_id` 与一致 `payload` 的显式引用；合法 source、任意其他沙箱成功均不能为伪造 data 背书。
+- 无成功沙箱结果时，非空 `data` 固定转换为 `invalid_agent_result`；空 data 若无明确 failure 则转换为 `incomplete_agent_result`。
+- 真实沙箱结果仍可与部分 `failures`、`warnings` 一并返回。
+
+### TDD 与验证
+
+- RED：新增核心场景后为 `8 failed, 58 passed, 1 warning`。
+- GREEN：聚焦 workspace/sandbox/graph 为 `66 passed, 1 warning`。
+- 完整数据 Agent 测试：`94 passed, 1 warning in 1.24s`。
+- Ruff：`All checks passed!`。
+- Compileall：退出码 0。
+- IDE lint：无错误。
+
+### Concerns
+
+- 唯一警告仍为既有 `passlib`/`crypt` 弃用警告。
+- 未调用真实 LLM、Provider 或 Sandbox Controller；验证范围为隔离单元测试。

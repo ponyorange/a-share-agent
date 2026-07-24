@@ -5,6 +5,7 @@ import math
 import secrets
 import shutil
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,25 @@ _MAX_SAMPLE_DEPTH = 5
 _MAX_SAMPLE_ITEMS = 16
 _MAX_SAMPLE_STRING = 512
 _MAX_SAMPLE_ROW_BYTES = 4_096
+
+
+@dataclass(frozen=True)
+class SandboxResultEvidence:
+    result_id: str
+    result: JsonValue
+    summary: dict[str, JsonValue]
+    canonical_json: bytes
+
+
+def _canonical_json(value: Any) -> tuple[JsonValue, bytes]:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return json.loads(encoded), encoded
 
 
 def _sanitize_provider_value(value: Any, depth: int = 0) -> JsonValue:
@@ -100,7 +120,7 @@ class DatasetWorkspace:
         self._total_rows = 0
         self._total_bytes = 0
         self._python_analysis_calls = 0
-        self._sandbox_results: list[JsonValue] = []
+        self._sandbox_results: list[SandboxResultEvidence] = []
 
     def __enter__(self) -> "DatasetWorkspace":
         self.root.mkdir(parents=True, exist_ok=True)
@@ -131,8 +151,50 @@ class DatasetWorkspace:
         self._python_analysis_calls += 1
         return True
 
-    def record_sandbox_result(self, result: JsonValue) -> None:
-        self._sandbox_results.append(result)
+    def record_sandbox_result(self, result: JsonValue) -> SandboxResultEvidence:
+        if len(self._sandbox_results) >= self.limits.max_python_retries:
+            raise ValueError("sandbox_result_limit_exceeded")
+        normalized, canonical = _canonical_json(result)
+        if len(canonical) > self.limits.max_output_bytes:
+            raise ValueError("sandbox_result_too_large")
+        evidence = SandboxResultEvidence(
+            result_id=f"sandbox_{secrets.token_urlsafe(18)}",
+            result=normalized,
+            summary={
+                "type": (
+                    "object"
+                    if type(normalized) is dict
+                    else "array"
+                    if type(normalized) is list
+                    else type(normalized).__name__
+                ),
+                "bytes": len(canonical),
+            },
+            canonical_json=canonical,
+        )
+        self._sandbox_results.append(evidence)
+        return evidence
+
+    def matches_sandbox_result(self, data: JsonValue) -> bool:
+        try:
+            _, canonical = _canonical_json(data)
+        except (TypeError, ValueError):
+            return False
+        if any(item.canonical_json == canonical for item in self._sandbox_results):
+            return True
+        if type(data) is not dict or set(data) != {"result_id", "payload"}:
+            return False
+        result_id = data.get("result_id")
+        if type(result_id) is not str:
+            return False
+        try:
+            _, payload_canonical = _canonical_json(data.get("payload"))
+        except (TypeError, ValueError):
+            return False
+        return any(
+            item.result_id == result_id and item.canonical_json == payload_canonical
+            for item in self._sandbox_results
+        )
 
     def create_dataset(
         self, source: str, interface: str, params: dict[str, Any], payload: dict[str, Any]

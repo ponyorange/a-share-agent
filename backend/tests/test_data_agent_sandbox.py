@@ -239,7 +239,9 @@ def test_python_analysis_tool_exports_only_requested_workspace_datasets(tmp_path
             )
         )
 
-    assert payload == {"result": {"mean": 2.0}}
+    assert payload["result"] == {"mean": 2.0}
+    assert payload["result_id"]
+    assert payload["result_summary"] == {"type": "object", "bytes": 12}
     assert captured["datasets"] == {meta.dataset_id: [{"x": 1}, {"x": 3}]}
     assert "result={'mean': 2.0}" not in json.dumps(payload, ensure_ascii=False)
     assert [{"x": 1}, {"x": 3}] != payload.get("result")
@@ -274,8 +276,11 @@ def test_python_analysis_tool_rejects_third_call_without_executing_client(tmp_pa
             "dataset_ids_json": json.dumps([meta.dataset_id]),
         }
 
-        assert json.loads(tool.invoke(arguments)) == {"result": {"call": 1}}
-        assert json.loads(tool.invoke(arguments)) == {"result": {"call": 2}}
+        first = json.loads(tool.invoke(arguments))
+        second = json.loads(tool.invoke(arguments))
+        assert first["result"] == {"call": 1}
+        assert second["result"] == {"call": 2}
+        assert first["result_id"] != second["result_id"]
         assert json.loads(tool.invoke(arguments)) == {
             "error": {
                 "code": "python_retry_limit_exceeded",
