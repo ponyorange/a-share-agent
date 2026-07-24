@@ -28,6 +28,7 @@ MAX_ARCHIVE_BYTES = 2 * 1024 * 1024
 MAX_EMPTY_BODY_CHUNKS = 32
 BODY_READ_TIMEOUT_SECONDS = 10
 CLEANUP_BUFFER_SECONDS = 5
+MIN_SANDBOX_TOKEN_BYTES = 32
 DATASET_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 SAFE_RUNNER_ERRORS = {
     "generated_code_failed",
@@ -71,6 +72,13 @@ class ExecuteResponse(BaseModel):
 class HealthResponse(BaseModel):
     docker_reachable: bool
     runner_image_available: bool
+
+
+def sandbox_token_from_environment() -> str:
+    token = os.environ["SANDBOX_TOKEN"].strip()
+    if len(token.encode("utf-8")) < MIN_SANDBOX_TOKEN_BYTES:
+        raise RuntimeError("sandbox_token_too_short")
+    return token
 
 
 class RawBodyLimitMiddleware:
@@ -414,7 +422,10 @@ def execute(
     x_sandbox_token: str = Header(default=""),
     executor: DockerExecutor = Depends(get_executor),
 ) -> ExecuteResponse:
-    expected = os.environ["SANDBOX_TOKEN"]
+    try:
+        expected = sandbox_token_from_environment()
+    except (KeyError, RuntimeError):
+        raise HTTPException(status_code=503, detail="sandbox_misconfigured") from None
     if not secrets.compare_digest(x_sandbox_token, expected):
         raise HTTPException(status_code=401, detail="unauthorized")
     if serialized_request_size(body) > MAX_INPUT_BYTES:

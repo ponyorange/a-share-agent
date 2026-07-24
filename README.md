@@ -54,6 +54,21 @@ cp .env.example .env
 健康检查：<http://127.0.0.1:8000/api/health>  
 数据源列表：<http://127.0.0.1:8000/api/sources>
 
+### 数据 Agent
+
+主顾问在识别到 Provider 外部数据查询或跨源计算需求时，会自动委派给数据
+Agent，不需要用户指定底层接口名。数据 Agent 会从运行时 Provider 目录动态
+发现 AKShare、Tushare、BaoStock 以及后续注册的新 Provider；新增 Provider
+完成后端注册后即可进入发现流程，无需为数据 Agent 单独维护工具清单。
+Tushare 调用仍需在 `.env` 中配置 `TUSHARE_TOKEN`。
+
+数据 Agent 只读运行，不写业务数据，也不持久化请求内临时数据。外部查询和
+沙箱计算受默认预算保护：单次最多 5,000 行、请求累计最多 50,000 行、输入
+最多 50 MiB、沙箱最多 30 秒 / 512 MiB、Python 重试最多 2 次、输出最多
+1 MiB，Agent 默认最多 24 步。完整数据只通过请求内 dataset ID 进入沙箱，
+不放入主 Agent 上下文。最终回答会说明使用的数据来源、数据时间、计算步骤、
+截断或预算限制，以及 Provider 部分失败和口径差异。
+
 ### 启用投委会 worker
 
 投委会默认关闭，`COMMITTEE_ENABLED=0` 时旧行情、顾问和模拟盘接口无需

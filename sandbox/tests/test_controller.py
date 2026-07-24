@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from controller import app as controller
 
 
-TOKEN = "test-token"
+TOKEN = "test-token-with-at-least-32-bytes"
 REQUEST = {
     "code": "result = {'sum': 3}",
     "datasets": {"prices": [{"close": 3}]},
@@ -176,6 +176,20 @@ def test_execute_requires_token():
 
     assert response.status_code == 200
     assert response.json()["result"]["sum"] == 3
+
+
+def test_execute_fails_closed_when_configured_token_is_too_short(monkeypatch):
+    monkeypatch.setenv("SANDBOX_TOKEN", "short")
+    controller.app.dependency_overrides[controller.get_executor] = lambda: FakeExecutor()
+
+    response = TestClient(controller.app).post(
+        "/v1/execute",
+        json=REQUEST,
+        headers={"X-Sandbox-Token": "short"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "sandbox_misconfigured"
 
 
 def test_execute_authentication_uses_compare_digest(monkeypatch):

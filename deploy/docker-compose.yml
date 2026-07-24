@@ -16,6 +16,12 @@ services:
       - STATIC_ROOT=/app/static
       - PORT=8000
       - CORS_ORIGINS=*
+      - SANDBOX_URL=http://sandbox-controller:8090
+      - SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set}
+
+    depends_on:
+      sandbox-controller:
+        condition: service_healthy
 
   committee-worker:
     # 与主应用复用同一镜像和部署机 .env；Redis 必须由外部提供。
@@ -31,3 +37,32 @@ services:
       - python
       - -m
       - app.advisor.committee.worker
+
+  sandbox-controller:
+    image: share-data-sandbox-controller:2026-07-24
+    pull_policy: never
+    container_name: share-data-sandbox-controller
+    restart: always
+
+    env_file:
+      - .env
+
+    environment:
+      - SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set}
+      - SANDBOX_RUNNER_IMAGE=share-data-python-sandbox:2026-07-24
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    expose:
+      - "8090"
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')
+      interval: 30s
+      timeout: 5s
+      retries: 3
