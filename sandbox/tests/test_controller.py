@@ -111,7 +111,13 @@ def _executor(container):
     return controller.DockerExecutor(client, settings), client
 
 
-def _asgi_post(messages, *, content_length=None):
+def _asgi_post(
+    messages=None,
+    *,
+    content_length=None,
+    receive_override=None,
+    app=None,
+):
     sent = []
     headers = [
         (b"content-type", b"application/json"),
@@ -132,7 +138,7 @@ def _asgi_post(messages, *, content_length=None):
         "client": ("test", 123),
         "server": ("testserver", 80),
     }
-    pending = iter(messages)
+    pending = iter(messages or [])
 
     async def receive():
         return next(pending, {"type": "http.disconnect"})
@@ -140,14 +146,21 @@ def _asgi_post(messages, *, content_length=None):
     async def send(message):
         sent.append(message)
 
-    asyncio.run(controller.app(scope, receive, send))
+    async def call_app():
+        await (app or controller.app)(
+            scope,
+            receive_override or receive,
+            send,
+        )
+
+    asyncio.run(asyncio.wait_for(call_app(), timeout=0.5))
     status = next(message["status"] for message in sent if message["type"] == "http.response.start")
     body = b"".join(
         message.get("body", b"")
         for message in sent
         if message["type"] == "http.response.body"
     )
-    return status, json.loads(body)
+    return status, json.loads(body) if body else None
 
 
 def test_execute_requires_token():
@@ -263,6 +276,114 @@ def test_raw_body_limit_allows_streaming_client_without_content_length(monkeypat
     assert status == 200
     assert payload["ok"] is True
     assert executor.calls == 1
+
+
+def test_raw_body_limit_rejects_too_many_empty_chunks_before_executor(monkeypatch):
+    monkeypatch.setattr(controller, "MAX_EMPTY_BODY_CHUNKS", 2)
+    executor = FakeExecutor()
+    controller.app.dependency_overrides[controller.get_executor] = lambda: executor
+
+    status, payload = _asgi_post(
+        [
+            {"type": "http.request", "body": b"", "more_body": True},
+            {"type": "http.request", "body": b"", "more_body": True},
+            {"type": "http.request", "body": b"", "more_body": True},
+            {
+                "type": "http.request",
+                "body": json.dumps(REQUEST).encode(),
+                "more_body": False,
+            },
+        ]
+    )
+
+    assert status == 408
+    assert payload["detail"] == "request_timeout"
+    assert executor.calls == 0
+
+
+def test_raw_body_limit_allows_empty_chunks_before_valid_data(monkeypatch):
+    monkeypatch.setattr(controller, "MAX_EMPTY_BODY_CHUNKS", 3)
+    executor = FakeExecutor()
+    controller.app.dependency_overrides[controller.get_executor] = lambda: executor
+
+    status, payload = _asgi_post(
+        [
+            {"type": "http.request", "body": b"", "more_body": True},
+            {"type": "http.request", "body": b"", "more_body": True},
+            {
+                "type": "http.request",
+                "body": json.dumps(REQUEST).encode(),
+                "more_body": False,
+            },
+        ]
+    )
+
+    assert status == 200
+    assert payload["ok"] is True
+    assert executor.calls == 1
+
+
+def test_raw_body_limit_handles_legal_empty_terminal_without_executor():
+    executor = FakeExecutor()
+    controller.app.dependency_overrides[controller.get_executor] = lambda: executor
+
+    status, _ = _asgi_post(
+        [{"type": "http.request", "body": b"", "more_body": False}]
+    )
+
+    assert status in {400, 422}
+    assert executor.calls == 0
+
+
+def test_raw_body_limit_rejects_disconnect_without_treating_it_as_body():
+    executor = FakeExecutor()
+    controller.app.dependency_overrides[controller.get_executor] = lambda: executor
+
+    status, payload = _asgi_post([{"type": "http.disconnect"}])
+
+    assert status == 400
+    assert payload["detail"] == "client_disconnected"
+    assert executor.calls == 0
+
+
+def test_raw_body_limit_deadline_rejects_slow_request_before_executor(monkeypatch):
+    monkeypatch.setattr(controller, "BODY_READ_TIMEOUT_SECONDS", 0.01)
+    executor = FakeExecutor()
+    controller.app.dependency_overrides[controller.get_executor] = lambda: executor
+
+    async def never_receive():
+        await asyncio.sleep(1)
+        return {"type": "http.disconnect"}
+
+    status, payload = _asgi_post(receive_override=never_receive)
+
+    assert status == 408
+    assert payload["detail"] == "request_timeout"
+    assert executor.calls == 0
+
+
+def test_raw_body_limit_replays_one_normalized_request_message():
+    received = []
+
+    async def downstream(scope, receive, send):
+        received.append(await receive())
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware = controller.RawBodyLimitMiddleware(downstream)
+
+    status, _ = _asgi_post(
+        [
+            {"type": "http.request", "body": b'{"a":', "more_body": True},
+            {"type": "http.request", "body": b"1}", "more_body": False},
+        ],
+        app=middleware,
+    )
+
+    assert status == 204
+    assert received == [
+        {"type": "http.request", "body": b'{"a":1}', "more_body": False}
+    ]
 
 
 def test_execute_rejects_serialized_input_over_50_mib(monkeypatch):

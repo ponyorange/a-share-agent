@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import os
@@ -24,6 +25,8 @@ MAX_TIMEOUT_SECONDS = 30
 MAX_MEMORY_MB = 512
 MAX_OUTPUT_BYTES = 1024 * 1024
 MAX_ARCHIVE_BYTES = 2 * 1024 * 1024
+MAX_EMPTY_BODY_CHUNKS = 32
+BODY_READ_TIMEOUT_SECONDS = 10
 CLEANUP_BUFFER_SECONDS = 5
 DATASET_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 SAFE_RUNNER_ERRORS = {
@@ -88,44 +91,103 @@ class RawBodyLimitMiddleware:
                 continue
             try:
                 if int(value) > MAX_INPUT_BYTES:
-                    await self._reject(scope, receive, send)
+                    await self._reject(
+                        scope,
+                        receive,
+                        send,
+                        status_code=413,
+                        detail="input_too_large",
+                    )
                     return
             except (TypeError, ValueError):
                 pass
 
-        messages: list[dict[str, Any]] = []
-        received_bytes = 0
-        while True:
-            message = await receive()
-            messages.append(message)
-            if message["type"] == "http.disconnect":
-                break
-            if message["type"] != "http.request":
-                continue
-            received_bytes += len(message.get("body", b""))
-            if received_bytes > MAX_INPUT_BYTES:
-                await self._reject(scope, receive, send)
-                return
-            if not message.get("more_body", False):
-                break
+        body = bytearray()
+        empty_chunks = 0
+        disconnected = False
+        try:
+            async with asyncio.timeout(BODY_READ_TIMEOUT_SECONDS):
+                while True:
+                    message = await receive()
+                    if message["type"] == "http.disconnect":
+                        disconnected = True
+                        break
+                    if message["type"] != "http.request":
+                        continue
+                    chunk = message.get("body", b"")
+                    if chunk:
+                        if len(body) + len(chunk) > MAX_INPUT_BYTES:
+                            await self._reject(
+                                scope,
+                                receive,
+                                send,
+                                status_code=413,
+                                detail="input_too_large",
+                            )
+                            return
+                        body.extend(chunk)
+                    else:
+                        empty_chunks += 1
+                        if empty_chunks > MAX_EMPTY_BODY_CHUNKS:
+                            await self._reject(
+                                scope,
+                                receive,
+                                send,
+                                status_code=408,
+                                detail="request_timeout",
+                            )
+                            return
+                    if not message.get("more_body", False):
+                        break
+        except TimeoutError:
+            await self._reject(
+                scope,
+                receive,
+                send,
+                status_code=408,
+                detail="request_timeout",
+            )
+            return
 
-        next_message = 0
+        if disconnected:
+            await self._reject(
+                scope,
+                receive,
+                send,
+                status_code=400,
+                detail="client_disconnected",
+            )
+            return
+
+        normalized_body = bytes(body)
+        del body
+        replayed = False
 
         async def replay_receive() -> dict[str, Any]:
-            nonlocal next_message
-            if next_message >= len(messages):
+            nonlocal replayed
+            if replayed:
                 return {"type": "http.disconnect"}
-            message = messages[next_message]
-            next_message += 1
-            return message
+            replayed = True
+            return {
+                "type": "http.request",
+                "body": normalized_body,
+                "more_body": False,
+            }
 
         await self.app(scope, replay_receive, send)
 
     @staticmethod
-    async def _reject(scope: dict[str, Any], receive: Any, send: Any) -> None:
+    async def _reject(
+        scope: dict[str, Any],
+        receive: Any,
+        send: Any,
+        *,
+        status_code: int,
+        detail: str,
+    ) -> None:
         response = JSONResponse(
-            status_code=413,
-            content={"detail": "input_too_large"},
+            status_code=status_code,
+            content={"detail": detail},
         )
         await response(scope, receive, send)
 
