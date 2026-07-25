@@ -1,8 +1,9 @@
 import json
 from unittest.mock import patch
 
+from app.advisor.agent.progress import bind_progress_sink
 from app.advisor.agent.data_agent.delegate import build_delegate_data_tool
-from app.advisor.agent.data_agent.models import DataAgentResult
+from app.advisor.agent.data_agent.models import DataAgentFailure, DataAgentResult
 from app.advisor.agent.graph import SYSTEM_PROMPT
 from app.advisor.agent.tools import build_tools
 
@@ -51,6 +52,300 @@ def test_delegate_tool_is_read_only_uses_system_budget_and_cleans_workspace(tmp_
     workspace = run.call_args.args[3]
     assert workspace.limits.max_agent_steps == 7
     assert not root.exists()
+
+
+def test_delegate_tool_emits_started_and_completed_progress(tmp_path):
+    root = tmp_path / "workspace"
+    events = []
+    tool = build_delegate_data_tool("user-1")
+
+    with (
+        patch(
+            "app.advisor.agent.data_agent.delegate.default_config",
+            return_value={"data_agent": {}},
+        ),
+        patch(
+            "app.advisor.agent.data_agent.workspace.tempfile.mkdtemp",
+            return_value=str(root),
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.SandboxClient.from_env",
+            return_value=object(),
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.run_data_agent",
+            return_value=_success_result(),
+        ),
+        bind_progress_sink(events.append),
+    ):
+        payload = json.loads(tool.invoke({"request": "计算收益率"}))
+
+    assert payload["answer"] == "ok"
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("delegate", "started"),
+        ("delegate", "completed"),
+    ]
+
+
+def test_delegate_tool_emits_stable_failed_progress_without_raw_exception(tmp_path):
+    root = tmp_path / "workspace"
+    events = []
+    secret = "provider params and raw exception"
+    tool = build_delegate_data_tool("user-1")
+
+    with (
+        patch(
+            "app.advisor.agent.data_agent.delegate.default_config",
+            return_value={"data_agent": {}},
+        ),
+        patch(
+            "app.advisor.agent.data_agent.workspace.tempfile.mkdtemp",
+            return_value=str(root),
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.SandboxClient.from_env",
+            return_value=object(),
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.run_data_agent",
+            side_effect=RuntimeError(secret),
+        ),
+        bind_progress_sink(events.append),
+    ):
+        payload = json.loads(tool.invoke({"request": "private request"}))
+
+    assert payload["failures"][0]["code"] == "data_agent_failure"
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("delegate", "started"),
+        ("delegate", "failed"),
+    ]
+    assert events[-1] == {
+        "phase": "data_agent",
+        "step": "delegate",
+        "status": "failed",
+        "message": "数据子 Agent 执行失败",
+        "error_code": "data_agent_failure",
+    }
+    assert secret not in json.dumps(events, ensure_ascii=False)
+
+
+def test_delegate_tool_marks_empty_data_result_failure_as_failed_progress(tmp_path):
+    root = tmp_path / "workspace"
+    events = []
+    secret = "raw model failure details"
+    result = DataAgentResult(
+        answer="",
+        data={},
+        sources=[],
+        computation=[],
+        warnings=[],
+        failures=[DataAgentFailure(code="model_failure", message=secret)],
+    )
+
+    with (
+        patch(
+            "app.advisor.agent.data_agent.delegate.default_config",
+            return_value={"data_agent": {}},
+        ),
+        patch(
+            "app.advisor.agent.data_agent.workspace.tempfile.mkdtemp",
+            return_value=str(root),
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.SandboxClient.from_env",
+            return_value=object(),
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.run_data_agent",
+            return_value=result,
+        ),
+        bind_progress_sink(events.append),
+    ):
+        payload = json.loads(build_delegate_data_tool("u").invoke({"request": "request"}))
+
+    assert payload["failures"][0]["code"] == "model_failure"
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("delegate", "started"),
+        ("delegate", "failed"),
+    ]
+    assert events[-1]["error_code"] == "model_failure"
+    assert secret not in json.dumps(events, ensure_ascii=False)
+
+
+def test_delegate_tool_marks_partial_result_with_data_as_completed_progress(tmp_path):
+    root = tmp_path / "workspace"
+    events = []
+    result = DataAgentResult(
+        answer="partial",
+        data={"value": 1},
+        sources=[],
+        computation=[],
+        warnings=[],
+        failures=[
+            DataAgentFailure(code="source_unavailable", message="部分数据源不可用")
+        ],
+    )
+
+    with (
+        patch(
+            "app.advisor.agent.data_agent.delegate.default_config",
+            return_value={"data_agent": {}},
+        ),
+        patch(
+            "app.advisor.agent.data_agent.workspace.tempfile.mkdtemp",
+            return_value=str(root),
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.SandboxClient.from_env",
+            return_value=object(),
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.run_data_agent",
+            return_value=result,
+        ),
+        bind_progress_sink(events.append),
+    ):
+        payload = json.loads(build_delegate_data_tool("u").invoke({"request": "request"}))
+
+    assert payload["data"] == {"value": 1}
+    assert payload["failures"][0]["code"] == "source_unavailable"
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("delegate", "started"),
+        ("delegate", "completed"),
+    ]
+
+
+def test_delegate_tool_falls_back_when_result_failure_code_is_invalid(tmp_path):
+    root = tmp_path / "workspace"
+    events = []
+    result = DataAgentResult(
+        answer="",
+        data={},
+        sources=[],
+        computation=[],
+        warnings=[],
+        failures=[DataAgentFailure(code="Bad-Code", message="do-not-emit")],
+    )
+
+    with (
+        patch(
+            "app.advisor.agent.data_agent.delegate.default_config",
+            return_value={"data_agent": {}},
+        ),
+        patch(
+            "app.advisor.agent.data_agent.workspace.tempfile.mkdtemp",
+            return_value=str(root),
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.SandboxClient.from_env",
+            return_value=object(),
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.run_data_agent",
+            return_value=result,
+        ),
+        bind_progress_sink(events.append),
+    ):
+        payload = json.loads(build_delegate_data_tool("u").invoke({"request": "request"}))
+
+    assert payload["failures"][0]["code"] == "Bad-Code"
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("delegate", "started"),
+        ("delegate", "failed"),
+    ]
+    assert events[-1]["error_code"] == "data_agent_failure"
+    assert "do-not-emit" not in json.dumps(events, ensure_ascii=False)
+
+
+def test_delegate_tool_sandbox_failure_emits_single_failed_progress(tmp_path):
+    root = tmp_path / "workspace"
+    events = []
+    secret = "SANDBOX_TOKEN=secret-value"
+
+    with (
+        patch(
+            "app.advisor.agent.data_agent.delegate.default_config",
+            return_value={"data_agent": {}},
+        ),
+        patch(
+            "app.advisor.agent.data_agent.workspace.tempfile.mkdtemp",
+            return_value=str(root),
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.SandboxClient.from_env",
+            side_effect=RuntimeError(secret),
+        ),
+        bind_progress_sink(events.append),
+    ):
+        payload = json.loads(
+            build_delegate_data_tool("u").invoke({"request": "private request"})
+        )
+
+    assert payload["failures"][0]["code"] == "sandbox_failure"
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("delegate", "started"),
+        ("delegate", "failed"),
+    ]
+    assert events[-1]["error_code"] == "sandbox_failure"
+    encoded = json.dumps(events, ensure_ascii=False)
+    assert secret not in encoded
+    assert "private request" not in encoded
+
+
+def test_delegate_tool_config_failure_emits_single_failed_progress():
+    events = []
+    secret = "config secret"
+
+    with (
+        patch(
+            "app.advisor.agent.data_agent.delegate.default_config",
+            side_effect=RuntimeError(secret),
+        ),
+        bind_progress_sink(events.append),
+    ):
+        payload = json.loads(
+            build_delegate_data_tool("u").invoke({"request": "private request"})
+        )
+
+    assert payload["failures"][0]["code"] == "config_failure"
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("delegate", "started"),
+        ("delegate", "failed"),
+    ]
+    assert events[-1]["error_code"] == "config_failure"
+    encoded = json.dumps(events, ensure_ascii=False)
+    assert secret not in encoded
+    assert "private request" not in encoded
+
+
+def test_delegate_tool_workspace_failure_emits_single_failed_progress():
+    events = []
+    secret = "workspace secret"
+
+    with (
+        patch(
+            "app.advisor.agent.data_agent.delegate.default_config",
+            return_value={"data_agent": {}},
+        ),
+        patch(
+            "app.advisor.agent.data_agent.delegate.DatasetWorkspace",
+            side_effect=RuntimeError(secret),
+        ),
+        bind_progress_sink(events.append),
+    ):
+        payload = json.loads(
+            build_delegate_data_tool("u").invoke({"request": "private request"})
+        )
+
+    assert payload["failures"][0]["code"] == "workspace_failure"
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("delegate", "started"),
+        ("delegate", "failed"),
+    ]
+    assert events[-1]["error_code"] == "workspace_failure"
+    encoded = json.dumps(events, ensure_ascii=False)
+    assert secret not in encoded
+    assert "private request" not in encoded
 
 
 def test_delegate_creates_a_fresh_workspace_for_every_call(tmp_path):

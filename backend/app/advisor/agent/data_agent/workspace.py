@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .models import DataAgentLimits, DatasetMeta, JsonValue, sanitize_params_summary
+from .models import DataAgentLimits, DataAgentResult, DatasetMeta, JsonValue, sanitize_params_summary
 
 _UNSUPPORTED = "[unsupported]"
 _MAX_VALUE_DEPTH = 20
@@ -121,6 +121,7 @@ class DatasetWorkspace:
         self._total_bytes = 0
         self._python_analysis_calls = 0
         self._sandbox_results: list[SandboxResultEvidence] = []
+        self.submitted_result: DataAgentResult | None = None
 
     def __enter__(self) -> "DatasetWorkspace":
         self.root.mkdir(parents=True, exist_ok=True)
@@ -174,6 +175,12 @@ class DatasetWorkspace:
         )
         self._sandbox_results.append(evidence)
         return evidence
+
+    def sandbox_result_by_id(self, result_id: str) -> SandboxResultEvidence | None:
+        for item in self._sandbox_results:
+            if item.result_id == result_id:
+                return item
+        return None
 
     def matches_sandbox_result(self, data: JsonValue) -> bool:
         try:

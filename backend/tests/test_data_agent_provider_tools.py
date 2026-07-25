@@ -1,6 +1,7 @@
 import json
 from unittest.mock import patch
 
+from app.advisor.agent.progress import bind_progress_sink
 from app.advisor.agent.data_agent.models import DataAgentLimits
 from app.advisor.agent.data_agent.provider_tools import build_provider_tools
 from app.advisor.agent.data_agent.workspace import DatasetWorkspace
@@ -27,6 +28,9 @@ class FakeProvider:
 
 
 class LimitIgnoringProvider:
+    def get_interface(self, name):
+        return {"name": name}
+
     def fetch(self, name, params, limit):
         rows = [{"close": value} for value in range(5_001)]
         return {
@@ -38,6 +42,17 @@ class LimitIgnoringProvider:
             "total": len(rows),
             "truncated": False,
         }
+
+
+class FailingProvider:
+    def list_interfaces(self, category=None, keyword=None):
+        raise RuntimeError("provider failed with TOKEN=secret-value")
+
+    def get_interface(self, name):
+        raise RuntimeError("provider failed with TOKEN=secret-value")
+
+    def fetch(self, name, params, limit):
+        raise RuntimeError("provider failed with TOKEN=secret-value")
 
 
 class OversizedMetadataProvider:
@@ -135,6 +150,28 @@ class EvilMetadataProvider:
         }
 
 
+def _assert_progress_is_boundary_only(events):
+    encoded = json.dumps(events, ensure_ascii=False)
+    assert "params_json" not in encoded
+    assert "keyword" not in encoded
+    assert "TOKEN=secret-value" not in encoded
+    assert all(
+        set(event)
+        <= {
+            "phase",
+            "step",
+            "status",
+            "message",
+            "source",
+            "interface",
+            "rows",
+            "truncated",
+            "error_code",
+        }
+        for event in events
+    )
+
+
 def test_provider_tools_discover_and_store_without_exposing_full_dataset(tmp_path):
     with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
         tools = {tool.name: tool for tool in build_provider_tools(workspace)}
@@ -184,6 +221,145 @@ def test_provider_tools_discover_and_store_without_exposing_full_dataset(tmp_pat
         assert fetched["dataset"]["sample_trust"] == "untrusted_provider_data"
         exported = workspace.export([fetched["dataset"]["dataset_id"]])
         assert len(exported[fetched["dataset"]["dataset_id"]]) == 100
+
+
+def test_provider_tools_emit_progress_for_catalog_and_fetch(tmp_path):
+    events = []
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
+        tools = {tool.name: tool for tool in build_provider_tools(workspace)}
+        with (
+            patch(
+                "app.advisor.agent.data_agent.provider_tools.providers.list_sources",
+                return_value=[{"id": "fake", "label": "Fake"}],
+            ),
+            patch(
+                "app.advisor.agent.data_agent.provider_tools.providers.get_provider",
+                return_value=FakeProvider(),
+            ),
+            bind_progress_sink(events.append),
+        ):
+            tools["list_data_sources"].invoke({})
+            tools["search_data_interfaces"].invoke(
+                {"source": "fake", "keyword": "price", "category": "market"}
+            )
+            tools["get_data_interface"].invoke({"source": "fake", "name": "prices"})
+            fetched = json.loads(
+                tools["fetch_provider_data"].invoke(
+                    {
+                        "source": "fake",
+                        "name": "prices",
+                        "params_json": '{"symbol":"000001"}',
+                        "limit": 3,
+                    }
+                )
+            )
+
+    assert fetched["dataset"]["returned"] == 3
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("list_sources", "started"),
+        ("list_sources", "completed"),
+        ("search", "started"),
+        ("search", "completed"),
+        ("describe", "started"),
+        ("describe", "completed"),
+        ("fetch", "started"),
+        ("fetch", "completed"),
+    ]
+    assert events[2]["source"] == "fake"
+    assert "keyword" not in events[2]
+    assert events[4]["source"] == "fake"
+    assert events[4]["interface"] == "prices"
+    assert events[-1]["source"] == "fake"
+    assert events[-1]["interface"] == "prices"
+    assert events[-1]["rows"] == 3
+    assert events[-1]["truncated"] is False
+    _assert_progress_is_boundary_only(events)
+
+
+def test_provider_tool_failures_emit_stable_error_progress(tmp_path):
+    events = []
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
+        tools = {tool.name: tool for tool in build_provider_tools(workspace)}
+        with (
+            patch(
+                "app.advisor.agent.data_agent.provider_tools.providers.get_provider",
+                return_value=FailingProvider(),
+            ),
+            bind_progress_sink(events.append),
+        ):
+            payload = json.loads(
+                tools["fetch_provider_data"].invoke(
+                    {
+                        "source": "fake",
+                        "name": "prices",
+                        "params_json": '{"token":"secret"}',
+                        "limit": 100,
+                    }
+                )
+            )
+
+    assert payload["error"]["code"] == "provider_error"
+    assert events == [
+        {
+            "step": "fetch",
+            "status": "failed",
+            "error_code": "provider_error",
+            "phase": "data_agent",
+            "message": "数据接口调用失败",
+        },
+    ]
+    _assert_progress_is_boundary_only(events)
+
+
+def test_provider_tools_reject_invalid_progress_identifiers_without_echoing_them(
+    tmp_path,
+):
+    events = []
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
+        tools = {tool.name: tool for tool in build_provider_tools(workspace)}
+        with (
+            patch(
+                "app.advisor.agent.data_agent.provider_tools.providers.get_provider"
+            ) as get_provider,
+            bind_progress_sink(events.append),
+        ):
+            invalid_source = json.loads(
+                tools["search_data_interfaces"].invoke(
+                    {"source": "bad/source", "keyword": "", "category": ""}
+                )
+            )
+            invalid_interface = json.loads(
+                tools["fetch_provider_data"].invoke(
+                    {
+                        "source": "fake",
+                        "name": "prices\nforged",
+                        "params_json": "{}",
+                        "limit": 1,
+                    }
+                )
+            )
+
+    assert invalid_source["error"]["code"] == "invalid_params"
+    assert invalid_interface["error"]["code"] == "invalid_params"
+    assert get_provider.call_count == 0
+    assert events == [
+        {
+            "step": "search",
+            "status": "failed",
+            "error_code": "invalid_params",
+            "phase": "data_agent",
+            "message": "数据接口搜索失败",
+        },
+        {
+            "step": "fetch",
+            "status": "failed",
+            "error_code": "invalid_params",
+            "phase": "data_agent",
+            "message": "数据接口调用失败",
+        },
+    ]
+    assert "bad/source" not in json.dumps(events, ensure_ascii=False)
+    assert "prices\nforged" not in json.dumps(events, ensure_ascii=False)
 
 
 def test_provider_metadata_is_whitelisted_truncated_and_byte_bounded(tmp_path):

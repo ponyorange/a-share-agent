@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import contextvars
+import queue
+import threading
 from typing import Any, Iterator
 
 from langchain_core.messages import (
@@ -16,9 +19,18 @@ from .chat_store import (
     append_message,
     build_context_history,
     ensure_session,
+    session_exists,
 )
 from .llm import build_chat_model
+from .progress import ProgressValidationError, bind_progress_sink, progress_to_tool_trace
 from .tools import build_tools
+
+_STREAM_END = object()
+_EVENT_QUEUE_SIZE = 128
+_PROGRESS_TRACE_LIMIT = 20
+_DELEGATE_DATA_TASK_NAME = "delegate_data_task"
+_DELEGATE_DATA_TASK_SAFE_CONTENT = "数据子 Agent 已返回结构化结果"
+_AGENT_ERROR_DETAIL = "Agent 执行失败"
 
 SYSTEM_PROMPT = """你是「投研助手」，次日顾问产品中的 AI 投研副驾（DeepSeek）。
 对外自称「投研助手」；语气专业、简洁、务实，不卖弄术语，结论先行再补依据。
@@ -85,11 +97,19 @@ def _finalize_reply(text: str) -> str:
     return text
 
 
-def iter_agent_chat_events(
+def _tool_message_trace(m: ToolMessage) -> dict[str, str]:
+    name = getattr(m, "name", None) or "tool"
+    if name == _DELEGATE_DATA_TASK_NAME:
+        return {"tool": name, "content": _DELEGATE_DATA_TASK_SAFE_CONTENT}
+    return {"tool": name, "content": _extract_text(m.content)[:2000]}
+
+
+def _iter_agent_chat_events_sync(
     user_id: str,
     message: str,
     *,
-    session_id: str | None = None,
+    session_id: str | None,
+    progress_trace: list[dict[str, str]],
 ) -> Iterator[dict[str, Any]]:
     """Yield SSE-ready events: meta → tool* → token* → done | error.
 
@@ -141,14 +161,16 @@ def iter_agent_chat_events(
                     continue
                 m = chunk[0]
                 if isinstance(m, ToolMessage):
-                    content = _extract_text(m.content)[:2000]
-                    name = getattr(m, "name", None) or "tool"
-                    tool_trace.append({"tool": name, "content": content})
+                    trace = _tool_message_trace(m)
+                    tool_trace.append(trace)
                     # 工具调用后下一轮模型输出才是最终回答
                     streamed_buf = ""
                     yield {
                         "event": "tool",
-                        "data": {"tool": name, "content": content[:1200]},
+                        "data": {
+                            "tool": trace["tool"],
+                            "content": trace["content"][:1200],
+                        },
                     }
                     continue
 
@@ -190,18 +212,18 @@ def iter_agent_chat_events(
                     msgs = update.get("messages") or []
                     for m in msgs:
                         if isinstance(m, ToolMessage):
-                            content = _extract_text(m.content)[:2000]
-                            name = getattr(m, "name", None) or "tool"
+                            trace = _tool_message_trace(m)
                             if not any(
-                                t.get("tool") == name and t.get("content") == content
+                                t.get("tool") == trace["tool"]
+                                and t.get("content") == trace["content"]
                                 for t in tool_trace[-3:]
                             ):
-                                tool_trace.append({"tool": name, "content": content})
+                                tool_trace.append(trace)
                                 yield {
                                     "event": "tool",
                                     "data": {
-                                        "tool": name,
-                                        "content": content[:1200],
+                                        "tool": trace["tool"],
+                                        "content": trace["content"][:1200],
                                     },
                                 }
                         elif isinstance(m, AIMessage) and m.content and not m.tool_calls:
@@ -220,38 +242,134 @@ def iter_agent_chat_events(
                     final_text = _extract_text(m.content)
                     break
                 if isinstance(m, ToolMessage):
-                    tool_trace.append(
-                        {
-                            "tool": getattr(m, "name", None) or "tool",
-                            "content": _extract_text(m.content)[:2000],
-                        }
-                    )
+                    tool_trace.append(_tool_message_trace(m))
 
         reply = _finalize_reply(final_text or streamed_buf)
         if not streamed_any and reply:
             yield {"event": "token", "data": {"delta": reply}}
 
+        persisted_trace = [*progress_trace, *tool_trace][-20:]
+        done_trace = persisted_trace[-12:]
+        if not session_exists(user_id, sid):
+            yield {
+                "event": "error",
+                "data": {"detail": "session_not_found", "session_id": sid},
+            }
+            return
         append_message(
             user_id,
             sid,
             role="assistant",
             content=reply,
-            tool_trace=tool_trace[-20:],
+            tool_trace=persisted_trace,
         )
         yield {
             "event": "done",
             "data": {
                 "session_id": sid,
                 "reply": reply,
-                "tool_trace": tool_trace[-12:],
+                "tool_trace": done_trace,
                 "disclaimer": DISCLAIMER,
             },
         }
-    except Exception as exc:
+    except ProgressValidationError:
         yield {
             "event": "error",
-            "data": {"detail": f"{type(exc).__name__}: {exc}", "session_id": sid},
+            "data": {"detail": "progress_validation_error", "session_id": sid},
         }
+    except Exception:
+        yield {
+            "event": "error",
+            "data": {"detail": _AGENT_ERROR_DETAIL, "session_id": sid},
+        }
+
+
+def iter_agent_chat_events(
+    user_id: str,
+    message: str,
+    *,
+    session_id: str | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Yield SSE-ready events with async progress bridged from sub-agents."""
+    output: queue.Queue[object] = queue.Queue(maxsize=_EVENT_QUEUE_SIZE)
+    stopped = threading.Event()
+    progress_lock = threading.Lock()
+    progress_trace: list[dict[str, str]] = []
+
+    def put_required(value: object) -> bool:
+        while not stopped.is_set():
+            try:
+                output.put(value, timeout=0.1)
+                return True
+            except queue.Full:
+                continue
+        return False
+
+    def progress_sink(event: dict[str, object]) -> None:
+        if stopped.is_set():
+            return
+        try:
+            trace = progress_to_tool_trace(event)
+        except ProgressValidationError:
+            return
+        # Serialize stop with enqueue/append so disconnect cannot interleave mid-write.
+        with progress_lock:
+            if stopped.is_set():
+                return
+            if not progress_trace or progress_trace[-1] != trace:
+                progress_trace.append(trace)
+                del progress_trace[:-_PROGRESS_TRACE_LIMIT]
+            try:
+                output.put_nowait({"event": "subagent_progress", "data": event})
+            except queue.Full:
+                pass
+
+    def produce() -> None:
+        try:
+            with bind_progress_sink(progress_sink):
+                for event in _iter_agent_chat_events_sync(
+                    user_id,
+                    message,
+                    session_id=session_id,
+                    progress_trace=progress_trace,
+                ):
+                    if stopped.is_set() or not put_required(event):
+                        break
+        except ProgressValidationError:
+            put_required(
+                {
+                    "event": "error",
+                    "data": {
+                        "detail": "progress_validation_error",
+                        "session_id": session_id,
+                    },
+                }
+            )
+        except Exception:
+            put_required(
+                {
+                    "event": "error",
+                    "data": {
+                        "detail": _AGENT_ERROR_DETAIL,
+                        "session_id": session_id,
+                    },
+                }
+            )
+        finally:
+            put_required(_STREAM_END)
+
+    context = contextvars.copy_context()
+    worker = threading.Thread(target=context.run, args=(produce,), daemon=True)
+    worker.start()
+    try:
+        while True:
+            event = output.get()
+            if event is _STREAM_END:
+                return
+            yield event  # type: ignore[misc]
+    finally:
+        with progress_lock:
+            stopped.set()
 
 
 def run_agent_chat(

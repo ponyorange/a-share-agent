@@ -70,6 +70,17 @@ def ensure_session(user_id: str, session_id: str | None = None) -> str:
     return sid
 
 
+def session_exists(user_id: str, session_id: str) -> bool:
+    db = get_db()
+    return (
+        db.agent_chat_sessions.find_one(
+            {"user_id": user_id, "session_id": session_id},
+            {"_id": 1},
+        )
+        is not None
+    )
+
+
 def get_messages(user_id: str, session_id: str, limit: int = 200) -> list[dict[str, Any]]:
     db = get_db()
     cur = (
@@ -107,16 +118,6 @@ def append_message(
 ) -> None:
     db = get_db()
     now = _now()
-    db.agent_chat_messages.insert_one(
-        {
-            "user_id": user_id,
-            "session_id": session_id,
-            "role": role,
-            "content": content,
-            "tool_trace": tool_trace or [],
-            "created_at": now,
-        }
-    )
     updates: dict[str, Any] = {"updated_at": now}
     sess = db.agent_chat_sessions.find_one(
         {"user_id": user_id, "session_id": session_id},
@@ -126,26 +127,45 @@ def append_message(
         not sess or sess.get("title") in (None, "", "新对话")
     ):
         updates["title"] = (content or "").strip().replace("\n", " ")[:36] or "新对话"
-    db.agent_chat_sessions.update_one(
+    result = db.agent_chat_sessions.update_one(
         {"user_id": user_id, "session_id": session_id},
         {
             "$set": updates,
             "$inc": {"message_count": 1},
-            "$setOnInsert": {
-                "user_id": user_id,
-                "session_id": session_id,
-                "created_at": now,
-            },
         },
-        upsert=True,
+        upsert=False,
     )
+    if result.matched_count == 0:
+        return
+    inserted = db.agent_chat_messages.insert_one(
+        {
+            "user_id": user_id,
+            "session_id": session_id,
+            "role": role,
+            "content": content,
+            "tool_trace": tool_trace or [],
+            "created_at": now,
+        }
+    )
+    # Close the TOCTOU window: session may be deleted between update and insert.
+    if (
+        db.agent_chat_sessions.find_one(
+            {"user_id": user_id, "session_id": session_id},
+            {"_id": 1},
+        )
+        is None
+    ):
+        inserted_id = getattr(inserted, "inserted_id", None)
+        if inserted_id is not None:
+            db.agent_chat_messages.delete_one({"_id": inserted_id})
+        return
 
 
 
 def delete_session(user_id: str, session_id: str) -> None:
     db = get_db()
-    db.agent_chat_messages.delete_many({"user_id": user_id, "session_id": session_id})
     db.agent_chat_sessions.delete_one({"user_id": user_id, "session_id": session_id})
+    db.agent_chat_messages.delete_many({"user_id": user_id, "session_id": session_id})
 
 
 def build_context_history(

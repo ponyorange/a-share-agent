@@ -1387,6 +1387,129 @@ body:has(.app-shell--agent-chat) {
   white-space: pre-wrap;
 }
 
+.subagent-progress {
+  width: min(92%, 42rem);
+  max-width: 92%;
+  min-width: 0;
+  margin: 0.35rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(12, 20, 16, 0.55);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.subagent-progress-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.65rem;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.subagent-progress-header > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.subagent-progress-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.subagent-progress-summary,
+.subagent-progress-latest {
+  color: var(--muted);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.subagent-progress-toggle {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  padding: 0.2rem 0.55rem;
+}
+
+.subagent-progress-toggle:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.subagent-progress-list {
+  list-style: none;
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.55rem 0 0;
+  padding: 0;
+}
+
+.subagent-progress-item {
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border-left: 3px solid var(--line);
+  border-radius: 8px;
+  background: rgba(22, 36, 28, 0.5);
+  overflow-wrap: anywhere;
+}
+
+.subagent-progress-item.started {
+  border-left-color: var(--hold);
+  animation: subagent-progress-pulse 1.4s ease-in-out infinite;
+}
+
+.subagent-progress-item.completed {
+  border-left-color: var(--sell);
+}
+
+.subagent-progress-item.failed {
+  border-left-color: var(--accent);
+}
+
+.subagent-progress-item-head,
+.subagent-progress-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.55rem;
+  color: var(--muted);
+  font-size: 0.74rem;
+  min-width: 0;
+}
+
+.subagent-progress-message {
+  margin: 0.28rem 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+@keyframes subagent-progress-pulse {
+  0%,
+  100% {
+    background: rgba(22, 36, 28, 0.5);
+  }
+
+  50% {
+    background: rgba(196, 163, 90, 0.12);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subagent-progress-item.started {
+    animation: none;
+  }
+}
+
 .agent-composer {
   display: grid;
   grid-template-columns: 1fr auto;

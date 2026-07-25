@@ -11,6 +11,7 @@ import {
   listAgentSessions,
   streamAgentChat,
   type AgentSession,
+  type SubagentProgress,
 } from '../agentApi'
 
 type Msg = {
@@ -35,6 +36,113 @@ const QUICK_PROMPTS: { label: string; message: string }[] = [
     message: '今天联播和宏观有哪些值得关注的信号？简要点评对市场风险偏好的影响。',
   },
 ]
+
+const SAFE_SESSION_ERROR = '会话操作失败，请稍后重试'
+const SAFE_CHAT_ERROR = '消息发送失败，请稍后重试'
+
+const STEP_LABELS: Record<SubagentProgress['step'], string> = {
+  delegate: '委派',
+  list_sources: '列数据源',
+  search: '搜索接口',
+  describe: '查看说明',
+  fetch: '获取数据',
+  sandbox: '清洗数据',
+  submit: '提交结果',
+}
+
+const STATUS_LABELS: Record<SubagentProgress['status'], string> = {
+  started: '运行中',
+  completed: '已完成',
+  failed: '失败',
+}
+
+function sameProgressItem(a: SubagentProgress, b: SubagentProgress) {
+  return (
+    a.phase === b.phase &&
+    a.step === b.step &&
+    a.source === b.source &&
+    a.interface === b.interface
+  )
+}
+
+export function mergeSubagentProgress(
+  current: SubagentProgress[],
+  next: SubagentProgress,
+): SubagentProgress[] {
+  const index = current.findIndex((item) => sameProgressItem(item, next))
+  if (index === -1) return [...current, next]
+  const copy = [...current]
+  copy[index] = next
+  return copy
+}
+
+export function SubagentProgressPanel({
+  items,
+  collapsed,
+  onToggle,
+}: {
+  items: SubagentProgress[]
+  collapsed: boolean
+  onToggle?: () => void
+}) {
+  const runningCount = items.filter((item) => item.status === 'started').length
+  const latest = items[items.length - 1]
+  return (
+    <section className="subagent-progress" aria-label="子 Agent 实时进度">
+      <div className="subagent-progress-header">
+        <div>
+          <span className="subagent-progress-title">数据子 Agent</span>
+          <span className="subagent-progress-summary">
+            {runningCount > 0 ? `${runningCount} 项运行中` : `${items.length} 项进度`}
+          </span>
+          {collapsed && latest ? (
+            <span className="subagent-progress-latest">
+              {STEP_LABELS[latest.step]} · {STATUS_LABELS[latest.status]}
+            </span>
+          ) : null}
+        </div>
+        {onToggle ? (
+          <button
+            type="button"
+            className="subagent-progress-toggle"
+            onClick={onToggle}
+            aria-expanded={!collapsed}
+          >
+            {collapsed ? '展开进度' : '折叠进度'}
+          </button>
+        ) : null}
+      </div>
+
+      {!collapsed ? (
+        <ol className="subagent-progress-list">
+          {items.map((item, index) => (
+            <li
+              key={`${item.phase}-${item.step}-${item.source || ''}-${item.interface || ''}-${index}`}
+              className={`subagent-progress-item ${item.status}`}
+            >
+              <div className="subagent-progress-item-head">
+                <span>{STEP_LABELS[item.step]}</span>
+                <span>{STATUS_LABELS[item.status]}</span>
+              </div>
+              <p className="subagent-progress-message">{item.message}</p>
+              <div className="subagent-progress-meta">
+                {item.source ? <span>来源：{item.source}</span> : null}
+                {item.interface ? <span>接口：{item.interface}</span> : null}
+                {item.step === 'fetch' && item.status === 'completed' && typeof item.rows === 'number' ? (
+                  <span>{item.rows} 行</span>
+                ) : null}
+                {item.step === 'fetch' && item.truncated ? <span>已截断</span> : null}
+                {item.status === 'failed' && item.error_code ? (
+                  <span>错误：{item.error_code}</span>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </section>
+  )
+}
 
 export const ChatBubble = memo(function ChatBubble({ m }: { m: Msg }) {
   const [copied, setCopied] = useState(false)
@@ -115,10 +223,16 @@ export default function AgentChatPage() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [liveTools, setLiveTools] = useState<{ tool: string; content: string }[]>([])
+  const [liveSubagentProgress, setLiveSubagentProgress] = useState<SubagentProgress[]>([])
+  const [progressCollapsed, setProgressCollapsed] = useState(false)
+  const [sessionTransitioning, setSessionTransitioning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const virtuosoRef = useRef<VirtuosoHandle | null>(null)
   const stickToBottomRef = useRef(true)
+  const activeStreamRef = useRef(0)
+  const sessionTransitionRef = useRef(0)
+  const hasAnswerTokenRef = useRef(false)
 
   const refreshSessions = useCallback(async () => {
     const res = await listAgentSessions()
@@ -129,15 +243,25 @@ export default function AgentChatPage() {
   useEffect(() => {
     fetchLlmSettings()
       .then(async (s) => {
-        setReady(Boolean(s.configured))
-        if (!s.configured) return
-        const list = await refreshSessions()
-        if (list.length) {
-          await openSession(list[0].session_id)
-        } else {
-          const created = await createAgentSession()
-          setSessionId(created.session_id)
-          await refreshSessions()
+        if (!s.configured) {
+          setReady(false)
+          return
+        }
+        const transitionToken = beginSessionTransition()
+        setReady(true)
+        try {
+          const list = await refreshSessions()
+          if (list.length) {
+            await loadSessionMessages(list[0].session_id)
+          } else {
+            const created = await createAgentSession()
+            setSessionId(created.session_id)
+            await refreshSessions()
+          }
+        } catch {
+          setError(SAFE_SESSION_ERROR)
+        } finally {
+          endSessionTransition(transitionToken)
         }
       })
       .catch(() => setReady(false))
@@ -152,48 +276,143 @@ export default function AgentChatPage() {
       align: 'end',
       behavior: 'auto',
     })
-  }, [messages, sending, liveTools])
+  }, [messages, sending, liveTools, liveSubagentProgress])
 
-  async function openSession(id: string) {
-    setSessionId(id)
-    setError(null)
-    stickToBottomRef.current = true
+  function beginSessionTransition() {
+    const token = sessionTransitionRef.current + 1
+    sessionTransitionRef.current = token
+    setSessionTransitioning(true)
+    return token
+  }
+
+  function endSessionTransition(token: number) {
+    if (sessionTransitionRef.current === token) {
+      setSessionTransitioning(false)
+    }
+  }
+
+  function resetLiveStreamState(invalidateStream = false) {
+    if (invalidateStream) activeStreamRef.current += 1
+    hasAnswerTokenRef.current = false
+    setSending(false)
+    setLiveTools([])
+    setLiveSubagentProgress([])
+    setProgressCollapsed(false)
+  }
+
+  function abortActiveStream() {
+    abortRef.current?.abort()
+    abortRef.current = null
+  }
+
+  function normalizeStreamingTail() {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1]
+      if (last?.role !== 'assistant' || !last.streaming) return prev
+      if (!last.content.trim()) return prev.slice(0, -1)
+      const copy = [...prev]
+      copy[copy.length - 1] = { ...last, streaming: false }
+      return copy
+    })
+  }
+
+  async function loadSessionMessages(id: string) {
     const res = await fetchAgentMessages(id)
-    setMessages(
+    const nextMessages: Msg[] =
       (res.messages || [])
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .map((m) => ({
           role: m.role as 'user' | 'assistant',
           content: m.content,
           trace: m.tool_trace,
-        })),
-    )
+        }))
+    setSessionId(id)
+    setError(null)
+    stickToBottomRef.current = true
+    setMessages(nextMessages)
+  }
+
+  async function openSession(id: string) {
+    const transitionToken = beginSessionTransition()
+    abortActiveStream()
+    resetLiveStreamState(true)
+    normalizeStreamingTail()
+    try {
+      await loadSessionMessages(id)
+    } catch {
+      setError(SAFE_SESSION_ERROR)
+    } finally {
+      endSessionTransition(transitionToken)
+    }
   }
 
   async function handleNewChat() {
-    const created = await createAgentSession()
-    setSessionId(created.session_id)
-    setMessages([])
-    stickToBottomRef.current = true
-    await refreshSessions()
+    const transitionToken = beginSessionTransition()
+    abortActiveStream()
+    resetLiveStreamState(true)
+    normalizeStreamingTail()
+    try {
+      const created = await createAgentSession()
+      setSessionId(created.session_id)
+      setError(null)
+      setMessages([])
+      stickToBottomRef.current = true
+      await refreshSessions()
+    } catch {
+      setError(SAFE_SESSION_ERROR)
+    } finally {
+      endSessionTransition(transitionToken)
+    }
   }
 
   async function handleDelete(id: string) {
     if (!window.confirm('删除该对话？')) return
-    await deleteAgentSession(id)
-    const list = await refreshSessions()
-    if (sessionId === id) {
-      if (list[0]) await openSession(list[0].session_id)
-      else await handleNewChat()
+    const deletingCurrent = sessionId === id
+    if (!deletingCurrent) {
+      try {
+        await deleteAgentSession(id)
+        await refreshSessions()
+      } catch {
+        setError(SAFE_SESSION_ERROR)
+      }
+      return
+    }
+
+    const transitionToken = beginSessionTransition()
+    abortActiveStream()
+    resetLiveStreamState(true)
+    normalizeStreamingTail()
+    try {
+      await deleteAgentSession(id)
+      setSessionId(null)
+      setMessages([])
+      const list = await refreshSessions()
+      if (list[0]) {
+        await loadSessionMessages(list[0].session_id)
+      } else {
+        const created = await createAgentSession()
+        setSessionId(created.session_id)
+        stickToBottomRef.current = true
+        await refreshSessions()
+      }
+    } catch {
+      setError(SAFE_SESSION_ERROR)
+    } finally {
+      endSessionTransition(transitionToken)
     }
   }
 
   async function send(raw?: string) {
     const text = (raw ?? input).trim()
-    if (!text || sending) return
+    if (!text || sending || sessionTransitioning || !sessionId) return
     setInput('')
     setError(null)
     setLiveTools([])
+    const streamId = activeStreamRef.current + 1
+    activeStreamRef.current = streamId
+    hasAnswerTokenRef.current = false
+    setLiveSubagentProgress([])
+    setProgressCollapsed(false)
     stickToBottomRef.current = true
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setMessages((prev) => [...prev, { role: 'assistant', content: '', streaming: true }])
@@ -208,11 +427,13 @@ export default function AgentChatPage() {
         sessionId,
         {
           onMeta: (meta) => {
+            if (activeStreamRef.current !== streamId) return
             if (meta.session_id && meta.session_id !== sessionId) {
               setSessionId(meta.session_id)
             }
           },
           onTool: (row) => {
+            if (activeStreamRef.current !== streamId) return
             setLiveTools((prev) => [...prev, row])
             // 工具执行后清空气泡，后续 token 才是最终回答的打字机效果
             setMessages((prev) => {
@@ -224,7 +445,16 @@ export default function AgentChatPage() {
               return copy
             })
           },
+          onSubagentProgress: (progress) => {
+            if (activeStreamRef.current !== streamId) return
+            setLiveSubagentProgress((current) => mergeSubagentProgress(current, progress))
+          },
           onToken: (delta) => {
+            if (activeStreamRef.current !== streamId) return
+            if (!hasAnswerTokenRef.current) {
+              hasAnswerTokenRef.current = true
+              setProgressCollapsed(true)
+            }
             setMessages((prev) => {
               const copy = [...prev]
               const last = copy[copy.length - 1]
@@ -239,6 +469,7 @@ export default function AgentChatPage() {
             })
           },
           onDone: (data) => {
+            if (activeStreamRef.current !== streamId) return
             setMessages((prev) => {
               const copy = [...prev]
               const last = copy[copy.length - 1]
@@ -256,6 +487,7 @@ export default function AgentChatPage() {
             void refreshSessions()
           },
           onError: (detail) => {
+            if (activeStreamRef.current !== streamId) return
             setError(detail)
             setMessages((prev) => {
               const copy = [...prev]
@@ -271,12 +503,15 @@ export default function AgentChatPage() {
         ac.signal,
       )
     } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
-        setError(err instanceof Error ? err.message : String(err))
+      if (activeStreamRef.current === streamId && (err as Error).name !== 'AbortError') {
+        setError(SAFE_CHAT_ERROR)
       }
     } finally {
-      setSending(false)
-      setLiveTools([])
+      if (abortRef.current === ac) abortRef.current = null
+      if (activeStreamRef.current === streamId) {
+        setSending(false)
+        setLiveTools([])
+      }
     }
   }
 
@@ -295,11 +530,17 @@ export default function AgentChatPage() {
   if (!ready) {
     return <Navigate to="/agent/settings" replace />
   }
+  const composingDisabled = sending || sessionTransitioning || !sessionId
 
   return (
     <section className="page agent-layout">
       <aside className="agent-sidebar">
-        <button type="button" className="btn" onClick={handleNewChat}>
+        <button
+          type="button"
+          className="btn"
+          disabled={sessionTransitioning}
+          onClick={handleNewChat}
+        >
           新对话
         </button>
         <ul className="agent-session-list">
@@ -308,6 +549,7 @@ export default function AgentChatPage() {
               <button
                 type="button"
                 className={`agent-session-item${sessionId === s.session_id ? ' active' : ''}`}
+                disabled={sessionTransitioning}
                 onClick={() => void openSession(s.session_id)}
               >
                 <span className="agent-session-title">{s.title || '对话'}</span>
@@ -317,6 +559,7 @@ export default function AgentChatPage() {
                 type="button"
                 className="agent-session-del"
                 title="删除"
+                disabled={sessionTransitioning}
                 onClick={() => void handleDelete(s.session_id)}
               >
                 ×
@@ -339,7 +582,7 @@ export default function AgentChatPage() {
                     key={q.label}
                     type="button"
                     className="agent-quick-chip"
-                    disabled={sending}
+                    disabled={composingDisabled}
                     onClick={() => void send(q.message)}
                   >
                     {q.label}
@@ -361,6 +604,13 @@ export default function AgentChatPage() {
             itemContent={(index, m) => (
               <div className="agent-bubble-wrap">
                 <ChatBubble m={m} />
+                {sending && index === messages.length - 1 && liveSubagentProgress.length > 0 ? (
+                  <SubagentProgressPanel
+                    items={liveSubagentProgress}
+                    collapsed={progressCollapsed}
+                    onToggle={() => setProgressCollapsed((value) => !value)}
+                  />
+                ) : null}
                 {sending && index === messages.length - 1 && liveTools.length > 0 ? (
                   <p className="meta-line">
                     工具：{liveTools.map((t) => t.tool).join(' → ')}
@@ -379,7 +629,7 @@ export default function AgentChatPage() {
               key={q.label}
               type="button"
               className="agent-quick-chip"
-              disabled={sending}
+              disabled={composingDisabled}
               onClick={() => void send(q.message)}
             >
               {q.label}
@@ -393,7 +643,7 @@ export default function AgentChatPage() {
             rows={2}
             placeholder="问投研助手…（Enter 发送，Shift+Enter 换行）"
             value={input}
-            disabled={sending}
+            disabled={composingDisabled}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -402,7 +652,7 @@ export default function AgentChatPage() {
               }
             }}
           />
-          <button className="btn" type="submit" disabled={sending || !input.trim()}>
+          <button className="btn" type="submit" disabled={composingDisabled || !input.trim()}>
             {sending ? '生成中…' : '发送'}
           </button>
         </form>

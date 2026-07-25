@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 from langchain_core.tools import BaseTool, tool
 
+from ..progress import emit_progress
 from .models import DataAgentLimits
 from .workspace import DatasetWorkspace
 
@@ -26,8 +27,31 @@ _ERROR_MESSAGES = {
     "sandbox_timeout": "计算超时",
     "sandbox_unavailable": "计算服务暂不可用",
     "sandbox_invalid_output": "计算结果无效",
+    "sandbox_rejected": "计算失败",
     "python_retry_limit_exceeded": "Python 分析重试次数已达上限",
+    "generated_code_failed": (
+        "生成代码执行失败：请用 datasets['dataset_id'] 读取数据，并赋值给 result"
+    ),
+    "result_not_assigned": "必须把最终结果赋值给变量 result",
+    "syntax_error": "代码语法错误",
+    "import_not_allowed": "不允许的 import",
+    "output_too_large": "计算结果过大",
+    "result_not_finite": "结果包含非有限数值",
+    "runner_failed": "沙箱运行失败",
+    "invalid_output_limit": "输出上限无效",
 }
+_SAFE_RUNNER_ERROR_CODES = frozenset(
+    {
+        "generated_code_failed",
+        "import_not_allowed",
+        "invalid_output_limit",
+        "output_too_large",
+        "result_not_assigned",
+        "result_not_finite",
+        "runner_failed",
+        "syntax_error",
+    }
+)
 
 
 def _validate_value(value: Any, depth: int = 0) -> None:
@@ -129,6 +153,8 @@ class SandboxClient:
             code = str(code_value or response.status_code)
             if code == "execution_timeout":
                 raise RuntimeError("sandbox_timeout") from None
+            if code == "sandbox_failed":
+                raise RuntimeError("sandbox_unavailable") from None
             raise RuntimeError(f"sandbox_rejected:{code}") from None
 
         result = payload.get("result")
@@ -158,11 +184,28 @@ def _tool_error(code: str) -> str:
     )
 
 
+def _map_runtime_error_code(exc: RuntimeError) -> str:
+    code_value = str(exc)
+    if code_value.startswith("sandbox_rejected:"):
+        runner_code = code_value.split(":", 1)[1]
+        if runner_code in _SAFE_RUNNER_ERROR_CODES:
+            return runner_code
+        return "sandbox_rejected"
+    return code_value
+
+
 def build_python_tool(workspace: DatasetWorkspace, client: SandboxClient) -> BaseTool:
     @tool
     def run_python_analysis(code: str, dataset_ids_json: str) -> str:
-        """在沙箱中运行只读 Python 分析代码，仅可使用本次请求已保存的数据集。"""
+        """在沙箱中运行只读 Python 分析。预置 pd/np（勿再 import）；用 datasets['dataset_id']
+        取 DataFrame；必须赋值给 result。禁止 read_csv/打开文件或访问网络。"""
+        emit_progress(step="sandbox", status="started")
         if not workspace.begin_python_analysis():
+            emit_progress(
+                step="sandbox",
+                status="failed",
+                error_code="python_retry_limit_exceeded",
+            )
             return _tool_error("python_retry_limit_exceeded")
         try:
             dataset_ids = _parse_dataset_ids(dataset_ids_json)
@@ -171,7 +214,13 @@ def build_python_tool(workspace: DatasetWorkspace, client: SandboxClient) -> Bas
             try:
                 evidence = workspace.record_sandbox_result(result)
             except ValueError:
+                emit_progress(
+                    step="sandbox",
+                    status="failed",
+                    error_code="sandbox_invalid_output",
+                )
                 return _tool_error("sandbox_invalid_output")
+            emit_progress(step="sandbox", status="completed")
             return json.dumps(
                 {
                     "result_id": evidence.result_id,
@@ -182,13 +231,26 @@ def build_python_tool(workspace: DatasetWorkspace, client: SandboxClient) -> Bas
                 allow_nan=False,
             )
         except ValueError:
+            emit_progress(
+                step="sandbox",
+                status="failed",
+                error_code="invalid_dataset_ids",
+            )
             return _tool_error("invalid_dataset_ids")
         except KeyError:
+            emit_progress(
+                step="sandbox",
+                status="failed",
+                error_code="dataset_not_in_request",
+            )
             return _tool_error("dataset_not_in_request")
         except RuntimeError as exc:
-            code_value = str(exc)
-            if code_value.startswith("sandbox_rejected:"):
-                code_value = "sandbox_rejected"
-            return _tool_error(code_value)
+            error_code = _map_runtime_error_code(exc)
+            emit_progress(
+                step="sandbox",
+                status="failed",
+                error_code=error_code,
+            )
+            return _tool_error(error_code)
 
     return run_python_analysis

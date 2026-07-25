@@ -74,14 +74,36 @@ class FakeContainer:
         self.removed = True
 
 
+class FakeVolume:
+    def __init__(self, name: str):
+        self.name = name
+        self.removed = False
+
+    def remove(self, force=False):
+        assert force is True
+        self.removed = True
+
+
 class FakeDockerClient:
     def __init__(self, container):
         self.container = container
+        self.helper_container = FakeContainer(wait_result={"StatusCode": 0})
         self.create_kwargs = None
+        self.create_calls = []
+        self.volumes_created = []
         self.containers = SimpleNamespace(create=self.create)
+        self.volumes = SimpleNamespace(create=self.create_volume)
+
+    def create_volume(self, **kwargs):
+        volume = FakeVolume(f"vol-{len(self.volumes_created)}")
+        self.volumes_created.append(volume)
+        return volume
 
     def create(self, **kwargs):
+        self.create_calls.append(kwargs)
         self.create_kwargs = kwargs
+        if kwargs.get("user") == "0:0":
+            return self.helper_container
         return self.container
 
 
@@ -459,29 +481,31 @@ def test_executor_uses_fixed_security_create_kwargs_and_hard_caps():
     response = executor.execute(request)
 
     assert response["ok"] is True
-    assert client.create_kwargs == {
-        "image": "fixed-runner:test",
-        "entrypoint": ["sh", "-c"],
-        "command": [
-            "while [ ! -f /input/task.json ]; do sleep 0.05; done; "
-            "python /runner/entrypoint.py"
-        ],
-        "network_disabled": True,
-        "read_only": True,
-        "user": "65532:65532",
-        "cap_drop": ["ALL"],
-        "security_opt": ["no-new-privileges:true"],
-        "mem_limit": "512m",
-        "nano_cpus": 1_000_000_000,
-        "pids_limit": 32,
-        "tmpfs": {
-            "/input": "rw,noexec,nosuid,size=52m,uid=65532,gid=65532",
-            "/output": "rw,noexec,nosuid,size=2m,uid=65532,gid=65532",
-            "/tmp": "rw,noexec,nosuid,size=64m,uid=65532,gid=65532",
-        },
-        "labels": {"share-data.sandbox": "ephemeral"},
-        "detach": True,
-    }
+    assert len(client.volumes_created) == 2
+    assert all(volume.removed for volume in client.volumes_created)
+    assert client.helper_container.removed is True
+    assert client.create_kwargs["image"] == "fixed-runner:test"
+    assert client.create_kwargs["entrypoint"] == ["sh", "-c"]
+    assert client.create_kwargs["command"] == [
+        "while [ ! -f /input/task.json ]; do sleep 0.05; done; "
+        "python /runner/entrypoint.py"
+    ]
+    assert client.create_kwargs["network_disabled"] is True
+    assert client.create_kwargs["user"] == "65532:65532"
+    assert client.create_kwargs["cap_drop"] == ["ALL"]
+    assert client.create_kwargs["security_opt"] == ["no-new-privileges:true"]
+    assert client.create_kwargs["mem_limit"] == "512m"
+    assert client.create_kwargs["nano_cpus"] == 1_000_000_000
+    assert client.create_kwargs["pids_limit"] == 32
+    assert client.create_kwargs["labels"] == {"share-data.sandbox": "ephemeral"}
+    assert client.create_kwargs["detach"] is True
+    assert "tmpfs" not in client.create_kwargs
+    assert "read_only" not in client.create_kwargs
+    mounts = client.create_kwargs["mounts"]
+    assert [mount["Target"] for mount in mounts] == ["/input", "/output", "/tmp"]
+    assert mounts[0]["Type"] == "volume"
+    assert mounts[1]["Type"] == "volume"
+    assert mounts[2]["Type"] == "tmpfs"
     assert container.wait_timeout == 35
     assert container.removed is True
     assert len(client.create_kwargs["command"]) == 1

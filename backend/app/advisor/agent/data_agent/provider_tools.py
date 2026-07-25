@@ -8,6 +8,7 @@ from langchain_core.tools import BaseTool, tool
 
 from app import providers
 
+from ..progress import emit_progress, validate_progress_identifier
 from .models import SENSITIVE_KEYS
 from .workspace import DatasetWorkspace
 
@@ -17,7 +18,7 @@ _MAX_METADATA_DEPTH = 5
 _MAX_METADATA_ITEMS = 32
 _MAX_METADATA_STRING = 512
 _MAX_DOC_STRING = 2_048
-_MAX_INTERFACES = 50
+_MAX_INTERFACES = 10
 _MAX_PARAMS = 64
 _UNSUPPORTED = "[unsupported]"
 
@@ -214,6 +215,21 @@ def _error_json(
     source: str | None = None,
     interface: str | None = None,
 ) -> str:
+    code, message = _error_code_and_message(exc)
+    return json.dumps(
+        {
+            "error": {
+                "code": code,
+                "message": message,
+                "source": source,
+                "interface": interface,
+            }
+        },
+        ensure_ascii=False,
+    )
+
+
+def _error_code_and_message(exc: Exception) -> tuple[str, str]:
     code = "internal_error"
     message = "工具执行失败"
     if isinstance(exc, ValueError):
@@ -228,28 +244,20 @@ def _error_json(
     elif isinstance(exc, RuntimeError):
         code = "provider_error"
         message = "数据源暂不可用"
-    return json.dumps(
-        {
-            "error": {
-                "code": code,
-                "message": message,
-                "source": source,
-                "interface": interface,
-            }
-        },
-        ensure_ascii=False,
-    )
+    return code, message
 
 
 def build_provider_tools(workspace: DatasetWorkspace) -> list[BaseTool]:
     @tool
     def list_data_sources() -> str:
         """列出所有已注册数据源及就绪状态。"""
+        emit_progress(step="list_sources", status="started")
         try:
             raw_value = providers.list_sources()
             if type(raw_value) not in (list, tuple):
                 raw_sources = []
                 sources = [{"trust": _METADATA_TRUST, "truncated": True}]
+                emit_progress(step="list_sources", status="completed")
                 return _metadata_json(sources)
             raw_sources = raw_value
             sources = []
@@ -263,15 +271,28 @@ def build_provider_tools(workspace: DatasetWorkspace) -> list[BaseTool]:
                 sources.append(item)
             if len(raw_sources) > len(sources) and sources:
                 sources[-1]["truncated"] = True
+            emit_progress(step="list_sources", status="completed")
             return _metadata_json(sources)
         except Exception as exc:
+            emit_progress(
+                step="list_sources",
+                status="failed",
+                error_code=_error_code_and_message(exc)[0],
+            )
             return _error_json(exc)
 
     @tool
     def search_data_interfaces(source: str, keyword: str = "", category: str = "") -> str:
         """按数据源、关键词和分类检索接口目录；调用接口前先检索。"""
+        safe_source: str | None = None
+        error_source: str | None = None
         try:
-            items = providers.get_provider(source).list_interfaces(
+            validated_source = validate_progress_identifier(source, field="source")
+            error_source = validated_source
+            provider = providers.get_provider(validated_source)
+            safe_source = validated_source
+            emit_progress(step="search", status="started", source=safe_source)
+            items = provider.list_interfaces(
                 category=category or None, keyword=keyword or None
             )
             if type(items) not in (list, tuple):
@@ -280,7 +301,7 @@ def build_provider_tools(workspace: DatasetWorkspace) -> list[BaseTool]:
             else:
                 collection_truncated = False
             output = {
-                "source": _truncate_text(source, 128)[0],
+                "source": safe_source,
                 "trust": _METADATA_TRUST,
                 "interfaces": [],
                 "count": len(items),
@@ -295,40 +316,124 @@ def build_provider_tools(workspace: DatasetWorkspace) -> list[BaseTool]:
                     break
                 output["interfaces"].append(item)
                 output["truncated"] = output["truncated"] or item_truncated
+            emit_progress(step="search", status="completed", source=safe_source)
             return _metadata_json(output)
         except Exception as exc:
-            return _error_json(exc, source=source)
+            emit_progress(
+                step="search",
+                status="failed",
+                source=safe_source,
+                error_code=_error_code_and_message(exc)[0],
+            )
+            return _error_json(exc, source=error_source)
 
     @tool
     def get_data_interface(source: str, name: str) -> str:
         """读取接口完整参数定义；fetch 前必须调用。"""
+        safe_source: str | None = None
+        safe_interface: str | None = None
+        error_source: str | None = None
+        error_interface: str | None = None
         try:
-            item = providers.get_provider(source).get_interface(name)
-            return _metadata_json(
+            validated_source = validate_progress_identifier(source, field="source")
+            validated_interface = validate_progress_identifier(name, field="interface")
+            error_source = validated_source
+            error_interface = validated_interface
+            provider = providers.get_provider(validated_source)
+            item = provider.get_interface(validated_interface)
+            safe_source = validated_source
+            safe_interface = validated_interface
+            emit_progress(
+                step="describe",
+                status="started",
+                source=safe_source,
+                interface=safe_interface,
+            )
+            payload = _metadata_json(
                 {
-                    "source": _truncate_text(source, 128)[0],
+                    "source": safe_source,
                     "trust": _METADATA_TRUST,
                     "interface": _interface_detail(item),
                 }
             )
+            emit_progress(
+                step="describe",
+                status="completed",
+                source=safe_source,
+                interface=safe_interface,
+            )
+            return payload
         except Exception as exc:
-            return _error_json(exc, source=source, interface=name)
+            emit_progress(
+                step="describe",
+                status="failed",
+                source=safe_source,
+                interface=safe_interface,
+                error_code=_error_code_and_message(exc)[0],
+            )
+            return _error_json(
+                exc,
+                source=error_source,
+                interface=error_interface,
+            )
 
     @tool
     def fetch_provider_data(
         source: str, name: str, params_json: str = "{}", limit: int = 500
     ) -> str:
         """只读调用任意已注册 Provider 接口并保存为本次请求的数据集。"""
+        safe_source: str | None = None
+        safe_interface: str | None = None
+        error_source: str | None = None
+        error_interface: str | None = None
         try:
+            validated_source = validate_progress_identifier(source, field="source")
+            validated_interface = validate_progress_identifier(name, field="interface")
+            error_source = validated_source
+            error_interface = validated_interface
+            provider = providers.get_provider(validated_source)
+            provider.get_interface(validated_interface)
+            safe_source = validated_source
+            safe_interface = validated_interface
+            emit_progress(
+                step="fetch",
+                status="started",
+                source=safe_source,
+                interface=safe_interface,
+            )
             params: dict[str, Any] = json.loads(params_json)
             if not isinstance(params, dict):
                 raise ValueError("params_json must be an object")
             bounded = max(1, min(int(limit), workspace.limits.max_rows_per_fetch))
-            payload = providers.get_provider(source).fetch(name, params, bounded)
-            meta = workspace.create_dataset(source, name, params, payload)
+            payload = provider.fetch(safe_interface, params, bounded)
+            meta = workspace.create_dataset(
+                safe_source,
+                safe_interface,
+                params,
+                payload,
+            )
+            emit_progress(
+                step="fetch",
+                status="completed",
+                source=safe_source,
+                interface=safe_interface,
+                rows=meta.returned,
+                truncated=meta.truncated,
+            )
             return json.dumps({"dataset": meta.model_dump(mode="json")}, ensure_ascii=False)
         except Exception as exc:
-            return _error_json(exc, source=source, interface=name)
+            emit_progress(
+                step="fetch",
+                status="failed",
+                source=safe_source,
+                interface=safe_interface,
+                error_code=_error_code_and_message(exc)[0],
+            )
+            return _error_json(
+                exc,
+                source=error_source,
+                interface=error_interface,
+            )
 
     return [
         list_data_sources,

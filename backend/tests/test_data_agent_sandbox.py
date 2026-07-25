@@ -3,6 +3,7 @@ import json
 import httpx
 import pytest
 
+from app.advisor.agent.progress import bind_progress_sink
 from app.advisor.agent.data_agent.models import DataAgentLimits
 from app.advisor.agent.data_agent.sandbox import SandboxClient, build_python_tool
 from app.advisor.agent.data_agent.workspace import DatasetWorkspace
@@ -120,6 +121,18 @@ def test_sandbox_client_maps_controller_string_runner_rejection_code():
 
     client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
     with pytest.raises(RuntimeError, match="^sandbox_rejected:invalid_dataset_name$"):
+        client.execute("result={}", {}, DataAgentLimits())
+
+
+def test_sandbox_client_maps_sandbox_failed_to_unavailable():
+    def handler(_request):
+        return httpx.Response(
+            200,
+            json={"ok": False, "error": "sandbox_failed", "metrics": {"elapsed_ms": 12}},
+        )
+
+    client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="^sandbox_unavailable$"):
         client.execute("result={}", {}, DataAgentLimits())
 
 
@@ -247,6 +260,51 @@ def test_python_analysis_tool_exports_only_requested_workspace_datasets(tmp_path
     assert [{"x": 1}, {"x": 3}] != payload.get("result")
 
 
+def test_python_analysis_tool_emits_progress_without_code_or_rows(tmp_path):
+    captured = {}
+    events = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        return httpx.Response(200, json={"ok": True, "result": {"mean": 2.0}})
+
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
+        meta = workspace.create_dataset(
+            "akshare",
+            "demo",
+            {},
+            {
+                "columns": ["secret"],
+                "rows": [{"secret": "do-not-leak"}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+            },
+        )
+        client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
+        tool = build_python_tool(workspace, client)
+        with bind_progress_sink(events.append):
+            payload = json.loads(
+                tool.invoke(
+                    {
+                        "code": "result={'mean': 2.0}",
+                        "dataset_ids_json": json.dumps([meta.dataset_id]),
+                    }
+                )
+            )
+
+    assert payload["result"] == {"mean": 2.0}
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("sandbox", "started"),
+        ("sandbox", "completed"),
+    ]
+    encoded = json.dumps(events, ensure_ascii=False)
+    assert "result={'mean': 2.0}" not in encoded
+    assert "dataset_ids_json" not in encoded
+    assert "do-not-leak" not in encoded
+    assert captured["datasets"] == {meta.dataset_id: [{"secret": "do-not-leak"}]}
+
+
 def test_python_analysis_tool_rejects_third_call_without_executing_client(tmp_path):
     class CountingClient:
         def __init__(self):
@@ -354,3 +412,113 @@ def test_python_analysis_tool_maps_sandbox_timeout_without_leaking_code_or_data(
     assert payload == {"error": {"code": "sandbox_timeout", "message": "计算超时"}}
     assert "code-secret" not in encoded
     assert "do-not-leak" not in encoded
+
+
+def test_python_analysis_tool_failure_progress_uses_stable_error_code(tmp_path):
+    events = []
+
+    def handler(_request):
+        raise httpx.ReadTimeout("late")
+
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
+        meta = workspace.create_dataset(
+            "akshare",
+            "demo",
+            {},
+            {
+                "columns": ["secret"],
+                "rows": [{"secret": "do-not-leak"}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+            },
+        )
+        client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
+        tool = build_python_tool(workspace, client)
+        with bind_progress_sink(events.append):
+            payload = json.loads(
+                tool.invoke(
+                    {
+                        "code": "raise Exception('code-secret')",
+                        "dataset_ids_json": json.dumps([meta.dataset_id]),
+                    }
+                )
+            )
+
+    assert payload["error"]["code"] == "sandbox_timeout"
+    assert events == [
+        {
+            "step": "sandbox",
+            "status": "started",
+            "phase": "data_agent",
+            "message": "正在计算和整理数据",
+        },
+        {
+            "step": "sandbox",
+            "status": "failed",
+            "error_code": "sandbox_timeout",
+            "phase": "data_agent",
+            "message": "数据计算失败",
+        },
+    ]
+    encoded = json.dumps(events, ensure_ascii=False)
+    assert "code-secret" not in encoded
+    assert "dataset_ids_json" not in encoded
+    assert "do-not-leak" not in encoded
+
+
+def test_python_analysis_tool_description_documents_datasets_contract(tmp_path):
+    client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(lambda r: None))
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
+        tool = build_python_tool(workspace, client)
+
+    assert "datasets[" in tool.description
+    assert "result" in tool.description
+    assert "read_csv" in tool.description or "csv" in tool.description.lower()
+
+
+@pytest.mark.parametrize(
+    ("runner_code", "expected_code"),
+    [
+        ("generated_code_failed", "generated_code_failed"),
+        ("result_not_assigned", "result_not_assigned"),
+        ("syntax_error", "syntax_error"),
+        ("unknown_internal_detail", "sandbox_rejected"),
+    ],
+)
+def test_python_analysis_tool_surfaces_allowlisted_runner_errors(
+    tmp_path, runner_code, expected_code
+):
+    def handler(_request):
+        return httpx.Response(
+            200,
+            json={"ok": False, "error": runner_code, "metrics": {"elapsed_ms": 1}},
+        )
+
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / runner_code) as workspace:
+        meta = workspace.create_dataset(
+            "akshare",
+            "demo",
+            {},
+            {
+                "columns": ["x"],
+                "rows": [{"x": 1}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+            },
+        )
+        client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
+        tool = build_python_tool(workspace, client)
+        payload = json.loads(
+            tool.invoke(
+                {
+                    "code": "pd.read_csv('x.csv')",
+                    "dataset_ids_json": json.dumps([meta.dataset_id]),
+                }
+            )
+        )
+
+    assert payload["error"]["code"] == expected_code
+    assert payload["error"]["message"]
+    assert "read_csv" not in json.dumps(payload, ensure_ascii=False)

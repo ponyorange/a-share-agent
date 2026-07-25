@@ -161,4 +161,4 @@ data_agent:
   sandbox_memory_mb: 512
   max_output_bytes: 1048576
   max_python_retries: 2
-  max_agent_steps: 24
+  max_agent_steps: 60

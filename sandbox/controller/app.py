@@ -15,6 +15,7 @@ from typing import Any
 
 import docker
 import requests
+from docker.types import Mount
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import JSONResponse
@@ -271,9 +272,41 @@ class DockerExecutor:
         self._docker = docker_client
         self._settings = settings
 
+    def _prepare_volume_permissions(self, input_name: str, output_name: str) -> None:
+        helper = self._docker.containers.create(
+            image=self._settings.runner_image,
+            entrypoint=["sh", "-c"],
+            # Docker Desktop may deny chown on volumes; chmod is enough for uid 65532.
+            command=["chmod 777 /input /output"],
+            user="0:0",
+            network_disabled=True,
+            cap_drop=["ALL"],
+            security_opt=["no-new-privileges:true"],
+            mem_limit="64m",
+            pids_limit=16,
+            mounts=[
+                Mount(target="/input", source=input_name, type="volume"),
+                Mount(target="/output", source=output_name, type="volume"),
+            ],
+            labels={"share-data.sandbox": "volume-prepare"},
+            detach=True,
+        )
+        try:
+            helper.start()
+            status = helper.wait(timeout=15)
+            if int(status.get("StatusCode", 1)) != 0:
+                raise RuntimeError("volume_prepare_failed")
+        finally:
+            try:
+                helper.remove(force=True)
+            except Exception:
+                pass
+
     def execute(self, request: ExecuteRequest) -> dict[str, Any]:
         started_at = time.monotonic()
         container = None
+        input_volume = None
+        output_volume = None
 
         def response(ok: bool, *, result: Any = None, error: str | None = None):
             payload: dict[str, Any] = {
@@ -313,6 +346,15 @@ class DockerExecutor:
 
         try:
             input_archive = _json_tar(entries)
+            # Docker Desktop/Engine rejects reliable put/get_archive on tmpfs;
+            # use ephemeral volumes for /input and /output instead.
+            input_volume = self._docker.volumes.create(
+                labels={"share-data.sandbox": "ephemeral-input"}
+            )
+            output_volume = self._docker.volumes.create(
+                labels={"share-data.sandbox": "ephemeral-output"}
+            )
+            self._prepare_volume_permissions(input_volume.name, output_volume.name)
             container = self._docker.containers.create(
                 image=self._settings.runner_image,
                 entrypoint=["sh", "-c"],
@@ -321,18 +363,31 @@ class DockerExecutor:
                     "python /runner/entrypoint.py"
                 ],
                 network_disabled=True,
-                read_only=True,
                 user="65532:65532",
                 cap_drop=["ALL"],
                 security_opt=["no-new-privileges:true"],
                 mem_limit=f"{memory_mb}m",
                 nano_cpus=1_000_000_000,
                 pids_limit=32,
-                tmpfs={
-                    "/input": "rw,noexec,nosuid,size=52m,uid=65532,gid=65532",
-                    "/output": "rw,noexec,nosuid,size=2m,uid=65532,gid=65532",
-                    "/tmp": "rw,noexec,nosuid,size=64m,uid=65532,gid=65532",
-                },
+                mounts=[
+                    Mount(
+                        target="/input",
+                        source=input_volume.name,
+                        type="volume",
+                    ),
+                    Mount(
+                        target="/output",
+                        source=output_volume.name,
+                        type="volume",
+                    ),
+                    Mount(
+                        target="/tmp",
+                        source="",
+                        type="tmpfs",
+                        tmpfs_size=64 * 1024 * 1024,
+                        tmpfs_mode=0o777,
+                    ),
+                ],
                 labels={"share-data.sandbox": "ephemeral"},
                 detach=True,
             )
@@ -398,6 +453,13 @@ class DockerExecutor:
             if container is not None:
                 try:
                     container.remove(force=True)
+                except Exception:
+                    pass
+            for volume in (input_volume, output_volume):
+                if volume is None:
+                    continue
+                try:
+                    volume.remove(force=True)
                 except Exception:
                     pass
 

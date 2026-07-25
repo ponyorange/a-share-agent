@@ -35,6 +35,18 @@ export type AgentChatResult = {
   disclaimer?: string
 }
 
+export type SubagentProgress = {
+  phase: 'data_agent'
+  step: 'delegate' | 'list_sources' | 'search' | 'describe' | 'fetch' | 'sandbox' | 'submit'
+  status: 'started' | 'completed' | 'failed'
+  message: string
+  source?: string
+  interface?: string
+  rows?: number
+  truncated?: boolean
+  error_code?: string
+}
+
 export type AgentSession = {
   session_id: string
   title: string
@@ -81,13 +93,14 @@ export function agentChat(
   })
 }
 
-/** SSE：meta → tool* → token* → done */
+/** SSE：meta → (tool | subagent_progress)* → token* → done */
 export async function streamAgentChat(
   message: string,
   sessionId: string | null | undefined,
   handlers: {
     onMeta?: (meta: { session_id: string; context_messages?: number }) => void
     onTool?: (row: { tool: string; content: string }) => void
+    onSubagentProgress?: (progress: SubagentProgress) => void
     onToken?: (delta: string) => void
     onDone?: (data: AgentChatResult) => void
     onError?: (detail: string) => void
@@ -138,6 +151,8 @@ export async function streamAgentChat(
         handlers.onMeta?.(data as { session_id: string; context_messages?: number })
       } else if (eventName === 'tool') {
         handlers.onTool?.(data as { tool: string; content: string })
+      } else if (eventName === 'subagent_progress') {
+        handlers.onSubagentProgress?.(data as SubagentProgress)
       } else if (eventName === 'token') {
         handlers.onToken?.(String(data.delta || ''))
       } else if (eventName === 'done') {

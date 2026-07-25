@@ -28,7 +28,7 @@ class DataAgentLimits(BaseModel):
     sandbox_memory_mb: int = Field(default=512, ge=128, le=512)
     max_output_bytes: int = Field(default=1024 * 1024, ge=1024, le=1024 * 1024)
     max_python_retries: int = Field(default=2, ge=0, le=2)
-    max_agent_steps: int = Field(default=24, ge=4, le=40)
+    max_agent_steps: int = Field(default=60, ge=4, le=80)
 
     @classmethod
     def from_config(cls, value: dict[str, Any] | None) -> "DataAgentLimits":

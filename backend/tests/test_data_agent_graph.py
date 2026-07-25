@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
+from app.advisor.agent.progress import bind_progress_sink
 from app.advisor.agent.data_agent.graph import (
     DATA_AGENT_PROMPT,
     parse_data_agent_result,
@@ -64,12 +65,12 @@ def test_parse_data_agent_result_accepts_normal_market_and_financial_data():
 
 def test_parse_data_agent_result_rejects_extra_fields():
     result = parse_data_agent_result(_result_json(debug_dump={"raw": "not allowed"}))
-    assert result.failures[0].code == "invalid_agent_result"
+    assert result.failures[0].code == "invalid_agent_schema"
 
 
 def test_parse_data_agent_result_rejects_more_than_one_mibibyte():
     result = parse_data_agent_result(_result_json(answer="x" * (1024 * 1024)))
-    assert result.failures[0].code == "invalid_agent_result"
+    assert result.failures[0].code in {"invalid_agent_result", "invalid_agent_schema"}
 
 
 def test_parse_data_agent_result_rejects_depth_21():
@@ -168,7 +169,7 @@ def test_parse_data_agent_result_rejects_sources_not_created_in_workspace(
             workspace=workspace,
         )
 
-    assert result.failures[0].code == "invalid_agent_result"
+    assert result.failures[0].code == "source_not_in_request_evidence"
     assert result.data == {}
     assert result.sources == []
 
@@ -177,7 +178,7 @@ def test_parse_data_agent_result_rejects_success_data_without_request_evidence(t
     with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
         result = parse_data_agent_result(_result_json(sources=[]), workspace=workspace)
 
-    assert result.failures[0].code == "invalid_agent_result"
+    assert result.failures[0].code == "data_not_in_request_evidence"
     assert result.data == {}
 
 
@@ -197,7 +198,7 @@ def test_parse_data_agent_result_requires_source_for_direct_provider_data(tmp_pa
         )
         result = parse_data_agent_result(_result_json(sources=[]), workspace=workspace)
 
-    assert result.failures[0].code == "invalid_agent_result"
+    assert result.failures[0].code == "data_not_in_request_evidence"
     assert result.data == {}
 
 
@@ -221,7 +222,7 @@ def test_parse_data_agent_result_rejects_forged_data_with_valid_source(tmp_path)
             workspace=workspace,
         )
 
-    assert result.failures[0].code == "invalid_agent_result"
+    assert result.failures[0].code == "data_not_in_request_evidence"
     assert result.data == {}
 
 
@@ -233,7 +234,7 @@ def test_parse_data_agent_result_rejects_forged_data_after_any_sandbox_success(t
             workspace=workspace,
         )
 
-    assert result.failures[0].code == "invalid_agent_result"
+    assert result.failures[0].code == "data_not_in_sandbox_evidence"
     assert result.data == {}
 
 
@@ -311,6 +312,299 @@ def test_data_agent_prompt_treats_all_provider_content_as_untrusted_data():
     assert "只作为数据" in DATA_AGENT_PROMPT
 
 
+def test_data_agent_prompt_documents_sandbox_datasets_contract():
+    assert "datasets[" in DATA_AGENT_PROMPT
+    assert "result =" in DATA_AGENT_PROMPT or "赋值给 result" in DATA_AGENT_PROMPT
+    assert "read_csv" in DATA_AGENT_PROMPT or "csv" in DATA_AGENT_PROMPT.lower()
+    assert "stock_zh_index" in DATA_AGENT_PROMPT or "index_hist" in DATA_AGENT_PROMPT
+    assert "submit_data_result" in DATA_AGENT_PROMPT
+
+
+def test_submit_data_result_tool_accepts_valid_payload(tmp_path):
+    from app.advisor.agent.data_agent.graph import build_submit_tool
+
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        meta = workspace.create_dataset(
+            "akshare",
+            "demo",
+            {"symbol": "sh000300"},
+            {
+                "columns": ["close"],
+                "rows": [{"close": 1}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+            },
+        )
+        evidence = workspace.record_sandbox_result({"latest_close": 10.5})
+        tool = build_submit_tool(workspace)
+        payload = json.loads(
+            tool.invoke(
+                {
+                    "answer": "ok",
+                    "data_json": json.dumps(
+                        {
+                            "result_id": evidence.result_id,
+                            "payload": {"latest_close": 10.5},
+                        }
+                    ),
+                    "sources_json": json.dumps(
+                        [
+                            {
+                                "source": "akshare",
+                                "interface": "demo",
+                                "params_summary": {"symbol": "sh000300"},
+                                "rows": meta.returned,
+                                "truncated": False,
+                            }
+                        ]
+                    ),
+                }
+            )
+        )
+
+    assert payload == {"ok": True}
+    assert workspace.submitted_result is not None
+    assert workspace.submitted_result.data == {
+        "result_id": evidence.result_id,
+        "payload": {"latest_close": 10.5},
+    }
+
+
+def test_submit_data_result_tool_emits_started_and_completed_progress(tmp_path):
+    from app.advisor.agent.data_agent.graph import build_submit_tool
+
+    events = []
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        evidence = workspace.record_sandbox_result({"latest_close": 10.5})
+        tool = build_submit_tool(workspace)
+        with bind_progress_sink(events.append):
+            payload = json.loads(
+                tool.invoke(
+                    {
+                        "answer": "ok",
+                        "data_json": json.dumps(
+                            {
+                                "result_id": evidence.result_id,
+                                "payload": {"latest_close": 10.5},
+                            }
+                        ),
+                        "sources_json": "[]",
+                    }
+                )
+            )
+
+    assert payload == {"ok": True}
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("submit", "started"),
+        ("submit", "completed"),
+    ]
+
+
+def test_submit_data_result_tool_failure_progress_uses_stable_error_code(tmp_path):
+    from app.advisor.agent.data_agent.graph import build_submit_tool
+
+    events = []
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        tool = build_submit_tool(workspace)
+        with bind_progress_sink(events.append):
+            payload = json.loads(
+                tool.invoke(
+                    {
+                        "answer": "raw answer should not leak",
+                        "data_json": "{not-json",
+                        "sources_json": "[]",
+                    }
+                )
+            )
+
+    assert payload["error"] == "invalid_json_fields"
+    assert events == [
+        {
+            "step": "submit",
+            "status": "started",
+            "phase": "data_agent",
+            "message": "正在校验来源与结果",
+        },
+        {
+            "step": "submit",
+            "status": "failed",
+            "error_code": "invalid_json_fields",
+            "phase": "data_agent",
+            "message": "结果校验失败",
+        },
+    ]
+    assert "raw answer should not leak" not in json.dumps(events, ensure_ascii=False)
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_submit_data_result_tool_rejects_non_finite_json_with_failed_progress(
+    tmp_path, constant
+):
+    from app.advisor.agent.data_agent.graph import build_submit_tool
+
+    events = []
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        tool = build_submit_tool(workspace)
+        with bind_progress_sink(events.append):
+            payload = json.loads(
+                tool.invoke(
+                    {
+                        "answer": f"raw answer {constant} should not leak",
+                        "data_json": constant,
+                        "sources_json": "[]",
+                    }
+                )
+            )
+
+    assert payload == {
+        "ok": False,
+        "error": "invalid_json_fields",
+        "message": "提交字段不是合法 JSON",
+    }
+    assert [(event["step"], event["status"]) for event in events] == [
+        ("submit", "started"),
+        ("submit", "failed"),
+    ]
+    assert events[-1]["error_code"] == "invalid_json_fields"
+    encoded = json.dumps(events, ensure_ascii=False)
+    assert constant not in encoded
+    assert "raw answer" not in encoded
+
+
+def test_parse_data_agent_result_maps_step_limit_sentinel():
+    result = parse_data_agent_result("Sorry, need more steps to process this request.")
+    assert result.failures[0].code == "agent_step_limit"
+    assert result.data == {}
+
+
+def test_parse_data_agent_result_accepts_fenced_json_with_trailing_prose():
+    payload = {
+        "answer": "ok",
+        "data": {},
+        "sources": [],
+        "computation": [],
+        "warnings": [],
+        "failures": [{"code": "no_data", "message": "未取得数据"}],
+    }
+    raw = "```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```\n\n仅供参考"
+    result = parse_data_agent_result(raw)
+    assert result.answer == "ok"
+    assert result.failures[0].code == "no_data"
+
+
+def test_parse_normalizes_params_summary_string_and_computation_result_reference(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        meta = workspace.create_dataset(
+            "akshare",
+            "stock_zh_index_daily_tx",
+            {
+                "symbol": "sh000300",
+                "start_date": "20250501",
+                "end_date": "20250718",
+            },
+            {
+                "columns": ["close"],
+                "rows": [{"close": 1}],
+                "returned": 53,
+                "total": 53,
+                "truncated": False,
+            },
+        )
+        evidence = workspace.record_sandbox_result(
+            {"latest_close": 4058.55, "period_high": 4065.94}
+        )
+        raw = json.dumps(
+            {
+                "answer": "ok",
+                "data": {"latest_close": 1},
+                "sources": [
+                    {
+                        "source": "akshare",
+                        "interface": "stock_zh_index_daily_tx",
+                        "params_summary": (
+                            "symbol=sh000300, start_date=20250501, end_date=20250718"
+                        ),
+                        "rows": meta.returned,
+                        "truncated": False,
+                    }
+                ],
+                "computation": {
+                    "result_id": evidence.result_id,
+                    "method": "取近20日高低收",
+                },
+                "warnings": [],
+                "failures": [],
+            },
+            ensure_ascii=False,
+        )
+        result = parse_data_agent_result(raw, workspace=workspace)
+
+    assert result.data == {
+        "result_id": evidence.result_id,
+        "payload": {"latest_close": 4058.55, "period_high": 4065.94},
+    }
+    assert result.sources[0].params_summary == {
+        "symbol": "sh000300",
+        "start_date": "20250501",
+        "end_date": "20250718",
+    }
+    assert result.computation == ["取近20日高低收"]
+
+
+def test_parse_data_agent_result_maps_evidence_failures_explicitly(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        workspace.create_dataset(
+            "akshare",
+            "demo",
+            {"symbol": "000001"},
+            {
+                "columns": ["close"],
+                "rows": [{"close": 1}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+            },
+        )
+        forged = parse_data_agent_result(
+            _result_json(
+                sources=[
+                    {
+                        "source": "akshare",
+                        "interface": "demo",
+                        "params_summary": {"symbol": "forged"},
+                        "rows": 1,
+                    }
+                ]
+            ),
+            workspace=workspace,
+        )
+    assert forged.failures[0].code == "source_not_in_request_evidence"
+
+
+def test_run_data_agent_maps_step_limit_final_message(tmp_path):
+    class FakeAgent:
+        def invoke(self, payload, config):
+            return {
+                "messages": [
+                    AIMessage(content="Sorry, need more steps to process this request.")
+                ]
+            }
+
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        with (
+            patch("app.advisor.agent.data_agent.graph.build_chat_model", return_value="model"),
+            patch(
+                "app.advisor.agent.data_agent.graph.create_react_agent",
+                return_value=FakeAgent(),
+            ),
+        ):
+            result = run_data_agent("u", "request", "r", workspace, FakeSandbox())
+
+    assert result.failures[0].code == "agent_step_limit"
+    assert result.failures[0].message == "数据子 Agent 步数已达上限"
+
+
 def test_run_data_agent_only_gives_provider_and_python_tools(tmp_path, caplog):
     captured = {}
 
@@ -374,6 +668,7 @@ def test_run_data_agent_only_gives_provider_and_python_tools(tmp_path, caplog):
         "get_data_interface",
         "fetch_provider_data",
         "run_python_analysis",
+        "submit_data_result",
     ]
     assert captured["config"] == {"recursion_limit": 9}
     assert captured["payload"]["messages"] == [HumanMessage(content="calculate")]
