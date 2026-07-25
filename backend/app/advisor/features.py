@@ -198,6 +198,21 @@ def _ann_vol(close: pd.Series, window: int = 20) -> float:
     return float(rets.std(ddof=0) * np.sqrt(252))
 
 
+def volume_ratio_last(df: pd.DataFrame, lookback: int = 5) -> float:
+    """Last bar volume / mean of prior `lookback` bars (excluding last)."""
+    n = int(lookback)
+    if n < 1 or df is None or df.empty or "volume" not in df.columns:
+        return float("nan")
+    v = df["volume"].dropna()
+    # need last + n prior bars
+    if len(v) < n + 1:
+        return float("nan")
+    avg = float(v.iloc[-(n + 1) : -1].mean())
+    if avg <= 0:
+        return float("nan")
+    return float(v.iloc[-1]) / avg
+
+
 def compute_factors(
     df: pd.DataFrame,
     bench_df: pd.DataFrame | None = None,
@@ -205,7 +220,6 @@ def compute_factors(
     """Compute raw factor values for the last bar (as_of last close)."""
     close = df["close"]
     amount = df["amount"]
-    volume = df["volume"]
 
     mom_1 = _ret(close, 1)
     mom_5 = _ret(close, 5)
@@ -233,15 +247,20 @@ def compute_factors(
             ma20_bias = float(close.iloc[-1]) / ma20 - 1.0
 
     vol_z = _zscore_last(amount, 20)
-    vol_ratio = float("nan")
-    v = volume.dropna()
-    if len(v) >= 6:
-        avg5 = float(v.iloc[-6:-1].mean())
-        if avg5 > 0:
-            vol_ratio = float(v.iloc[-1]) / avg5
+    vol_ratio = volume_ratio_last(df, 5)
 
     ann_vol = _ann_vol(close, 20)
     low_vol = float("nan") if np.isnan(ann_vol) else max(0.0, 1.0 - ann_vol)
+
+    is_yin = 0.0
+    is_yang = 0.0
+    if "open" in df.columns and len(df) >= 1:
+        last_close = float(close.iloc[-1])
+        last_open = float(df["open"].iloc[-1])
+        if last_close < last_open:
+            is_yin = 1.0
+        elif last_close > last_open:
+            is_yang = 1.0
 
     return {
         "mom_1": mom_1,
@@ -254,6 +273,8 @@ def compute_factors(
         "vol_ratio": vol_ratio,
         "ann_vol": ann_vol,
         "low_vol": low_vol,
+        "is_yin": is_yin,
+        "is_yang": is_yang,
     }
 
 

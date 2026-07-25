@@ -986,7 +986,8 @@ def build_tools(user_id: str) -> list[Any]:
     ) -> str:
         """将 Agent 起草的规则 JSON 校验为 RuleSpec。
         输入 rule_json（必填）；可选 knowledge_id/text 做溯源。
-        不写入知识库。失败返回 errors 列表供澄清。"""
+        支持因子含 vol_ratio（可选 lookback=2..60，默认5；别名 volume_ratio/vol）、
+        is_yin/is_yang（收盘相对开盘）。不写入知识库。失败返回 errors 列表供澄清。"""
         from ..knowledge import get_item
         from ..rule_backtest import validate_rule_spec
 

@@ -50,6 +50,49 @@ def test_entry_matches_all():
     assert not rb.entry_matches(spec, {"mom_5": 0.01, "ma20_bias": 0.01})
 
 
+def test_validate_alias_and_default_lookback():
+    spec, errs = rb.validate_rule_spec(
+        {
+            "entry": {
+                "all": [{"factor": "volume_ratio", "op": "<", "value": 0.8}]
+            }
+        }
+    )
+    assert errs == []
+    assert spec["entry"]["all"][0]["factor"] == "vol_ratio"
+    assert spec["entry"]["all"][0]["lookback"] == 5
+
+
+def test_validate_lookback_bounds():
+    _, errs_lo = rb.validate_rule_spec(
+        {
+            "entry": {
+                "all": [
+                    {"factor": "vol_ratio", "lookback": 1, "op": "<", "value": 1}
+                ]
+            }
+        }
+    )
+    assert any("lookback" in e for e in errs_lo)
+    _, errs_hi = rb.validate_rule_spec(
+        {
+            "entry": {
+                "all": [
+                    {"factor": "vol_ratio", "lookback": 99, "op": "<", "value": 1}
+                ]
+            }
+        }
+    )
+    assert any("lookback" in e for e in errs_hi)
+
+
+def test_validate_rejects_absolute_volume():
+    _, errs = rb.validate_rule_spec(
+        {"entry": {"all": [{"factor": "volume", "op": "<", "value": 1e6}]}}
+    )
+    assert any("vol_ratio" in e for e in errs)
+
+
 def _synth_df(n: int = 80, seed: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     rets = rng.normal(0.002, 0.01, size=n)
@@ -68,6 +111,41 @@ def _synth_df(n: int = 80, seed: int = 0) -> pd.DataFrame:
             "amount": close * vol,
         }
     )
+
+
+def test_yin_yang_and_vol_ratio_lookback_on_synth():
+    from app.advisor.features import compute_factors, volume_ratio_last
+
+    df = _synth_df(40)
+    # prior 5 days low vol, prior 6-10 high vol → r5 vs r10 differ
+    df.loc[df.index[-11:-6], "volume"] = 5_000_000.0
+    df.loc[df.index[-6:-1], "volume"] = 1_000_000.0
+    df.loc[df.index[-1], "volume"] = 500_000.0
+    df.loc[df.index[-1], "open"] = float(df.iloc[-1]["close"]) * 1.02
+    factors = compute_factors(df, None)
+    assert factors["is_yin"] == 1.0
+    assert factors["is_yang"] == 0.0
+    r5 = volume_ratio_last(df, 5)
+    r10 = volume_ratio_last(df, 10)
+    assert r5 < 1.0
+    assert r10 < r5  # 10日均量被前半高量抬高 → 比值更小
+    spec, errs = rb.validate_rule_spec(
+        {
+            "entry": {
+                "all": [
+                    {"factor": "is_yin", "op": ">=", "value": 1},
+                    {
+                        "factor": "vol_ratio",
+                        "lookback": 5,
+                        "op": "<",
+                        "value": 1.0,
+                    },
+                ]
+            }
+        }
+    )
+    assert errs == []
+    assert rb.entry_matches(spec, factors, df=df)
 
 
 def test_split_bar_range_70_30():

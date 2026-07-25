@@ -42,6 +42,7 @@ def perturb_rule(spec: dict[str, Any], rng: np.random.Generator) -> dict[str, An
     s = copy.deepcopy(spec)
     for cond in s.get("entry", {}).get("all") or []:
         op = str(cond.get("op") or "")
+        factor = str(cond.get("factor") or "")
         if op == "between":
             lo, hi = float(cond["value"][0]), float(cond["value"][1])
             span = max(1e-6, hi - lo)
@@ -50,8 +51,18 @@ def perturb_rule(spec: dict[str, Any], rng: np.random.Generator) -> dict[str, An
             cond["value"] = [min(lo2, hi2), max(lo2, hi2)]
         else:
             v = float(cond["value"])
+            # keep 0/1 yin-yang mostly stable; small chance flip unused
+            if factor in ("is_yin", "is_yang"):
+                continue
             scale = 0.2 * (abs(v) if abs(v) > 1e-6 else 0.01)
             cond["value"] = v + float(rng.normal(0, scale))
+        if factor == "vol_ratio" and rng.random() < 0.4:
+            try:
+                lb = int(cond.get("lookback") or 5)
+            except (TypeError, ValueError):
+                lb = 5
+            lb = int(max(2, min(60, lb + int(rng.choice([-2, -1, 1, 2])))))
+            cond["lookback"] = lb
     if rng.random() < 0.5:
         delta = int(rng.choice([-1, 1]))
         s["hold_days"] = int(max(1, min(20, int(s.get("hold_days") or 1) + delta)))

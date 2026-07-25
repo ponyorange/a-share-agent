@@ -10,7 +10,12 @@ import numpy as np
 import pandas as pd
 
 from .config_loader import load_config
-from .features import compute_factors, fetch_daily_df, load_benchmark
+from .features import (
+    compute_factors,
+    fetch_daily_df,
+    load_benchmark,
+    volume_ratio_last,
+)
 from .universe import build_universe
 
 ALLOWED_FACTORS = frozenset(
@@ -24,16 +29,60 @@ ALLOWED_FACTORS = frozenset(
         "vol_ratio",
         "rs_300",
         "low_vol",
+        "is_yin",
+        "is_yang",
     }
 )
+FACTOR_ALIASES = {
+    "volume_ratio": "vol_ratio",
+    "vol": "vol_ratio",
+}
+REJECTED_FACTORS = {
+    "volume": "请用 vol_ratio（可加 lookback）表示相对均量，勿用绝对成交量",
+    "turn": "暂不支持换手率绝对值，请用 vol_ratio + lookback",
+    "turnover": "暂不支持换手率绝对值，请用 vol_ratio + lookback",
+}
+VOL_RATIO_LOOKBACK_MIN = 2
+VOL_RATIO_LOOKBACK_MAX = 60
+VOL_RATIO_LOOKBACK_DEFAULT = 5
 ALLOWED_OPS = frozenset({">", ">=", "<", "<=", "between"})
 ALLOWED_EXIT_TYPES = frozenset({"hold_days", "stop_loss", "take_profit"})
 
 
-def eval_condition(cond: dict[str, Any], factors: dict[str, float]) -> bool:
-    factor = str(cond.get("factor") or "")
-    op = str(cond.get("op") or "")
+def normalize_factor_name(name: str) -> str:
+    f = str(name or "").strip()
+    return FACTOR_ALIASES.get(f, f)
+
+
+def _condition_value(
+    cond: dict[str, Any],
+    factors: dict[str, float],
+    df: pd.DataFrame | None = None,
+) -> float | None:
+    factor = normalize_factor_name(str(cond.get("factor") or ""))
+    if factor == "vol_ratio":
+        if df is not None:
+            try:
+                n = int(cond.get("lookback") or VOL_RATIO_LOOKBACK_DEFAULT)
+            except (TypeError, ValueError):
+                n = VOL_RATIO_LOOKBACK_DEFAULT
+            return volume_ratio_last(df, n)
+        # fallback to precomputed default-5 ratio
+        val = factors.get("vol_ratio")
+        return float(val) if val is not None else None
     val = factors.get(factor)
+    if val is None:
+        return None
+    return float(val)
+
+
+def eval_condition(
+    cond: dict[str, Any],
+    factors: dict[str, float],
+    df: pd.DataFrame | None = None,
+) -> bool:
+    op = str(cond.get("op") or "")
+    val = _condition_value(cond, factors, df=df)
     if val is None or (isinstance(val, float) and math.isnan(val)):
         return False
     raw = cond.get("value")
@@ -54,11 +103,15 @@ def eval_condition(cond: dict[str, Any], factors: dict[str, float]) -> bool:
     return False
 
 
-def entry_matches(spec: dict[str, Any], factors: dict[str, float]) -> bool:
+def entry_matches(
+    spec: dict[str, Any],
+    factors: dict[str, float],
+    df: pd.DataFrame | None = None,
+) -> bool:
     all_conds = ((spec.get("entry") or {}).get("all")) or []
     if not all_conds:
         return False
-    return all(eval_condition(c, factors) for c in all_conds)
+    return all(eval_condition(c, factors, df=df) for c in all_conds)
 
 
 def validate_rule_spec(
@@ -95,12 +148,39 @@ def validate_rule_spec(
             if not isinstance(cond, dict):
                 errors.append(f"entry.all[{i}] 无效")
                 continue
-            f = str(cond.get("factor") or "")
+            raw_f = str(cond.get("factor") or "")
+            if raw_f in REJECTED_FACTORS:
+                errors.append(
+                    f"entry.all[{i}].factor 不支持: {raw_f}（{REJECTED_FACTORS[raw_f]}）"
+                )
+                continue
+            f = normalize_factor_name(raw_f)
+            cond["factor"] = f
             op = str(cond.get("op") or "")
             if f not in ALLOWED_FACTORS:
-                errors.append(f"entry.all[{i}].factor 不支持: {f}")
+                errors.append(f"entry.all[{i}].factor 不支持: {raw_f or f}")
             if op not in ALLOWED_OPS:
                 errors.append(f"entry.all[{i}].op 不支持: {op}")
+            if f == "vol_ratio":
+                if "lookback" in cond and cond.get("lookback") is not None:
+                    try:
+                        lb = int(cond["lookback"])
+                    except (TypeError, ValueError):
+                        errors.append(f"entry.all[{i}].lookback 须为整数")
+                        lb = VOL_RATIO_LOOKBACK_DEFAULT
+                    else:
+                        if lb < VOL_RATIO_LOOKBACK_MIN or lb > VOL_RATIO_LOOKBACK_MAX:
+                            errors.append(
+                                f"entry.all[{i}].lookback 须在 "
+                                f"{VOL_RATIO_LOOKBACK_MIN}..{VOL_RATIO_LOOKBACK_MAX}"
+                            )
+                        else:
+                            cond["lookback"] = lb
+                else:
+                    cond["lookback"] = VOL_RATIO_LOOKBACK_DEFAULT
+            elif "lookback" in cond:
+                # only vol_ratio supports lookback in this version
+                del cond["lookback"]
             if op == "between":
                 v = cond.get("value")
                 if not isinstance(v, (list, tuple)) or len(v) != 2:
@@ -236,7 +316,7 @@ def simulate_symbol(
         if bench_df is not None and not bench_df.empty:
             bench_cut = bench_df[bench_df["time"] <= window.iloc[-1]["time"]]
         factors = compute_factors(window, bench_cut)
-        if not entry_matches(spec, factors):
+        if not entry_matches(spec, factors, df=window):
             continue
         entry_px = float(df.iloc[i]["close"])
         if entry_px <= 0:
