@@ -1005,6 +1005,187 @@ def build_tools(user_id: str) -> list[Any]:
             ensure_ascii=False,
         )
 
+    @tool
+    def list_knowledge(query: str = "") -> str:
+        """列出或按标题模糊查找当前用户知识库条目摘要（不含正文）。
+        query 为空返回全部；非空则 title 子串匹配（不区分大小写）。"""
+        from ..knowledge import find_by_title, list_raw, summarize_item
+
+        _bind()
+        q = (query or "").strip()
+        if not q:
+            items = [summarize_item(x) for x in list_raw(user_id)]
+            return json.dumps(
+                {"ok": True, "items": items}, ensure_ascii=False, default=str
+            )
+        hits = find_by_title(user_id, q)
+        if not hits:
+            return json.dumps(
+                {"ok": False, "error": "无匹配", "query": q},
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "ok": True,
+                "query": q,
+                "items": [summarize_item(x) for x in hits],
+            },
+            ensure_ascii=False,
+            default=str,
+        )
+
+    @tool
+    def save_knowledge(
+        title: str,
+        mode: str,
+        body: str,
+        description: str = "",
+        knowledge_id: str = "",
+        enabled: bool = True,
+        confirm: bool = False,
+    ) -> str:
+        """新建或更新知识库条目。必须 confirm=true 才落库。
+        无 knowledge_id 为新建；有则为更新（更新必须传 knowledge_id，可先 list_knowledge）。
+        mode=always|on_demand；on_demand 必须有 description。"""
+        from ..knowledge import (
+            create_item,
+            get_item,
+            list_raw,
+            update_item,
+            validate_payload,
+        )
+
+        _bind()
+        kid = (knowledge_id or "").strip()
+        payload = {
+            "title": title,
+            "mode": mode,
+            "body": body,
+            "description": description,
+            "enabled": enabled,
+        }
+        action = "update" if kid else "create"
+        if kid and not get_item(user_id, kid):
+            return json.dumps(
+                {"ok": False, "error": "知识条目不存在", "id": kid},
+                ensure_ascii=False,
+            )
+        try:
+            validate_payload(
+                payload,
+                existing_enabled=list_raw(user_id),
+                exclude_id=kid or None,
+            )
+        except ValueError as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+        preview = {
+            "action": action,
+            "id": kid or None,
+            "title": title,
+            "mode": mode,
+            "enabled": enabled,
+            "description": description,
+            "body": body,
+            "body_chars": len(body or ""),
+        }
+        if not confirm:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "needs_confirm": True,
+                    "preview": preview,
+                    "message": "未确认。请向用户展示预览，同意后再以 confirm=true 调用。",
+                },
+                ensure_ascii=False,
+            )
+        try:
+            if action == "create":
+                item = create_item(user_id, payload)
+            else:
+                item = update_item(user_id, kid, payload)
+        except (ValueError, KeyError) as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        return json.dumps({"ok": True, "item": item}, ensure_ascii=False, default=str)
+
+    @tool
+    def delete_knowledge(
+        knowledge_id: str = "",
+        title: str = "",
+        confirm: bool = False,
+    ) -> str:
+        """删除知识库条目。必须 confirm=true 才删除。
+        优先 knowledge_id；否则按 title 模糊匹配，多条返回 candidates。"""
+        from ..knowledge import (
+            delete_item,
+            get_item,
+            list_raw,
+            match_by_title,
+            summarize_item,
+        )
+
+        _bind()
+        kid = (knowledge_id or "").strip()
+        t = (title or "").strip()
+        target: dict[str, Any] | None = None
+        if kid:
+            target = get_item(user_id, kid)
+            if not target:
+                return json.dumps(
+                    {"ok": False, "error": "知识条目不存在", "id": kid},
+                    ensure_ascii=False,
+                )
+        elif t:
+            hits = match_by_title(list_raw(user_id), t)
+            if not hits:
+                return json.dumps(
+                    {"ok": False, "error": "无匹配", "query": t},
+                    ensure_ascii=False,
+                )
+            if len(hits) > 1:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "匹配多条，请指定 knowledge_id",
+                        "candidates": [summarize_item(x) for x in hits],
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                )
+            target = summarize_item(hits[0], include_body=True)
+        else:
+            return json.dumps(
+                {"ok": False, "error": "需要 knowledge_id 或 title"},
+                ensure_ascii=False,
+            )
+
+        preview = {
+            "action": "delete",
+            "id": target.get("id"),
+            "title": target.get("title"),
+            "mode": target.get("mode"),
+        }
+        if not confirm:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "needs_confirm": True,
+                    "preview": preview,
+                    "message": "未确认。请向用户展示将删除的条目，同意后再以 confirm=true 调用。",
+                },
+                ensure_ascii=False,
+            )
+        ok = delete_item(user_id, str(target.get("id")))
+        if not ok:
+            return json.dumps(
+                {"ok": False, "error": "删除失败", "id": target.get("id")},
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {"ok": True, "deleted_id": target.get("id")},
+            ensure_ascii=False,
+        )
+
     return [
         get_today_recommendations,
         get_portfolio_summary,
@@ -1041,5 +1222,8 @@ def build_tools(user_id: str) -> list[Any]:
         fetch_index_extremes,
         fetch_symbol_daily_ma,
         load_knowledge,
+        list_knowledge,
+        save_knowledge,
+        delete_knowledge,
         build_delegate_data_tool(user_id),
     ]

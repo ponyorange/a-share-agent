@@ -11,6 +11,7 @@ from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
     HumanMessage,
+    SystemMessage,
     ToolMessage,
 )
 from langgraph.prebuilt import create_react_agent
@@ -32,8 +33,9 @@ _DELEGATE_DATA_TASK_NAME = "delegate_data_task"
 _DELEGATE_DATA_TASK_SAFE_CONTENT = "数据子 Agent 已返回结构化结果"
 _AGENT_ERROR_DETAIL = "Agent 执行失败"
 
-SYSTEM_PROMPT = """你是「投研助手」，次日顾问产品中的 AI 投研副驾（DeepSeek）。
-对外自称「投研助手」；语气专业、简洁、务实，不卖弄术语，结论先行再补依据。
+SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）。
+默认对外自称「投研助手」；若下文「用户系统提示词」另有称呼、角色、对用户称呼或性格要求，必须以用户设定为准，覆盖上述默认自称。
+语气默认专业、简洁、务实，不卖弄术语，结论先行再补依据；若用户系统提示词另有语气要求，以用户设定为准。
 你可按需读取用户全部业务数据（真实持仓、模拟盘、策略、推荐归档、龙虎榜、LLM 配置状态），
 并用自然语言协助配置真实持仓与操作模拟盘；也可拉取 AKShare 新闻/公告/研报/宏观/经济日历与主要指数行情。
 规则：
@@ -50,22 +52,32 @@ SYSTEM_PROMPT = """你是「投研助手」，次日顾问产品中的 AI 投研
 9. 个股日 K / MA5·MA10·MA20：必须先调用 fetch_symbol_daily_ma，不得编造均线数值。
 10. 策略修改：propose 后展示 patch，用户确认再 apply_strategy_patch(confirm=true)。
 11. 若无今日归档，引导去基础面板「今日关注」刷新候选池。
-12. 用户可选知识：若系统提示含「用户可选知识目录」，需要细则时调用 load_knowledge(id)；勿编造目录外内容。必选知识已在系统提示中。
-13. 回复末尾加一句免责声明。
-14. 涉及通用行情、财务、宏观、资讯等 Provider 外部数据，或跨表/跨源计算时，自动调用 delegate_data_task；
+12. 用户知识：消息上下文中可能含「用户必选知识」，须遵守；若系统提示含「用户可选知识目录」，需要细则时调用 load_knowledge(id)；勿编造目录外内容。
+13. 知识库写入/更新/删除：先整理内容或用 list_knowledge 定位 → 调用 save_knowledge / delete_knowledge 且 confirm=false 展示预览 → 用户明确同意后再 confirm=true。未指定可选/必选时先询问。匹配多条时列出候选，勿猜测。未确认不得声称已保存。
+14. 回复末尾加一句免责声明。
+15. 涉及通用行情、财务、宏观、资讯等 Provider 外部数据，或跨表/跨源计算时，自动调用 delegate_data_task；
     持仓、模拟盘、策略和推荐归档仍使用现有专用工具，规则 4-12 中明确指定的专用工具仍优先。
-15. 数据子 Agent 返回 failures、warnings 或 truncated 时必须如实展示；
+16. 数据子 Agent 返回 failures、warnings 或 truncated 时必须如实展示；
     数据不足时明确无法完成，严禁自行补齐或编造。
+"""
+
+_USER_SYSTEM_PROMPT_HEADER = """## 用户系统提示词
+（优先级高于上文默认自称/语气；工具调用、确认流程与免责声明等产品规则仍须遵守。）
 """
 
 
 def build_system_prompt(user_id: str) -> str:
+    from ..agent_config import get_system_prompt
     from ..knowledge import build_knowledge_prompt_section
 
-    extra = build_knowledge_prompt_section(user_id)
-    if not extra:
-        return SYSTEM_PROMPT
-    return f"{SYSTEM_PROMPT.rstrip()}\n\n{extra}\n"
+    parts = [SYSTEM_PROMPT.rstrip()]
+    user_prompt = (get_system_prompt(user_id) or "").strip()
+    if user_prompt:
+        parts.append(_USER_SYSTEM_PROMPT_HEADER.rstrip() + "\n" + user_prompt)
+    catalog = (build_knowledge_prompt_section(user_id) or "").strip()
+    if catalog:
+        parts.append(catalog)
+    return "\n\n".join(parts) + "\n"
 
 DISCLAIMER = "以上内容仅供研究参考，不构成投资建议。"
 
@@ -137,7 +149,12 @@ def _iter_agent_chat_events_sync(
         tools = build_tools(user_id)
         agent = create_react_agent(model, tools, prompt=build_system_prompt(user_id))
 
+        from ..knowledge import build_always_knowledge_text
+
         lc_messages: list[Any] = []
+        always_text = (build_always_knowledge_text(user_id) or "").strip()
+        if always_text:
+            lc_messages.append(SystemMessage(content=always_text))
         for h in history:
             role = (h.get("role") or "").lower()
             content = h.get("content") or ""

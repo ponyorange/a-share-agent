@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom'
 
 const AGENT_LINKS = [
   { to: '/agent', end: true, label: '投研助手' },
-  { to: '/agent/knowledge', end: false, label: '知识库' },
+  { to: '/agent/config', end: false, label: 'Agent 配置' },
   { to: '/agent/strategy', end: false, label: '策略副驾' },
   { to: '/agent/settings', end: false, label: 'DeepSeek 配置' },
 ] as const

@@ -43,7 +43,7 @@ vi.mock('./pages/AgentChatPage', () => ({
 }))
 
 vi.mock('./pages/KnowledgePage', () => ({
-  default: () => <h1>知识库</h1>,
+  default: () => <h1>Agent 配置</h1>,
 }))
 
 vi.mock('./pages/SettingsPage', () => ({
@@ -70,30 +70,39 @@ it('收到统一认证变更事件后立即返回登录页', async () => {
   expect(screen.queryByRole('link', { name: '投委会' })).not.toBeInTheDocument()
 })
 
-it('Agent 导航包含知识库且不含投委会；直链投委会仍可用', () => {
+it('Agent 导航包含 Agent 配置且不含投委会；直链投委会仍可用', () => {
   const { container } = render(
     <MemoryRouter initialEntries={['/agent/committee']}>
       <App />
     </MemoryRouter>,
   )
   expect(screen.queryByRole('link', { name: '投委会' })).not.toBeInTheDocument()
-  expect(screen.getByRole('link', { name: '知识库' })).toHaveAttribute(
+  expect(screen.getByRole('link', { name: 'Agent 配置' })).toHaveAttribute(
     'href',
-    '/agent/knowledge',
+    '/agent/config',
   )
   expect(screen.getByRole('heading', { name: '投委会实时工作台' })).toBeInTheDocument()
   expect(container.querySelector('.app-shell')).toHaveClass('app-shell--agent-chat')
 })
 
-it('知识库路由渲染知识库页且非 chat shell', () => {
+it('Agent 配置路由渲染配置页且非 chat shell', () => {
   const { container } = render(
+    <MemoryRouter initialEntries={['/agent/config']}>
+      <App />
+    </MemoryRouter>,
+  )
+  expect(screen.getByRole('heading', { name: 'Agent 配置' })).toBeInTheDocument()
+  expect(container.querySelector('.app-shell')).toHaveClass('app-shell--agent')
+  expect(container.querySelector('.app-shell')).not.toHaveClass('app-shell--agent-chat')
+})
+
+it('旧知识库路径重定向到 Agent 配置', () => {
+  render(
     <MemoryRouter initialEntries={['/agent/knowledge']}>
       <App />
     </MemoryRouter>,
   )
-  expect(screen.getByRole('heading', { name: '知识库' })).toBeInTheDocument()
-  expect(container.querySelector('.app-shell')).toHaveClass('app-shell--agent')
-  expect(container.querySelector('.app-shell')).not.toHaveClass('app-shell--agent-chat')
+  expect(screen.getByRole('heading', { name: 'Agent 配置' })).toBeInTheDocument()
 })
 
 it('认证后的基础页与 Agent chat 保留导航和面板切换结构', () => {
@@ -131,9 +140,9 @@ it('Agent 聊天页提供更多菜单可切换基础面板与 Agent 标签', asy
   await user.click(screen.getByRole('button', { name: '更多' }))
   expect(screen.getByRole('menu', { name: '页面与面板切换' })).toBeInTheDocument()
   expect(screen.getByRole('menuitem', { name: '切换到基础' })).toBeInTheDocument()
-  expect(screen.getByRole('menuitem', { name: '知识库' })).toHaveAttribute(
+  expect(screen.getByRole('menuitem', { name: 'Agent 配置' })).toHaveAttribute(
     'href',
-    '/agent/knowledge',
+    '/agent/config',
   )
   expect(screen.getByRole('menuitem', { name: '策略副驾' })).toHaveAttribute(
     'href',
@@ -144,8 +153,8 @@ it('Agent 聊天页提供更多菜单可切换基础面板与 Agent 标签', asy
     '/agent/settings',
   )
 
-  await user.click(screen.getByRole('menuitem', { name: '知识库' }))
-  expect(await screen.findByRole('heading', { name: '知识库' })).toBeInTheDocument()
+  await user.click(screen.getByRole('menuitem', { name: 'Agent 配置' }))
+  expect(await screen.findByRole('heading', { name: 'Agent 配置' })).toBeInTheDocument()
 })
 
 it('Agent 聊天页更多菜单可切回基础面板', async () => {

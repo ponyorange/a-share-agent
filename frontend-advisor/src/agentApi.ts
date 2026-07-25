@@ -199,6 +199,24 @@ export type KnowledgeInput = {
   body: string
 }
 
+export type AgentSystemPrompt = {
+  system_prompt: string
+  updated_at?: string | null
+}
+
+export function fetchAgentSystemPrompt(): Promise<AgentSystemPrompt> {
+  return authFetch('/api/advisor/agent-config/system-prompt')
+}
+
+export function saveAgentSystemPrompt(
+  system_prompt: string,
+): Promise<AgentSystemPrompt> {
+  return authFetch('/api/advisor/agent-config/system-prompt', {
+    method: 'PUT',
+    body: JSON.stringify({ system_prompt }),
+  })
+}
+
 export function listKnowledge(): Promise<{ items: KnowledgeItem[] }> {
   return authFetch('/api/advisor/knowledge')
 }

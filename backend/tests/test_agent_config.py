@@ -1,0 +1,60 @@
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from app.advisor import agent_config as ac
+
+
+def test_validate_rejects_over_limit():
+    with pytest.raises(ValueError, match="6000"):
+        ac.validate_system_prompt("x" * 6001)
+
+
+def test_validate_accepts_empty_and_limit():
+    assert ac.validate_system_prompt("") == ""
+    assert ac.validate_system_prompt("  hello  ") == "hello"
+    assert len(ac.validate_system_prompt("y" * 6000)) == 6000
+
+
+def test_get_system_prompt_missing_returns_empty():
+    col = MagicMock()
+    col.find_one.return_value = None
+    with patch.object(ac, "_col", return_value=col):
+        assert ac.get_system_prompt("u1") == ""
+
+
+def test_save_system_prompt_upserts():
+    col = MagicMock()
+    col.find_one.return_value = {
+        "user_id": "u1",
+        "system_prompt": "自称小顾",
+        "updated_at": None,
+    }
+    with patch.object(ac, "_col", return_value=col):
+        out = ac.save_system_prompt("u1", "自称小顾")
+    col.update_one.assert_called_once()
+    assert out["system_prompt"] == "自称小顾"
+
+
+def test_build_system_prompt_appends_user_and_catalog():
+    from app.advisor.agent import graph as agent_graph
+
+    with (
+        patch(
+            "app.advisor.agent_config.get_system_prompt",
+            return_value="请自称小顾。",
+        ),
+        patch(
+            "app.advisor.knowledge.build_knowledge_prompt_section",
+            return_value="## 用户可选知识目录\n- id: x",
+        ),
+    ):
+        text = agent_graph.build_system_prompt("u1")
+
+    assert text.startswith(agent_graph.SYSTEM_PROMPT.rstrip()[:20])
+    assert "请自称小顾。" in text
+    assert "优先级高于上文默认自称" in text
+    assert "必须以用户设定为准" in agent_graph.SYSTEM_PROMPT
+    assert "用户可选知识目录" in text
+    assert "必选知识已在系统提示中" not in agent_graph.SYSTEM_PROMPT
+    assert "消息上下文" in agent_graph.SYSTEM_PROMPT

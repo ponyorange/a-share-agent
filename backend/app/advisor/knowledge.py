@@ -103,30 +103,39 @@ def validate_payload(
     }
 
 
-def format_knowledge_prompt_section(items: list[dict[str, Any]]) -> str:
+def format_always_knowledge_section(items: list[dict[str, Any]]) -> str:
     always = [
         x for x in items if x.get("enabled") and x.get("mode") == "always"
     ]
+    if not always:
+        return ""
+    parts: list[str] = ["## 用户必选知识"]
+    for x in always:
+        parts.append(f"### {x.get('title')}\n{x.get('body') or ''}")
+    return "\n\n".join(parts).strip()
+
+
+def format_on_demand_catalog_section(items: list[dict[str, Any]]) -> str:
     optional = [
         x for x in items if x.get("enabled") and x.get("mode") == "on_demand"
     ]
-    if not always and not optional:
+    if not optional:
         return ""
-    parts: list[str] = []
-    if always:
-        parts.append("## 用户必选知识")
-        for x in always:
-            parts.append(f"### {x.get('title')}\n{x.get('body') or ''}")
-    if optional:
-        parts.append("## 用户可选知识目录")
+    parts: list[str] = [
+        "## 用户可选知识目录",
+        "需要细则时调用 load_knowledge(id)；勿编造目录外知识；"
+        "必选知识已在消息上下文中（若有），无需对必选条目重复加载。",
+    ]
+    for x in optional:
         parts.append(
-            "需要细则时调用 load_knowledge(id)；勿编造目录外知识；必选知识已在上方，无需重复加载。"
+            f"- id: {x.get('id')} | title: {x.get('title')} | desc: {x.get('description') or ''}"
         )
-        for x in optional:
-            parts.append(
-                f"- id: {x.get('id')} | title: {x.get('title')} | desc: {x.get('description') or ''}"
-            )
     return "\n\n".join(parts).strip()
+
+
+def format_knowledge_prompt_section(items: list[dict[str, Any]]) -> str:
+    """Build the system-prompt section containing only optional knowledge."""
+    return format_on_demand_catalog_section(items)
 
 
 def _col():
@@ -192,5 +201,31 @@ def delete_item(user_id: str, item_id: str) -> bool:
     return res.deleted_count > 0
 
 
+def summarize_item(
+    doc: dict[str, Any], *, include_body: bool = False
+) -> dict[str, Any]:
+    return public_item(doc, include_body=include_body)
+
+
+def match_by_title(items: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+    hits = [x for x in items if q in str(x.get("title") or "").lower()]
+
+    def _sort_key(doc: dict[str, Any]) -> Any:
+        return doc.get("updated_at") or ""
+
+    return sorted(hits, key=_sort_key, reverse=True)
+
+
+def find_by_title(user_id: str, query: str) -> list[dict[str, Any]]:
+    return match_by_title(list_raw(user_id), query)
+
+
 def build_knowledge_prompt_section(user_id: str) -> str:
     return format_knowledge_prompt_section(list_raw(user_id))
+
+
+def build_always_knowledge_text(user_id: str) -> str:
+    return format_always_knowledge_section(list_raw(user_id))

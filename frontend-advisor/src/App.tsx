@@ -157,7 +157,7 @@ export default function App() {
                   <NavLink to="/agent" end>
                     投研助手
                   </NavLink>
-                  <NavLink to="/agent/knowledge">知识库</NavLink>
+                  <NavLink to="/agent/config">Agent 配置</NavLink>
                   <NavLink to="/agent/strategy">策略副驾</NavLink>
                   <NavLink to="/agent/settings">DeepSeek 配置</NavLink>
                 </>
@@ -206,7 +206,11 @@ export default function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/agent" element={<AgentChatPage />} />
             <Route path="/agent/committee" element={<CommitteePage />} />
-            <Route path="/agent/knowledge" element={<KnowledgePage />} />
+            <Route path="/agent/config" element={<KnowledgePage />} />
+            <Route
+              path="/agent/knowledge"
+              element={<Navigate to="/agent/config" replace />}
+            />
             <Route path="/agent/strategy" element={<AgentStrategyPage />} />
             <Route path="/agent/settings" element={<AgentSettingsPage />} />
             <Route path="/agent/focus" element={<Navigate to="/agent" replace />} />

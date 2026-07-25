@@ -185,6 +185,12 @@ def ensure_indexes() -> None:
     except Exception:
         pass
     try:
+        db.user_agent_config.create_index(
+            [("user_id", ASCENDING)], unique=True
+        )
+    except Exception:
+        pass
+    try:
         db.rec_refresh_jobs.create_index(
             [("user_id", ASCENDING), ("created_at", DESCENDING)]
         )

@@ -228,6 +228,34 @@ class KnowledgeBody(BaseModel):
     body: str = Field(..., min_length=1, max_length=8000)
 
 
+class AgentSystemPromptBody(BaseModel):
+    system_prompt: str = ""
+
+
+@router.get("/agent-config/system-prompt")
+def agent_system_prompt_get(
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    from .agent_config import public_system_prompt
+
+    uid = _bind(user)
+    return public_system_prompt(uid)
+
+
+@router.put("/agent-config/system-prompt")
+def agent_system_prompt_put(
+    body: AgentSystemPromptBody,
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    from .agent_config import save_system_prompt
+
+    uid = _bind(user)
+    try:
+        return save_system_prompt(uid, body.system_prompt)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/knowledge")
 def knowledge_list(
     summary: bool = Query(default=False),

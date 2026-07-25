@@ -2,12 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   createKnowledge,
   deleteKnowledge,
+  fetchAgentSystemPrompt,
   listKnowledge,
+  saveAgentSystemPrompt,
   updateKnowledge,
   type KnowledgeInput,
   type KnowledgeItem,
   type KnowledgeMode,
 } from '../agentApi'
+
+const SYSTEM_PROMPT_LIMIT = 6000
 
 const EMPTY_FORM: KnowledgeInput = {
   title: '',
@@ -28,6 +32,12 @@ function itemToInput(item: KnowledgeItem): KnowledgeInput {
 }
 
 export default function KnowledgePage() {
+  const [systemPrompt, setSystemPrompt] = useState('')
+  const [spLoading, setSpLoading] = useState(true)
+  const [spSaving, setSpSaving] = useState(false)
+  const [spError, setSpError] = useState<string | null>(null)
+  const [spMsg, setSpMsg] = useState<string | null>(null)
+
   const [items, setItems] = useState<KnowledgeItem[]>([])
   const [kbLoading, setKbLoading] = useState(true)
   const [kbError, setKbError] = useState<string | null>(null)
@@ -35,6 +45,19 @@ export default function KnowledgePage() {
   const [editing, setEditing] = useState<null | 'create' | KnowledgeItem>(null)
   const [viewing, setViewing] = useState<KnowledgeItem | null>(null)
   const [form, setForm] = useState<KnowledgeInput>(EMPTY_FORM)
+
+  const loadSystemPrompt = useCallback(async () => {
+    setSpLoading(true)
+    setSpError(null)
+    try {
+      const res = await fetchAgentSystemPrompt()
+      setSystemPrompt(res.system_prompt || '')
+    } catch (err) {
+      setSpError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSpLoading(false)
+    }
+  }, [])
 
   const loadKnowledge = useCallback(async () => {
     setKbLoading(true)
@@ -50,8 +73,24 @@ export default function KnowledgePage() {
   }, [])
 
   useEffect(() => {
-    loadKnowledge()
-  }, [loadKnowledge])
+    void loadSystemPrompt()
+    void loadKnowledge()
+  }, [loadSystemPrompt, loadKnowledge])
+
+  async function handleSaveSystemPrompt() {
+    setSpSaving(true)
+    setSpError(null)
+    setSpMsg(null)
+    try {
+      const res = await saveAgentSystemPrompt(systemPrompt)
+      setSystemPrompt(res.system_prompt || '')
+      setSpMsg('系统提示词已保存。')
+    } catch (err) {
+      setSpError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSpSaving(false)
+    }
+  }
 
   function startCreate() {
     setViewing(null)
@@ -117,10 +156,52 @@ export default function KnowledgePage() {
     <section className="page">
       <div className="page-hero">
         <p className="knowledge-hint">
-          必选知识会注入 Agent 系统提示；可选知识需 Agent 按需加载。单条正文 ≤ 8000 字，启用必选合计 ≤
+          系统提示词追加在产品规则之后，可覆盖称呼、性格与纪律；工具调用与写操作确认规则始终保留。
+          必选知识会注入消息上下文；可选知识需 Agent 按需加载。单条正文 ≤ 8000 字，启用必选合计 ≤
           6000 字，启用可选 ≤ 50 条。
         </p>
       </div>
+
+      <div className="knowledge-panel">
+        <h3>系统提示词</h3>
+        {spLoading ? <p className="status">系统提示词加载中…</p> : null}
+        {spError ? <p className="status error">{spError}</p> : null}
+        {spMsg ? <p className="status">{spMsg}</p> : null}
+        <label className="strategy-field" style={{ display: 'block' }}>
+          <span>系统提示词（≤ {SYSTEM_PROMPT_LIMIT} 字）</span>
+          <textarea
+            className="input knowledge-textarea"
+            maxLength={SYSTEM_PROMPT_LIMIT}
+            rows={8}
+            value={systemPrompt}
+            disabled={spLoading || spSaving}
+            onChange={(e) => {
+              setSystemPrompt(e.target.value)
+              setSpMsg(null)
+            }}
+          />
+        </label>
+        <p className="meta-line">
+          {systemPrompt.length}/{SYSTEM_PROMPT_LIMIT}
+        </p>
+        <div className="form-actions">
+          <button
+            type="button"
+            className="btn"
+            disabled={spLoading || spSaving || systemPrompt.length > SYSTEM_PROMPT_LIMIT}
+            onClick={handleSaveSystemPrompt}
+          >
+            {spSaving ? '保存中…' : '保存系统提示词'}
+          </button>
+        </div>
+      </div>
+
+      <hr className="knowledge-divider" />
+
+      <h3>知识库</h3>
+      <p className="meta-line knowledge-hint">
+        必选知识每轮注入消息上下文；可选知识仅把目录放进系统提示，Agent 按需加载正文。
+      </p>
 
       {kbLoading ? <p className="status">知识库加载中…</p> : null}
       {kbError ? <p className="status error">{kbError}</p> : null}
@@ -148,7 +229,9 @@ export default function KnowledgePage() {
                 <span className="knowledge-title">{item.title}</span>
                 <span
                   className={`knowledge-badge knowledge-badge--${item.mode}`}
-                  title={item.mode === 'always' ? '必选：注入系统提示' : '可选：按需加载'}
+                  title={
+                    item.mode === 'always' ? '必选：注入消息上下文' : '可选：按需加载'
+                  }
                 >
                   {item.mode === 'always' ? '必选' : '可选'}
                 </span>
@@ -220,7 +303,7 @@ export default function KnowledgePage() {
                   setForm((f) => ({ ...f, mode: e.target.value as KnowledgeMode }))
                 }
               >
-                <option value="always">必选（注入系统提示）</option>
+                <option value="always">必选（注入消息上下文）</option>
                 <option value="on_demand">可选（按需加载）</option>
               </select>
             </label>

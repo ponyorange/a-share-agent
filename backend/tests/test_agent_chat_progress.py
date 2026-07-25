@@ -3,10 +3,11 @@ from __future__ import annotations
 import threading
 
 import pytest
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
 from app.advisor.agent import graph as agent_graph
 from app.advisor.agent.progress import ProgressValidationError, emit_progress
+from app.advisor import knowledge
 
 
 DELEGATE_SAFE_CONTENT = "数据子 Agent 已返回结构化结果"
@@ -52,6 +53,11 @@ def _install_chat_core(monkeypatch, fake_agent: FakeAgent, captured_messages: li
     monkeypatch.setattr(agent_graph, "build_chat_model", lambda _user_id: object())
     monkeypatch.setattr(agent_graph, "build_tools", lambda _user_id: [])
     monkeypatch.setattr(agent_graph, "build_system_prompt", lambda _user_id: "SYSTEM")
+    monkeypatch.setattr(
+        knowledge,
+        "build_always_knowledge_text",
+        lambda _user_id: "",
+    )
     monkeypatch.setattr(
         agent_graph,
         "create_react_agent",
@@ -289,6 +295,39 @@ def test_delegate_tool_message_from_messages_stream_is_sanitized(monkeypatch):
     )
 
     _assert_delegate_result_is_sanitized(events, captured_messages)
+
+
+def test_always_knowledge_is_injected_without_being_persisted(monkeypatch):
+    captured_messages: list[dict] = []
+    streamed_input: list = []
+
+    class CapturingAgent(FakeAgent):
+        def stream(self, args, **_kwargs):
+            streamed_input.extend(args["messages"])
+            yield (
+                "updates",
+                {"agent": {"messages": [AIMessage(content="完成")]}},
+            )
+
+    _install_chat_core(monkeypatch, CapturingAgent([]), captured_messages)
+    monkeypatch.setattr(
+        knowledge,
+        "build_always_knowledge_text",
+        lambda _user_id: "## 用户必选知识\n不加杠杆",
+    )
+
+    list(
+        agent_graph._iter_agent_chat_events_sync(
+            "u",
+            "query",
+            session_id="s",
+            progress_trace=[],
+        )
+    )
+
+    assert isinstance(streamed_input[0], SystemMessage)
+    assert "不加杠杆" in streamed_input[0].content
+    assert "不加杠杆" not in str(captured_messages)
 
 
 def test_delegate_tool_message_from_updates_stream_is_sanitized(monkeypatch):

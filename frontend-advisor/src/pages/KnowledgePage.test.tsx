@@ -5,16 +5,24 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import KnowledgePage from './KnowledgePage'
 
 const listKnowledge = vi.hoisted(() => vi.fn())
+const fetchAgentSystemPrompt = vi.hoisted(() => vi.fn())
+const saveAgentSystemPrompt = vi.hoisted(() => vi.fn())
 
 vi.mock('../agentApi', () => ({
   listKnowledge,
   createKnowledge: vi.fn(),
   updateKnowledge: vi.fn(),
   deleteKnowledge: vi.fn(),
+  fetchAgentSystemPrompt,
+  saveAgentSystemPrompt,
 }))
 
 beforeEach(() => {
   listKnowledge.mockReset()
+  fetchAgentSystemPrompt.mockReset()
+  saveAgentSystemPrompt.mockReset()
+  fetchAgentSystemPrompt.mockResolvedValue({ system_prompt: '请自称小顾。' })
+  saveAgentSystemPrompt.mockResolvedValue({ system_prompt: '请自称小顾。' })
   listKnowledge.mockResolvedValue({
     items: [
       {
@@ -29,13 +37,33 @@ beforeEach(() => {
   })
 })
 
-it('独立知识库页加载并展示现有条目', async () => {
+it('Agent 配置页展示系统提示词和知识库', async () => {
   render(<KnowledgePage />)
 
   expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
-  expect(screen.getByText(/必选知识会注入 Agent 系统提示/)).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '系统提示词' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '知识库' })).toBeInTheDocument()
+  expect(
+    screen.getByText(/系统提示词追加在产品规则之后/),
+  ).toBeInTheDocument()
+  expect(screen.getByText(/必选知识会注入消息上下文/)).toBeInTheDocument()
+  expect(await screen.findByDisplayValue('请自称小顾。')).toBeInTheDocument()
   expect(await screen.findByText('交易纪律')).toBeInTheDocument()
   expect(listKnowledge).toHaveBeenCalledOnce()
+  expect(fetchAgentSystemPrompt).toHaveBeenCalledOnce()
+})
+
+it('可保存用户系统提示词并展示字数', async () => {
+  const user = userEvent.setup()
+  render(<KnowledgePage />)
+
+  const input = await screen.findByLabelText('系统提示词（≤ 6000 字）')
+  await user.clear(input)
+  await user.type(input, '请保持简洁')
+  expect(screen.getByText('5/6000')).toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: '保存系统提示词' }))
+  expect(saveAgentSystemPrompt).toHaveBeenCalledWith('请保持简洁')
 })
 
 it('新建表单在描述字段展示写作提示', async () => {
