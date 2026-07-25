@@ -1,3 +1,6 @@
+// @vitest-environment jsdom
+
+import type { ReactNode } from 'react'
 import '@testing-library/jest-dom/vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -6,6 +9,8 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
 
 const authState = vi.hoisted(() => ({ token: null as string | null }))
+const themeProviderUserIds = vi.hoisted(() => [] as Array<string | null>)
+const bootstrapTheme = vi.hoisted(() => vi.fn())
 
 vi.mock('./auth', () => ({
   AUTH_CHANGED_EVENT: 'advisor-auth-changed',
@@ -16,6 +21,17 @@ vi.mock('./auth', () => ({
   login: vi.fn(),
   register: vi.fn(),
   setSession: vi.fn(),
+}))
+
+vi.mock('./theme/ThemeProvider', () => ({
+  ThemeProvider: ({ userId, children }: { userId: string | null; children: ReactNode }) => {
+    themeProviderUserIds.push(userId)
+    return children
+  },
+}))
+
+vi.mock('./theme/themeStorage', () => ({
+  bootstrapTheme,
 }))
 
 vi.mock('./committee/CommitteePage', () => ({
@@ -30,9 +46,15 @@ vi.mock('./pages/KnowledgePage', () => ({
   default: () => <h1>知识库</h1>,
 }))
 
+vi.mock('./pages/SettingsPage', () => ({
+  default: () => <h1>配色设置</h1>,
+}))
+
 beforeEach(() => {
   localStorage.clear()
   authState.token = null
+  themeProviderUserIds.length = 0
+  bootstrapTheme.mockClear()
 })
 
 it('收到统一认证变更事件后立即返回登录页', async () => {
@@ -138,4 +160,44 @@ it('Agent 聊天页更多菜单可切回基础面板', async () => {
   await user.click(screen.getByRole('menuitem', { name: '切换到基础' }))
   expect(await screen.findByRole('link', { name: '今日关注' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '更多' })).not.toBeInTheDocument()
+})
+
+it('基础导航提供设置入口并渲染设置路由', () => {
+  render(
+    <MemoryRouter initialEntries={['/settings']}>
+      <App />
+    </MemoryRouter>,
+  )
+  expect(screen.getByRole('link', { name: '设置' })).toHaveAttribute('href', '/settings')
+  expect(screen.getByRole('heading', { name: '配色设置' })).toBeInTheDocument()
+  expect(screen.queryByRole('navigation', { name: 'Agent 导航' })).not.toBeInTheDocument()
+})
+
+it('ThemeProvider 包裹登录态和退出后的应用树', async () => {
+  render(
+    <MemoryRouter initialEntries={['/']}>
+      <App />
+    </MemoryRouter>,
+  )
+
+  expect(themeProviderUserIds).toContain('u1')
+
+  window.dispatchEvent(new Event('advisor-auth-changed'))
+
+  await waitFor(() => expect(themeProviderUserIds).toContain(null))
+  expect(screen.getByRole('button', { name: '登录' })).toBeInTheDocument()
+})
+
+it('入口初始化主题时使用当前账号 id', async () => {
+  vi.resetModules()
+  vi.doMock('react-dom/client', () => ({
+    createRoot: () => ({ render: vi.fn() }),
+  }))
+  document.body.innerHTML = '<div id="root"></div>'
+
+  const main = await import('./main')
+  bootstrapTheme.mockClear()
+  main.initializeTheme()
+
+  expect(bootstrapTheme).toHaveBeenCalledWith('u1')
 })

@@ -157,6 +157,12 @@ def ensure_indexes() -> None:
     except Exception:
         pass
     try:
+        db.user_ui_settings.create_index(
+            [("user_id", ASCENDING)], unique=True
+        )
+    except Exception:
+        pass
+    try:
         db.agent_chat_sessions.create_index(
             [("user_id", ASCENDING), ("updated_at", DESCENDING)]
         )

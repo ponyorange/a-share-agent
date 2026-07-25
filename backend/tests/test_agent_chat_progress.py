@@ -51,6 +51,7 @@ def _install_chat_core(monkeypatch, fake_agent: FakeAgent, captured_messages: li
     )
     monkeypatch.setattr(agent_graph, "build_chat_model", lambda _user_id: object())
     monkeypatch.setattr(agent_graph, "build_tools", lambda _user_id: [])
+    monkeypatch.setattr(agent_graph, "build_system_prompt", lambda _user_id: "SYSTEM")
     monkeypatch.setattr(
         agent_graph,
         "create_react_agent",

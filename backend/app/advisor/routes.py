@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth import get_current_user
 from . import context
@@ -58,6 +58,7 @@ from .llm_settings import (
     public_llm_settings,
     save_llm_settings,
 )
+from .ui_settings import get_ui_settings, save_ui_settings
 from .agent.graph import iter_agent_chat_events, run_agent_chat
 from .agent.chat_store import (
     delete_session,
@@ -141,6 +142,48 @@ class LlmSettingsBody(BaseModel):
     api_key: str = Field(..., min_length=8)
     model: str | None = Field(default=None)
     base_url: str | None = Field(default=None)
+
+
+class UiColorsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    page_bg: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    surface: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    text_primary: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    text_muted: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    border: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    brand: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    market_up: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    market_down: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    success: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    error: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class UiSettingsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    active_template: Literal["modern_data", "classic_market", "deep_navy"]
+    colors: UiColorsBody
+
+
+@router.get("/ui/settings")
+def ui_settings_get(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    return get_ui_settings(_bind(user))
+
+
+@router.put("/ui/settings")
+def ui_settings_put(
+    body: UiSettingsBody, user: dict[str, Any] = Depends(_user)
+) -> dict[str, Any]:
+    uid = _bind(user)
+    try:
+        return save_ui_settings(
+            uid,
+            active_template=body.active_template,
+            colors=body.colors.model_dump(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/llm/settings")

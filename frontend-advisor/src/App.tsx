@@ -22,7 +22,9 @@ import PaperPage from './pages/PaperPage'
 import PerformancePage from './pages/PerformancePage'
 import PortfolioPage from './pages/PortfolioPage'
 import RecommendationsPage from './pages/RecommendationsPage'
+import SettingsPage from './pages/SettingsPage'
 import StrategyPage from './pages/StrategyPage'
+import { ThemeProvider } from './theme/ThemeProvider'
 
 const DISCLAIMER =
   '基于历史量价规则评分，仅供研究参考，不构成投资建议。次日涨跌无法保证。'
@@ -88,132 +90,140 @@ export default function App() {
 
   if (checking) {
     return (
-      <div className="app-shell">
-        <main className="main">
-          <p className="status">校验登录…</p>
-        </main>
-      </div>
+      <ThemeProvider userId={user?.id ?? null}>
+        <div className="app-shell">
+          <main className="main">
+            <p className="status">校验登录…</p>
+          </main>
+        </div>
+      </ThemeProvider>
     )
   }
 
   if (!user) {
     return (
-      <div className="app-shell">
-        <main className="main">
-          <LoginPage onAuthed={setUser} />
-        </main>
-      </div>
+      <ThemeProvider userId={null}>
+        <div className="app-shell">
+          <main className="main">
+            <LoginPage onAuthed={setUser} />
+          </main>
+        </div>
+      </ThemeProvider>
     )
   }
 
   return (
-    <div
-      className={[
-        'app-shell',
-        isAgent ? 'app-shell--agent' : '',
-        isAgentChat ? 'app-shell--agent-chat' : '',
-        isAgentChatPage ? 'app-shell--agent-chat-page' : '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
-    >
-      <div className="panel-switch panel-switch--float" role="tablist" aria-label="面板">
-        <button
-          type="button"
-          role="tab"
-          className={`panel-switch-opt${!isAgent ? ' active' : ''}`}
-          aria-selected={!isAgent}
-          onClick={() => switchPanel('base')}
-        >
-          基础
-        </button>
-        <button
-          type="button"
-          role="tab"
-          className={`panel-switch-opt${isAgent ? ' active' : ''}`}
-          aria-selected={isAgent}
-          onClick={() => switchPanel('agent')}
-        >
-          Agent
-        </button>
-      </div>
-
-      <header className="topbar">
-        <div className="brand-block">
-          <p className="brand">次日顾问</p>
-          <p className="brand-sub">规则评分 · AKQuant 校验</p>
-        </div>
-        <div className="topbar-nav-wrap">
-          <nav className="nav" aria-label={isAgent ? 'Agent 导航' : '基础导航'}>
-            {isAgent ? (
-              <>
-                <NavLink to="/agent" end>
-                  投研助手
-                </NavLink>
-                <NavLink to="/agent/knowledge">知识库</NavLink>
-                <NavLink to="/agent/strategy">策略副驾</NavLink>
-                <NavLink to="/agent/settings">DeepSeek 配置</NavLink>
-              </>
-            ) : (
-              <>
-                <NavLink to="/" end>
-                  今日关注
-                </NavLink>
-                <NavLink to="/advice">标的诊断</NavLink>
-                <NavLink to="/portfolio">我的持仓</NavLink>
-                <NavLink to="/history">推荐历史</NavLink>
-                <NavLink to="/paper">模拟盘</NavLink>
-                <NavLink to="/leaderboard">龙虎榜</NavLink>
-                <NavLink to="/performance">策略表现</NavLink>
-                <NavLink to="/strategy">我的策略</NavLink>
-              </>
-            )}
-          </nav>
-        </div>
-        <div className="user-bar">
-          <span className="user-name">{user.username}</span>
+    <ThemeProvider userId={user.id}>
+      <div
+        className={[
+          'app-shell',
+          isAgent ? 'app-shell--agent' : '',
+          isAgentChat ? 'app-shell--agent-chat' : '',
+          isAgentChatPage ? 'app-shell--agent-chat-page' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <div className="panel-switch panel-switch--float" role="tablist" aria-label="面板">
           <button
             type="button"
-            className="btn ghost"
-            onClick={() => {
-              clearSession()
-              setUser(null)
-            }}
+            role="tab"
+            className={`panel-switch-opt${!isAgent ? ' active' : ''}`}
+            aria-selected={!isAgent}
+            onClick={() => switchPanel('base')}
           >
-            退出
+            基础
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className={`panel-switch-opt${isAgent ? ' active' : ''}`}
+            aria-selected={isAgent}
+            onClick={() => switchPanel('agent')}
+          >
+            Agent
           </button>
         </div>
-      </header>
 
-      <main className="main">
-        <Routes>
-          <Route path="/" element={<RecommendationsPage />} />
-          <Route path="/advice" element={<AdvicePage />} />
-          <Route path="/portfolio" element={<PortfolioPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/paper" element={<PaperPage />} />
-          <Route path="/leaderboard" element={<LeaderboardPage />} />
-          <Route path="/performance" element={<PerformancePage />} />
-          <Route path="/strategy" element={<StrategyPage />} />
-          <Route path="/agent" element={<AgentChatPage />} />
-          <Route path="/agent/committee" element={<CommitteePage />} />
-          <Route path="/agent/knowledge" element={<KnowledgePage />} />
-          <Route path="/agent/strategy" element={<AgentStrategyPage />} />
-          <Route path="/agent/settings" element={<AgentSettingsPage />} />
-          <Route path="/agent/focus" element={<Navigate to="/agent" replace />} />
-          <Route path="/agent/*" element={<Navigate to="/agent" replace />} />
-        </Routes>
-      </main>
+        <header className="topbar">
+          <div className="brand-block">
+            <p className="brand">次日顾问</p>
+            <p className="brand-sub">规则评分 · AKQuant 校验</p>
+          </div>
+          <div className="topbar-nav-wrap">
+            <nav className="nav" aria-label={isAgent ? 'Agent 导航' : '基础导航'}>
+              {isAgent ? (
+                <>
+                  <NavLink to="/agent" end>
+                    投研助手
+                  </NavLink>
+                  <NavLink to="/agent/knowledge">知识库</NavLink>
+                  <NavLink to="/agent/strategy">策略副驾</NavLink>
+                  <NavLink to="/agent/settings">DeepSeek 配置</NavLink>
+                </>
+              ) : (
+                <>
+                  <NavLink to="/" end>
+                    今日关注
+                  </NavLink>
+                  <NavLink to="/advice">标的诊断</NavLink>
+                  <NavLink to="/portfolio">我的持仓</NavLink>
+                  <NavLink to="/history">推荐历史</NavLink>
+                  <NavLink to="/paper">模拟盘</NavLink>
+                  <NavLink to="/leaderboard">龙虎榜</NavLink>
+                  <NavLink to="/performance">策略表现</NavLink>
+                  <NavLink to="/strategy">我的策略</NavLink>
+                  <NavLink to="/settings">设置</NavLink>
+                </>
+              )}
+            </nav>
+          </div>
+          <div className="user-bar">
+            <span className="user-name">{user.username}</span>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => {
+                clearSession()
+                setUser(null)
+              }}
+            >
+              退出
+            </button>
+          </div>
+        </header>
 
-      {!isAgentChat ? (
-        <footer className="footer">
-          <p>{DISCLAIMER}</p>
-        </footer>
-      ) : null}
+        <main className="main">
+          <Routes>
+            <Route path="/" element={<RecommendationsPage />} />
+            <Route path="/advice" element={<AdvicePage />} />
+            <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/paper" element={<PaperPage />} />
+            <Route path="/leaderboard" element={<LeaderboardPage />} />
+            <Route path="/performance" element={<PerformancePage />} />
+            <Route path="/strategy" element={<StrategyPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/agent" element={<AgentChatPage />} />
+            <Route path="/agent/committee" element={<CommitteePage />} />
+            <Route path="/agent/knowledge" element={<KnowledgePage />} />
+            <Route path="/agent/strategy" element={<AgentStrategyPage />} />
+            <Route path="/agent/settings" element={<AgentSettingsPage />} />
+            <Route path="/agent/focus" element={<Navigate to="/agent" replace />} />
+            <Route path="/agent/*" element={<Navigate to="/agent" replace />} />
+          </Routes>
+        </main>
 
-      {isAgentChatPage ? (
-        <MobileAgentMoreMenu onSwitchToBase={() => switchPanel('base')} />
-      ) : null}
-    </div>
+        {!isAgentChat ? (
+          <footer className="footer">
+            <p>{DISCLAIMER}</p>
+          </footer>
+        ) : null}
+
+        {isAgentChatPage ? (
+          <MobileAgentMoreMenu onSwitchToBase={() => switchPanel('base')} />
+        ) : null}
+      </div>
+    </ThemeProvider>
   )
 }
