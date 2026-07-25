@@ -109,6 +109,30 @@ it('助手消息底部可复制正文', async () => {
   expect(await screen.findByRole('button', { name: '已复制' })).toBeInTheDocument()
 })
 
+it('clipboard 不可用时回退 execCommand 仍可复制', async () => {
+  const user = userEvent.setup()
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: undefined,
+  })
+  const exec = vi.fn().mockReturnValue(true)
+  Object.defineProperty(document, 'execCommand', {
+    configurable: true,
+    writable: true,
+    value: exec,
+  })
+
+  render(
+    <ChatBubble
+      m={{ role: 'assistant', content: '回退复制内容' }}
+    />,
+  )
+
+  await user.click(screen.getByRole('button', { name: '复制' }))
+  expect(exec).toHaveBeenCalledWith('copy')
+  expect(await screen.findByRole('button', { name: '已复制' })).toBeInTheDocument()
+})
+
 it('流式输出中不显示复制按钮', () => {
   render(
     <ChatBubble

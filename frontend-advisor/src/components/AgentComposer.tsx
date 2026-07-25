@@ -40,20 +40,24 @@ export function AgentComposer({
 
   return (
     <form
-      className="agent-composer"
+      className={`agent-composer${sending ? ' is-generating' : ''}`}
       aria-label="投研助手输入框"
       onSubmit={(event) => {
         event.preventDefault()
         submit()
       }}
     >
-      <div className="agent-composer-field">
+      <div className={`agent-composer-field${sending ? ' is-generating' : ''}`}>
         <textarea
           ref={textareaRef}
           className="input"
           rows={2}
           aria-label="给投研助手发送消息"
-          placeholder="问投研助手…（Enter 发送，Shift+Enter 换行）"
+          placeholder={
+            sending
+              ? '正在生成回复…'
+              : '问投研助手…（Enter 发送，Shift+Enter 换行）'
+          }
           value={value}
           maxLength={maxLength}
           disabled={disabled}
@@ -80,8 +84,20 @@ export function AgentComposer({
           {error}
         </p>
       ) : null}
-      <button className="btn" type="submit" disabled={blocked}>
-        {sending ? '生成中…' : '发送'}
+      <button
+        className={`btn${sending ? ' is-generating' : ''}`}
+        type="submit"
+        disabled={blocked}
+        aria-busy={sending || undefined}
+      >
+        {sending ? (
+          <span className="agent-composer-generating">
+            <span className="agent-composer-generating-dot" aria-hidden />
+            生成中…
+          </span>
+        ) : (
+          '发送'
+        )}
       </button>
     </form>
   )

@@ -1457,12 +1457,46 @@ body:has(.app-shell--agent-chat) {
   padding: 0.35rem 0.5rem;
 }
 
-.agent-chat {
+.agent-chat-shell {
+  position: relative;
   flex: 1;
   min-height: 0;
   margin: 0.35rem 0 0.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-chat {
+  flex: 1;
+  min-height: 0;
   /* Virtuoso 自己管纵向滚动 */
   overflow: hidden;
+}
+
+.btn.agent-jump-latest {
+  position: absolute;
+  z-index: 2;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.16);
+}
+
+.btn.agent-jump-latest svg {
+  display: block;
+  width: 1.05rem;
+  height: 1.05rem;
+  flex-shrink: 0;
 }
 
 .agent-chat-empty-wrap {
@@ -1565,7 +1599,8 @@ body:has(.app-shell--agent-chat) {
   place-items: center;
   width: 1.4rem;
   height: 1.4rem;
-  min-height: auto;
+  min-width: 1.4rem;
+  min-height: 1.4rem;
   padding: 0;
   border: 0;
   border-radius: 5px;
@@ -1586,9 +1621,30 @@ body:has(.app-shell--agent-chat) {
   opacity: 1;
 }
 
+.btn.ghost.agent-copy-btn.is-failed {
+  color: var(--color-error);
+  opacity: 1;
+}
+
 .agent-copy-btn svg {
   width: 0.82rem;
   height: 0.82rem;
+}
+
+@media (max-width: 768px) {
+  .btn.ghost.agent-copy-btn {
+    width: 1.65rem;
+    height: 1.65rem;
+    min-width: 1.65rem;
+    min-height: 1.65rem;
+    border-radius: 6px;
+    opacity: 0.8;
+  }
+
+  .agent-copy-btn svg {
+    width: 0.88rem;
+    height: 0.88rem;
+  }
 }
 
 .agent-trace {
@@ -1755,6 +1811,38 @@ body:has(.app-shell--agent-chat) {
   box-sizing: border-box;
 }
 
+/* 父级 overflow:hidden 会裁切全局 .input:focus 的 outline；改用内描边保持四边完整 */
+.agent-composer .input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--color-brand) 70%, var(--line));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-brand) 40%, transparent);
+}
+
+.agent-composer.is-generating .agent-composer-field {
+  border-radius: 0.55rem;
+  animation: agent-composer-field-glow 1.6s ease-in-out infinite;
+}
+
+.agent-composer.is-generating .agent-composer-field .input {
+  border-color: color-mix(in srgb, var(--color-brand) 55%, var(--line));
+  background:
+    linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in srgb, var(--color-brand) 10%, transparent) 50%,
+      transparent 70%
+    )
+      0 0 / 220% 100% no-repeat,
+    var(--color-surface, #fff);
+  animation: agent-composer-field-shimmer 1.8s linear infinite;
+  caret-color: transparent;
+}
+
+.agent-composer.is-generating .agent-composer-field .input:focus {
+  border-color: color-mix(in srgb, var(--color-brand) 70%, var(--line));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-brand) 40%, transparent);
+}
+
 .agent-composer-count {
   position: absolute;
   right: 0.55rem;
@@ -1774,6 +1862,104 @@ body:has(.app-shell--agent-chat) {
 .agent-composer .btn {
   justify-self: end;
   align-self: end;
+  position: relative;
+  overflow: hidden;
+}
+
+.agent-composer .btn.is-generating {
+  min-width: 5.5rem;
+  animation: agent-composer-btn-pulse 1.4s ease-in-out infinite;
+}
+
+.agent-composer .btn.is-generating::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    color-mix(in srgb, #fff 28%, transparent) 50%,
+    transparent 65%
+  );
+  transform: translateX(-120%);
+  animation: agent-composer-btn-shimmer 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.agent-composer-generating {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.agent-composer-generating-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+  animation: agent-composer-dot-blink 1s ease-in-out infinite;
+}
+
+@keyframes agent-composer-field-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-brand) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand) 22%, transparent);
+  }
+}
+
+@keyframes agent-composer-field-shimmer {
+  0% {
+    background-position: 120% 0, 0 0;
+  }
+  100% {
+    background-position: -120% 0, 0 0;
+  }
+}
+
+@keyframes agent-composer-btn-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.88;
+    transform: scale(0.985);
+  }
+}
+
+@keyframes agent-composer-btn-shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes agent-composer-dot-blink {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-composer.is-generating .agent-composer-field,
+  .agent-composer.is-generating .agent-composer-field .input,
+  .agent-composer .btn.is-generating,
+  .agent-composer .btn.is-generating::after,
+  .agent-composer-generating-dot {
+    animation: none;
+  }
 }
 
 .app-shell--agent-chat .agent-mobile-header {

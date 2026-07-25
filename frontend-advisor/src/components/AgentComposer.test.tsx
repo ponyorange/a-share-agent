@@ -111,9 +111,18 @@ it('空内容或 disabled 时禁止发送', () => {
 })
 
 it('sending 时显示生成中并在有错误时用 alert 暴露', () => {
-  renderComposer({ sending: true, error: '网络失败' })
+  const { container } = renderComposer({ sending: true, error: '网络失败' })
 
-  expect(screen.getByRole('button', { name: '生成中…' })).toBeInTheDocument()
+  const btn = screen.getByRole('button', { name: '生成中…' })
+  expect(btn).toBeInTheDocument()
+  expect(btn).toHaveClass('is-generating')
+  expect(btn).toHaveAttribute('aria-busy', 'true')
+  expect(container.querySelector('.agent-composer')).toHaveClass('is-generating')
+  expect(container.querySelector('.agent-composer-field')).toHaveClass('is-generating')
+  expect(screen.getByRole('textbox', { name: '给投研助手发送消息' })).toHaveAttribute(
+    'placeholder',
+    '正在生成回复…',
+  )
   expect(screen.getByRole('alert')).toHaveTextContent('网络失败')
 })
 

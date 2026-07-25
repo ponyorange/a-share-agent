@@ -16,6 +16,7 @@ import {
   type AgentSession,
   type SubagentProgress,
 } from '../agentApi'
+import { copyText } from '../copyText'
 
 type Msg = {
   role: 'user' | 'assistant'
@@ -148,20 +149,24 @@ export function SubagentProgressPanel({
 }
 
 export const ChatBubble = memo(function ChatBubble({ m }: { m: Msg }) {
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const canCopy =
     m.role === 'assistant' && Boolean(m.content.trim()) && !m.streaming
 
   async function handleCopy() {
     if (!canCopy) return
     try {
-      await navigator.clipboard.writeText(m.content)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
+      await copyText(m.content)
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState('idle'), 1500)
     } catch {
-      setCopied(false)
+      setCopyState('failed')
+      window.setTimeout(() => setCopyState('idle'), 2000)
     }
   }
+
+  const copyLabel =
+    copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制'
 
   return (
     <div className={`agent-bubble ${m.role}`}>
@@ -192,13 +197,17 @@ export const ChatBubble = memo(function ChatBubble({ m }: { m: Msg }) {
         <div className="agent-bubble-actions">
           <button
             type="button"
-            className="btn ghost agent-copy-btn"
-            aria-label={copied ? '已复制' : '复制'}
-            title={copied ? '已复制' : '复制'}
+            className={`btn ghost agent-copy-btn${
+              copyState === 'failed' ? ' is-failed' : ''
+            }`}
+            aria-label={copyLabel}
+            title={copyLabel}
             onClick={() => void handleCopy()}
           >
-            {copied ? (
+            {copyState === 'copied' ? (
               <span aria-hidden="true">✓</span>
+            ) : copyState === 'failed' ? (
+              <span aria-hidden="true">!</span>
             ) : (
               <svg
                 aria-hidden="true"
@@ -235,11 +244,24 @@ export default function AgentChatPage() {
   const abortRef = useRef<AbortController | null>(null)
   const drawerTriggerRef = useRef<HTMLButtonElement>(null)
   const virtuosoRef = useRef<VirtuosoHandle | null>(null)
-  const stickToBottomRef = useRef(true)
+  const [atBottom, setAtBottom] = useState(true)
+  /** Bump to remount Virtuoso after loading a session so initialTopMostItemIndex sticks to latest. */
+  const [chatListKey, setChatListKey] = useState(0)
+  /** One-shot: after session load, realign to true bottom once item heights settle. */
+  const pinBottomAfterMountRef = useRef(false)
   const activeStreamRef = useRef(0)
   const sessionTransitionRef = useRef(0)
   const hasAnswerTokenRef = useRef(false)
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
+
+  const jumpToLatest = useCallback((behavior: 'auto' | 'smooth' = 'smooth') => {
+    setAtBottom(true)
+    virtuosoRef.current?.scrollToIndex({
+      index: 'LAST',
+      align: 'end',
+      behavior,
+    })
+  }, [])
 
   const refreshSessions = useCallback(async () => {
     const res = await listAgentSessions()
@@ -275,15 +297,6 @@ export default function AgentChatPage() {
     return () => abortRef.current?.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  useEffect(() => {
-    if (!stickToBottomRef.current || messages.length === 0) return
-    virtuosoRef.current?.scrollToIndex({
-      index: messages.length - 1,
-      align: 'end',
-      behavior: 'auto',
-    })
-  }, [messages, sending, liveTools, liveSubagentProgress])
 
   function beginSessionTransition() {
     const token = sessionTransitionRef.current + 1
@@ -335,8 +348,10 @@ export default function AgentChatPage() {
         }))
     setSessionId(id)
     setError(null)
-    stickToBottomRef.current = true
+    setAtBottom(true)
+    pinBottomAfterMountRef.current = true
     setMessages(nextMessages)
+    setChatListKey((key) => key + 1)
   }
 
   async function openSession(id: string): Promise<boolean> {
@@ -365,7 +380,8 @@ export default function AgentChatPage() {
       setSessionId(created.session_id)
       setError(null)
       setMessages([])
-      stickToBottomRef.current = true
+      setAtBottom(true)
+      setChatListKey((key) => key + 1)
       await refreshSessions()
       return true
     } catch {
@@ -404,7 +420,8 @@ export default function AgentChatPage() {
       } else {
         const created = await createAgentSession()
         setSessionId(created.session_id)
-        stickToBottomRef.current = true
+        setAtBottom(true)
+        setChatListKey((key) => key + 1)
         await refreshSessions()
       }
       return true
@@ -431,7 +448,7 @@ export default function AgentChatPage() {
     hasAnswerTokenRef.current = false
     setLiveSubagentProgress([])
     setProgressCollapsed(isMobile)
-    stickToBottomRef.current = true
+    setAtBottom(true)
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setMessages((prev) => [...prev, { role: 'assistant', content: '', streaming: true }])
     setSending(true)
@@ -644,33 +661,68 @@ export default function AgentChatPage() {
             </div>
           </div>
         ) : (
-          <Virtuoso
-            className="agent-chat"
-            ref={virtuosoRef}
-            data={messages}
-            increaseViewportBy={200}
-            atBottomStateChange={(atBottom) => {
-              stickToBottomRef.current = atBottom
-            }}
-            followOutput={(isAtBottom) => (isAtBottom ? 'smooth' : false)}
-            itemContent={(index, m) => (
-              <div className="agent-bubble-wrap">
-                <ChatBubble m={m} />
-                {sending && index === messages.length - 1 && liveSubagentProgress.length > 0 ? (
-                  <SubagentProgressPanel
-                    items={liveSubagentProgress}
-                    collapsed={progressCollapsed}
-                    onToggle={() => setProgressCollapsed((value) => !value)}
-                  />
-                ) : null}
-                {sending && index === messages.length - 1 && liveTools.length > 0 ? (
-                  <p className="meta-line">
-                    工具：{liveTools.map((t) => t.tool).join(' → ')}
-                  </p>
-                ) : null}
-              </div>
-            )}
-          />
+          <div className="agent-chat-shell">
+            <Virtuoso
+              key={`${sessionId ?? 'none'}-${chatListKey}`}
+              className="agent-chat"
+              ref={virtuosoRef}
+              data={messages}
+              increaseViewportBy={200}
+              defaultItemHeight={120}
+              alignToBottom
+              initialTopMostItemIndex={{
+                index: Math.max(0, messages.length - 1),
+                align: 'end',
+              }}
+              atBottomStateChange={setAtBottom}
+              followOutput={atBottom ? 'auto' : false}
+              totalListHeightChanged={() => {
+                // Last bubble is often taller than defaultItemHeight; correct once to true bottom.
+                if (!pinBottomAfterMountRef.current) return
+                pinBottomAfterMountRef.current = false
+                window.requestAnimationFrame(() => jumpToLatest('auto'))
+              }}
+              itemContent={(index, m) => (
+                <div className="agent-bubble-wrap">
+                  <ChatBubble m={m} />
+                  {sending && index === messages.length - 1 && liveSubagentProgress.length > 0 ? (
+                    <SubagentProgressPanel
+                      items={liveSubagentProgress}
+                      collapsed={progressCollapsed}
+                      onToggle={() => setProgressCollapsed((value) => !value)}
+                    />
+                  ) : null}
+                  {sending && index === messages.length - 1 && liveTools.length > 0 ? (
+                    <p className="meta-line">
+                      工具：{liveTools.map((t) => t.tool).join(' → ')}
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            />
+            {!atBottom ? (
+              <button
+                type="button"
+                className="btn agent-jump-latest"
+                aria-label="回到最新"
+                title="回到最新"
+                onClick={() => jumpToLatest('smooth')}
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 5v14" />
+                  <path d="m19 12-7 7-7-7" />
+                </svg>
+              </button>
+            ) : null}
+          </div>
         )}
 
         <div
