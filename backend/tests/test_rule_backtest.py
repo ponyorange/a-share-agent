@@ -86,11 +86,27 @@ def test_validate_lookback_bounds():
     assert any("lookback" in e for e in errs_hi)
 
 
-def test_validate_rejects_absolute_volume():
-    _, errs = rb.validate_rule_spec(
-        {"entry": {"all": [{"factor": "volume", "op": "<", "value": 1e6}]}}
+def test_validate_maps_volume_alias_to_vol_ratio():
+    spec, errs = rb.validate_rule_spec(
+        {"entry": {"all": [{"factor": "volume", "op": "<", "value": 0.8}]}}
     )
-    assert any("vol_ratio" in e for e in errs)
+    assert errs == []
+    assert spec["entry"]["all"][0]["factor"] == "vol_ratio"
+    assert spec["entry"]["all"][0]["lookback"] == 5
+
+
+def test_validate_rejects_turn():
+    _, errs = rb.validate_rule_spec(
+        {"entry": {"all": [{"factor": "turn", "op": "<", "value": 1}]}}
+    )
+    assert any("turn" in e for e in errs)
+
+
+def test_describe_rule_factors_includes_vol_and_yin():
+    cat = rb.describe_rule_factors()
+    assert "vol_ratio" in cat["allowed_factors"]
+    assert "is_yin" in cat["allowed_factors"]
+    assert cat["aliases"]["volume"] == "vol_ratio"
 
 
 def _synth_df(n: int = 80, seed: int = 0) -> pd.DataFrame:

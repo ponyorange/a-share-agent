@@ -36,9 +36,10 @@ ALLOWED_FACTORS = frozenset(
 FACTOR_ALIASES = {
     "volume_ratio": "vol_ratio",
     "vol": "vol_ratio",
+    # Agent 常误写 volume；按相对均量语义映射，避免「不支持」误报
+    "volume": "vol_ratio",
 }
 REJECTED_FACTORS = {
-    "volume": "请用 vol_ratio（可加 lookback）表示相对均量，勿用绝对成交量",
     "turn": "暂不支持换手率绝对值，请用 vol_ratio + lookback",
     "turnover": "暂不支持换手率绝对值，请用 vol_ratio + lookback",
 }
@@ -47,6 +48,43 @@ VOL_RATIO_LOOKBACK_MAX = 60
 VOL_RATIO_LOOKBACK_DEFAULT = 5
 ALLOWED_OPS = frozenset({">", ">=", "<", "<=", "between"})
 ALLOWED_EXIT_TYPES = frozenset({"hold_days", "stop_loss", "take_profit"})
+
+
+def describe_rule_factors() -> dict[str, Any]:
+    """Catalog for Agent discovery — call before drafting rule_json."""
+    return {
+        "allowed_factors": sorted(ALLOWED_FACTORS),
+        "aliases": dict(FACTOR_ALIASES),
+        "rejected": dict(REJECTED_FACTORS),
+        "vol_ratio": {
+            "meaning": "当日成交量 / 前 N 日均量（不含当日）",
+            "lookback_default": VOL_RATIO_LOOKBACK_DEFAULT,
+            "lookback_min": VOL_RATIO_LOOKBACK_MIN,
+            "lookback_max": VOL_RATIO_LOOKBACK_MAX,
+        },
+        "yin_yang": {
+            "is_yin": "close < open → 1",
+            "is_yang": "close > open → 1",
+            "flat": "close == open → 二者均为 0",
+        },
+        "example_shrink_yin": {
+            "entry": {
+                "all": [
+                    {"factor": "is_yin", "op": ">=", "value": 1},
+                    {
+                        "factor": "vol_ratio",
+                        "lookback": 5,
+                        "op": "<",
+                        "value": 1.0,
+                    },
+                ]
+            }
+        },
+        "notes": [
+            "量能请用 vol_ratio（或别名 volume_ratio / vol / volume），不要用 turn",
+            "引擎语义是 entry 全满足则买入；「不接/不卖」需写成可交易的正向条件或在知识正文说明",
+        ],
+    }
 
 
 def normalize_factor_name(name: str) -> str:
@@ -158,7 +196,13 @@ def validate_rule_spec(
             cond["factor"] = f
             op = str(cond.get("op") or "")
             if f not in ALLOWED_FACTORS:
-                errors.append(f"entry.all[{i}].factor 不支持: {raw_f or f}")
+                catalog = describe_rule_factors()
+                errors.append(
+                    f"entry.all[{i}].factor 不支持: {raw_f or f}；"
+                    f"可用因子={catalog['allowed_factors']}；"
+                    f"别名={catalog['aliases']}；"
+                    f"缩量阴示例={catalog['example_shrink_yin']}"
+                )
             if op not in ALLOWED_OPS:
                 errors.append(f"entry.all[{i}].op 不支持: {op}")
             if f == "vol_ratio":

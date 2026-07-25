@@ -45,7 +45,15 @@ def test_system_prompt_mentions_rule_backtest():
 
     assert "compile_knowledge_rules" in SYSTEM_PROMPT
     assert "optimize_knowledge_rules" in SYSTEM_PROMPT
+    assert "list_rule_factors" in SYSTEM_PROMPT
     assert "样本内" in SYSTEM_PROMPT or "in_sample" in SYSTEM_PROMPT
+
+
+def test_list_rule_factors_tool():
+    tools = _tool_map()
+    out = json.loads(tools["list_rule_factors"].invoke({}))
+    assert "vol_ratio" in out["allowed_factors"]
+    assert out["aliases"]["volume"] == "vol_ratio"
 
 
 def test_optimize_knowledge_rules_json(monkeypatch):

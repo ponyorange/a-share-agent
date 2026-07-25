@@ -979,30 +979,50 @@ def build_tools(user_id: str) -> list[Any]:
         return json.dumps(data, ensure_ascii=False, default=str)
 
     @tool
+    def list_rule_factors() -> str:
+        """列出规则引擎可用因子、别名与缩量阴示例。
+        起草 compile_knowledge_rules 的 rule_json 之前应先调用本工具；
+        量能用 vol_ratio（别名 volume_ratio/vol/volume + lookback），勿用 turn。"""
+        from ..rule_backtest import describe_rule_factors
+
+        _bind()
+        return json.dumps(describe_rule_factors(), ensure_ascii=False, default=str)
+
+    @tool
     def compile_knowledge_rules(
         rule_json: str,
         text: str = "",
         knowledge_id: str = "",
     ) -> str:
         """将 Agent 起草的规则 JSON 校验为 RuleSpec。
-        输入 rule_json（必填）；可选 knowledge_id/text 做溯源。
-        支持因子含 vol_ratio（可选 lookback=2..60，默认5；别名 volume_ratio/vol）、
-        is_yin/is_yang（收盘相对开盘）。不写入知识库。失败返回 errors 列表供澄清。"""
+        起草前先 list_rule_factors。量能因子规范名 vol_ratio（lookback 2..60，默认5；
+        别名 volume_ratio/vol/volume），阴阳 is_yin/is_yang。勿用 turn。不写入知识库。"""
         from ..knowledge import get_item
-        from ..rule_backtest import validate_rule_spec
+        from ..rule_backtest import describe_rule_factors, validate_rule_spec
 
         _bind()
+        catalog = describe_rule_factors()
         try:
             raw = json.loads(rule_json or "")
         except json.JSONDecodeError:
             return json.dumps(
-                {"ok": False, "error": "rule_json 不是合法 JSON"},
+                {
+                    "ok": False,
+                    "error": "rule_json 不是合法 JSON",
+                    "factor_catalog": catalog,
+                },
                 ensure_ascii=False,
+                default=str,
             )
         if not isinstance(raw, dict):
             return json.dumps(
-                {"ok": False, "error": "rule_json 必须是 JSON 对象"},
+                {
+                    "ok": False,
+                    "error": "rule_json 必须是 JSON 对象",
+                    "factor_catalog": catalog,
+                },
                 ensure_ascii=False,
+                default=str,
             )
         kid = (knowledge_id or "").strip()
         source_text = (text or "").strip()
@@ -1021,8 +1041,14 @@ def build_tools(user_id: str) -> list[Any]:
         spec, errors = validate_rule_spec(raw)
         if errors or spec is None:
             return json.dumps(
-                {"ok": False, "errors": errors},
+                {
+                    "ok": False,
+                    "errors": errors,
+                    "factor_catalog": catalog,
+                    "hint": "量能请用 vol_ratio + lookback；可先 list_rule_factors",
+                },
                 ensure_ascii=False,
+                default=str,
             )
         return json.dumps(
             {"ok": True, "rule": spec},
@@ -1350,6 +1376,7 @@ def build_tools(user_id: str) -> list[Any]:
         fetch_market_indices,
         fetch_index_extremes,
         fetch_symbol_daily_ma,
+        list_rule_factors,
         compile_knowledge_rules,
         run_rule_backtest,
         optimize_knowledge_rules,
