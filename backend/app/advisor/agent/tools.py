@@ -980,9 +980,9 @@ def build_tools(user_id: str) -> list[Any]:
 
     @tool
     def list_rule_factors() -> str:
-        """列出规则引擎可用因子、别名与缩量阴示例。
-        起草 compile_knowledge_rules 的 rule_json 之前应先调用本工具；
-        量能用 vol_ratio（别名 volume_ratio/vol/volume + lookback），勿用 turn。"""
+        """列出规则引擎可用因子、别名，以及缩量/放量语义与示例。
+        起草 compile_knowledge_rules 的 rule_json 之前应先调用本工具。
+        缩量=vol_ratio<阈值；放量=vol_ratio>阈值；量能用 vol_ratio（别名 volume_ratio/vol/volume），勿用 turn。"""
         from ..rule_backtest import describe_rule_factors
 
         _bind()

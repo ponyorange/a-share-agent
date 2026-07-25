@@ -65,8 +65,13 @@ SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）�
    必须同时向用户展示样本内与样本外指标；objective=C 且 feasible=false 时说明无可行解，不得写库 →
    写回知识库：默认新建（标题可加「（回测优化）」），正文含自然语言结论 + 样本内外指标 + RuleSpec 附录，
    经 save_knowledge(confirm=false) 预览，用户确认后再 confirm=true。未确认不得声称已写入。
-   量能/阴阳已支持：vol_ratio（lookback 2..60，默认5；别名 volume_ratio/vol/volume）、is_yin、is_yang；
-   勿用 turn。缩量阴 entry 示例：is_yin>=1 且 vol_ratio lookback=5 op=< value=1.0。
+   量能/阴阳已支持：vol_ratio（lookback 2..60，默认5；别名 volume_ratio/vol/volume）、is_yin、is_yang；勿用 turn。
+   术语映射（必须遵守）：
+   - 缩量 = 当日量明显小于近 N 日均量 → vol_ratio < 阈值（常用 1.0，更严 0.8）
+   - 放量 = 当日量明显大于近 N 日均量 → vol_ratio > 阈值（常用 1.5 或 2.0）
+   - vol_ratio 定义 = 当日 volume ÷ 前 N 日均 volume（不含当日）；1.0 表示持平均量
+   - 缩量阴：is_yin>=1 且 vol_ratio lookback=N op=< value=1.0；放量阳：is_yang>=1 且 vol_ratio > 1.5
+   用户说缩量/放量时必须用 vol_ratio 表达，禁止声称不支持或改用绝对 volume/turn。
 """
 
 _USER_SYSTEM_PROMPT_HEADER = """## 用户系统提示词

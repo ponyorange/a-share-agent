@@ -67,6 +67,29 @@ def describe_rule_factors() -> dict[str, Any]:
             "is_yang": "close > open → 1",
             "flat": "close == open → 二者均为 0",
         },
+        "volume_concepts": {
+            "缩量": {
+                "meaning": "当日成交量明显小于近 N 日均量",
+                "rule": "vol_ratio < 阈值（常用阈值 1.0；更严可用 0.8）",
+                "example": {
+                    "factor": "vol_ratio",
+                    "lookback": 5,
+                    "op": "<",
+                    "value": 1.0,
+                },
+            },
+            "放量": {
+                "meaning": "当日成交量明显大于近 N 日均量",
+                "rule": "vol_ratio > 阈值（常用阈值 1.0；更强可用 1.5/2.0）",
+                "example": {
+                    "factor": "vol_ratio",
+                    "lookback": 5,
+                    "op": ">",
+                    "value": 1.5,
+                },
+            },
+            "vol_ratio_definition": "当日 volume ÷ 前 lookback 日均 volume（不含当日）；1.0=持平均量",
+        },
         "example_shrink_yin": {
             "entry": {
                 "all": [
@@ -78,10 +101,26 @@ def describe_rule_factors() -> dict[str, Any]:
                         "value": 1.0,
                     },
                 ]
-            }
+            },
+            "nl": "缩量阴：阴线且缩量（vol_ratio<1）",
+        },
+        "example_expand_yang": {
+            "entry": {
+                "all": [
+                    {"factor": "is_yang", "op": ">=", "value": 1},
+                    {
+                        "factor": "vol_ratio",
+                        "lookback": 5,
+                        "op": ">",
+                        "value": 1.5,
+                    },
+                ]
+            },
+            "nl": "放量阳：阳线且放量（vol_ratio>1.5）",
         },
         "notes": [
-            "量能请用 vol_ratio（或别名 volume_ratio / vol / volume），不要用 turn",
+            "缩量=vol_ratio 小于阈值；放量=vol_ratio 大于阈值；禁止说引擎不支持量能",
+            "量能请用 vol_ratio（别名 volume_ratio / vol / volume），不要用 turn",
             "引擎语义是 entry 全满足则买入；「不接/不卖」需写成可交易的正向条件或在知识正文说明",
         ],
     }

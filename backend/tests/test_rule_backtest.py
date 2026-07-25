@@ -107,6 +107,10 @@ def test_describe_rule_factors_includes_vol_and_yin():
     assert "vol_ratio" in cat["allowed_factors"]
     assert "is_yin" in cat["allowed_factors"]
     assert cat["aliases"]["volume"] == "vol_ratio"
+    assert "缩量" in cat["volume_concepts"]
+    assert "放量" in cat["volume_concepts"]
+    assert cat["volume_concepts"]["缩量"]["example"]["op"] == "<"
+    assert cat["volume_concepts"]["放量"]["example"]["op"] == ">"
 
 
 def _synth_df(n: int = 80, seed: int = 0) -> pd.DataFrame:
