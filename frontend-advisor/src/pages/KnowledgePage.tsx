@@ -116,7 +116,6 @@ export default function KnowledgePage() {
   return (
     <section className="page">
       <div className="page-hero">
-        <h1>知识库</h1>
         <p className="knowledge-hint">
           必选知识会注入 Agent 系统提示；可选知识需 Agent 按需加载。单条正文 ≤ 8000 字，启用必选合计 ≤
           6000 字，启用可选 ≤ 50 条。

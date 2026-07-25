@@ -116,7 +116,6 @@ export default function AgentStrategyPage() {
   return (
     <section className="page">
       <div className="page-hero">
-        <h1>策略副驾</h1>
         <p>
           用自然语言提出调参意图 → Agent 生成 config_patch → 你确认后写入（source=agent）。
           <Link className="text-link" to="/agent">

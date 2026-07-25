@@ -100,7 +100,6 @@ export default function PortfolioPage() {
   return (
     <section className="page">
       <div className="page-hero">
-        <h1>我的持仓</h1>
         <p>进入本页自动诊断全部持仓；按评分给出卖 / 持有 / 加仓建议。</p>
       </div>
 

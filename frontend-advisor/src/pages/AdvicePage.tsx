@@ -39,7 +39,6 @@ export default function AdvicePage() {
   return (
     <section className="page">
       <div className="page-hero">
-        <h1>标的诊断</h1>
         <p>输入股票 / ETF 代码。有持仓时给出卖 / 持有 / 加仓；无持仓时判断是否值得短买。</p>
       </div>
 

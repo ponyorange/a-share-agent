@@ -483,7 +483,6 @@ export default function RecommendationsPage() {
   return (
     <section className="page recommendations-page">
       <div className="page-hero">
-        <h1>今日关注</h1>
         <MobileDisclosure summary="说明" className="recommendation-hero-desc">
           <p>
             大池粗筛 + Top 精算；按有效交易日归档。点「刷新候选池」会在后台跑完（关页面也继续），稍后回来可看新结果。

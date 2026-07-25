@@ -289,7 +289,6 @@ export default function PaperPage() {
   return (
     <section className="page paper-page">
       <div className="page-hero">
-        <h1>模拟盘</h1>
         <p>
           默认展示库内缓存价；点「刷新市值」才 SSE 逐只拉行情并写回。一键买入成交标记为
           rec_one_click。

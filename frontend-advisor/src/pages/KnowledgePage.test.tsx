@@ -32,7 +32,8 @@ beforeEach(() => {
 it('独立知识库页加载并展示现有条目', async () => {
   render(<KnowledgePage />)
 
-  expect(screen.getByRole('heading', { name: '知识库' })).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
+  expect(screen.getByText(/必选知识会注入 Agent 系统提示/)).toBeInTheDocument()
   expect(await screen.findByText('交易纪律')).toBeInTheDocument()
   expect(listKnowledge).toHaveBeenCalledOnce()
 })

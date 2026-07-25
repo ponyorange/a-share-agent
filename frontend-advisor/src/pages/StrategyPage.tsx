@@ -121,7 +121,6 @@ export default function StrategyPage() {
   return (
     <section className="page">
       <div className="page-hero">
-        <h1>我的策略</h1>
         <p>
           每人独立配置；默认与系统一致。修改后需在今日关注「刷新候选池」才会按新策略生成推荐。
           综合分 = 分层权重合成 × 市场缩放。

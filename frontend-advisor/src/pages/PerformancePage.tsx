@@ -128,7 +128,6 @@ export default function PerformancePage() {
   return (
     <section className="page">
       <div className="page-hero">
-        <h1>策略表现</h1>
         <p>
           事件研究：高分信号次日上涨命中率；并在样本上用 AKQuant 校验收益与回撤。
         </p>

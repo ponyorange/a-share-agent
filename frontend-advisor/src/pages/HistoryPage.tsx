@@ -125,7 +125,6 @@ export default function HistoryPage() {
   return (
     <section className="page">
       <div className="page-hero">
-        <h1>推荐历史</h1>
         <p>
           默认只展示归档名单；点击「计算涨跌幅」后按 SSE 逐只推送，算完一只展示一只。
         </p>

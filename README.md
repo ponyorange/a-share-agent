@@ -194,3 +194,26 @@ GET  /api/advisor/universe
 - BaoStock：免费免 Token；代码形如 `sh.600519`；调用时自动 login/logout。K 线默认前复权；「实时」为当日 5 分钟线近似。
 - 默认单次最多返回 500 行。
 - 顾问候选池默认以 ETF 白名单为主（可在持仓中加入个股一并评分）。
+
+```
+version: "3.8"
+
+services:
+  share-data:
+    # 直接使用本地已 load 的镜像
+    image: share-data:amd64
+    pull_policy: never
+    container_name: share-data-app
+    restart: always
+    ports:
+      - "8000:8000"
+
+    # 线上秘钥文件（服务器本地文件，不进镜像）
+    env_file:
+      - .env
+
+    environment:
+      - STATIC_ROOT=/app/static
+      - PORT=8000
+      - CORS_ORIGINS=*
+```

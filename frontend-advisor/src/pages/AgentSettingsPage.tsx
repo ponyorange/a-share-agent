@@ -62,7 +62,6 @@ export default function AgentSettingsPage() {
   return (
     <section className="page">
       <div className="page-hero">
-        <h1>Agent 设置</h1>
         <p>
           配置 DeepSeek API Key。Key 存于服务端加密，不回显完整密钥。文档见{' '}
           <a

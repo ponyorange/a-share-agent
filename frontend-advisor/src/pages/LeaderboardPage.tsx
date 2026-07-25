@@ -218,7 +218,6 @@ export default function LeaderboardPage() {
   return (
     <section className="page">
       <div className="page-hero">
-        <h1>龙虎榜</h1>
         <p>涨跌幅榜与资金流入流出榜，按 ETF / 沪深 / 科创分板，各取 Top 25，按交易日缓存。</p>
       </div>
 

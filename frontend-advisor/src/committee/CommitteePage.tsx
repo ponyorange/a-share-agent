@@ -544,7 +544,6 @@ export default function CommitteePage() {
       <header className="committee-hero">
         <div>
           <p className="committee-kicker">Investment Committee · Live</p>
-          <h1>投委会实时工作台</h1>
           <p>冻结数据、四方分析、多空辩论、回测风控与人工审批的可审计链路。</p>
         </div>
         <button

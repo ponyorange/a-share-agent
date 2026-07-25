@@ -156,7 +156,6 @@ export default function SettingsPage() {
   return (
     <section className="page theme-settings">
       <div className="page-hero">
-        <h1>设置</h1>
         <p>编辑主题配色，先在右侧预览效果，确认后再保存并应用到全局界面。</p>
       </div>
 
