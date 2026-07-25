@@ -117,6 +117,15 @@ it('sending 时显示生成中并在有错误时用 alert 暴露', () => {
   expect(screen.getByRole('alert')).toHaveTextContent('网络失败')
 })
 
+it('输入框限制 8000 字并在右下角展示字数', () => {
+  const { container } = renderComposer({ value: '测'.repeat(12) })
+  const textbox = screen.getByRole('textbox', { name: '给投研助手发送消息' })
+  expect(textbox).toHaveAttribute('maxLength', '8000')
+  const count = screen.getByText('12/8000')
+  expect(count).toHaveClass('agent-composer-count')
+  expect(container.querySelector('.agent-composer-field')).toContainElement(count)
+})
+
 it('value 变化时自动增高且最高 120px', () => {
   const { rerender } = renderComposer({ value: '短内容' })
   const textbox = screen.getByRole('textbox', { name: '给投研助手发送消息' })

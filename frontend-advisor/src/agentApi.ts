@@ -107,11 +107,17 @@ export async function streamAgentChat(
   },
   signal?: AbortSignal,
 ): Promise<void> {
-  const q = new URLSearchParams({ message })
-  if (sessionId) q.set('session_id', sessionId)
   const token = getToken()
-  const res = await fetch(`/api/advisor/agent/chat/stream?${q}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  const res = await fetch('/api/advisor/agent/chat/stream', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      message,
+      session_id: sessionId || undefined,
+    }),
     signal,
   })
   if (res.status === 401) {

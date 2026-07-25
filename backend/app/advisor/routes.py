@@ -392,14 +392,18 @@ def agent_chat(
         ) from exc
 
 
-@router.get("/agent/chat/stream")
+@router.post("/agent/chat/stream")
 def agent_chat_stream(
-    message: str = Query(..., min_length=1, max_length=8000),
-    session_id: str | None = Query(default=None),
+    body: AgentChatBody,
     user: dict[str, Any] = Depends(_user),
 ):
-    """SSE：meta → tool* → token* → done。聊天写入 Mongo，带滑动窗口上下文。"""
+    """SSE：meta → tool* → token* → done。聊天写入 Mongo，带滑动窗口上下文。
+
+    使用 POST body 传 message，避免长中文塞进 query 触发 URL 长度限制。
+    """
     uid = user["id"]
+    message = body.message
+    session_id = body.session_id
 
     def gen():
         try:

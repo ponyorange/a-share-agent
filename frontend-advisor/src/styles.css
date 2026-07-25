@@ -1740,10 +1740,35 @@ body:has(.app-shell--agent-chat) {
   padding-top: 0.15rem;
 }
 
+.agent-composer-field {
+  position: relative;
+  min-width: 0;
+}
+
 .agent-composer .input {
+  display: block;
+  width: 100%;
   min-height: 2.75rem;
   max-height: 7rem;
+  padding-bottom: 1.35rem;
   resize: vertical;
+  box-sizing: border-box;
+}
+
+.agent-composer-count {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.35rem;
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1;
+  color: var(--muted);
+  pointer-events: none;
+  user-select: none;
+}
+
+.agent-composer-count.is-error {
+  color: var(--color-error);
 }
 
 .agent-composer .btn {
@@ -1821,7 +1846,7 @@ body:has(.app-shell--agent-chat) {
   margin: 0;
 }
 
-.app-shell--agent-chat .agent-composer .input,
+.app-shell--agent-chat .agent-composer-field,
 .app-shell--agent-chat .agent-composer .btn {
   grid-row: 2;
 }

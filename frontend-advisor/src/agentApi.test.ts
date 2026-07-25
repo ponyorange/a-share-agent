@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { streamAgentChat } from './agentApi'
 
-it('解析 subagent_progress SSE', async () => {
+it('解析 subagent_progress SSE，并以 POST body 发送消息', async () => {
   const onSubagentProgress = vi.fn()
   const body = [
     'event: subagent_progress',
@@ -9,19 +9,29 @@ it('解析 subagent_progress SSE', async () => {
     '',
     '',
   ].join('\n')
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue(
-      new Response(new ReadableStream({
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      new ReadableStream({
         start(controller) {
           controller.enqueue(new TextEncoder().encode(body))
           controller.close()
         },
-      }), { status: 200 }),
+      }),
+      { status: 200 },
     ),
   )
+  vi.stubGlobal('fetch', fetchMock)
 
-  await streamAgentChat('query', 's', { onSubagentProgress })
+  const longMessage = '测'.repeat(2500)
+  await streamAgentChat(longMessage, 's', { onSubagentProgress })
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/advisor/agent/chat/stream',
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ message: longMessage, session_id: 's' }),
+    }),
+  )
   expect(onSubagentProgress).toHaveBeenCalledWith({
     phase: 'data_agent',
     step: 'fetch',

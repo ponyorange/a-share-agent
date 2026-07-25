@@ -3,7 +3,7 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Navigate } from 'react-router-dom'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
-import { AgentComposer } from '../components/AgentComposer'
+import { AgentComposer, AGENT_CHAT_MESSAGE_LIMIT } from '../components/AgentComposer'
 import { AgentConversationDrawer } from '../components/AgentConversationDrawer'
 import { useMediaQuery } from '../components/ResponsiveDataView'
 import {
@@ -419,6 +419,10 @@ export default function AgentChatPage() {
   async function send(raw?: string) {
     const text = (raw ?? input).trim()
     if (!text || sending || sessionTransitioning || !sessionId) return
+    if (text.length > AGENT_CHAT_MESSAGE_LIMIT) {
+      setError(`消息不能超过 ${AGENT_CHAT_MESSAGE_LIMIT} 字`)
+      return
+    }
     setInput('')
     setError(null)
     setLiveTools([])
