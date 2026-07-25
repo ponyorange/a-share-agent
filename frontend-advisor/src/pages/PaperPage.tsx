@@ -13,6 +13,13 @@ import {
   streamPaperMarkToMarket,
   type PaperAccount,
 } from '../api'
+import { MobileDisclosure } from '../components/MobileDisclosure'
+import {
+  PaperPerformanceCard,
+  PaperPositionCard,
+  PaperTradeCard,
+} from '../components/PaperCards'
+import { ResponsiveDataView } from '../components/ResponsiveDataView'
 
 const TRADE_PAGE_SIZE = 20
 const PERF_PAGE_SIZE = 20
@@ -28,6 +35,7 @@ export default function PaperPage() {
   const [tradeTotal, setTradeTotal] = useState(0)
   const [tradePages, setTradePages] = useState(1)
   const [tradesLoading, setTradesLoading] = useState(false)
+  const [tradesError, setTradesError] = useState<string | null>(null)
   const [perfRows, setPerfRows] = useState<Record<string, unknown>[]>([])
   const [perfPage, setPerfPage] = useState(1)
   const [perfPages, setPerfPages] = useState(1)
@@ -35,6 +43,7 @@ export default function PaperPage() {
   const [perfTradesCount, setPerfTradesCount] = useState(0)
   const [perfEquity, setPerfEquity] = useState<number | null>(null)
   const [perfLoading, setPerfLoading] = useState(false)
+  const [perfError, setPerfError] = useState<string | null>(null)
   const [pnl, setPnl] = useState<{
     total: { pnl: number; return_pct: number | null }
     historical: {
@@ -74,6 +83,7 @@ export default function PaperPage() {
 
   const loadTrades = useCallback((page: number) => {
     setTradesLoading(true)
+    setTradesError(null)
     fetchPaperTrades({ page, pageSize: TRADE_PAGE_SIZE })
       .then((t) => {
         setTrades(t.trades)
@@ -81,12 +91,13 @@ export default function PaperPage() {
         setTradeTotal(t.total)
         setTradePages(t.pages)
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: Error) => setTradesError(err.message))
       .finally(() => setTradesLoading(false))
   }, [])
 
   const loadPerf = useCallback((page: number) => {
     setPerfLoading(true)
+    setPerfError(null)
     fetchOneClickPerf({ page, pageSize: PERF_PAGE_SIZE })
       .then((p) => {
         setPerfRows(p.open_rows)
@@ -96,7 +107,7 @@ export default function PaperPage() {
         setPerfTradesCount(p.trades_count)
         setPerfEquity(p.account_equity)
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: Error) => setPerfError(err.message))
       .finally(() => setPerfLoading(false))
   }, [])
 
@@ -276,7 +287,7 @@ export default function PaperPage() {
       : 0
 
   return (
-    <section className="page">
+    <section className="page paper-page">
       <div className="page-hero">
         <h1>模拟盘</h1>
         <p>
@@ -290,164 +301,231 @@ export default function PaperPage() {
       {message ? <p className="status ok">{message}</p> : null}
 
       {account ? (
-        <div className="stat-row">
-          <div className="stat">
-            <span className="metric-label">现金</span>
-            <strong className="metric-value">{account.cash.toFixed(2)}</strong>
-          </div>
-          <div className="stat">
-            <span className="metric-label">市值</span>
-            <strong className="metric-value">{account.market_value.toFixed(2)}</strong>
-          </div>
-          <div className="stat">
-            <span className="metric-label">总权益</span>
-            <strong className="metric-value">{account.equity.toFixed(2)}</strong>
-          </div>
-        </div>
-      ) : null}
-
-      {pnl?.historical && pnl?.holding ? (
         <>
-          <h2 className="section-title">历史收益</h2>
-          <p className="meta-line">含持仓浮盈 + 卖出已实现</p>
-          <div className="stat-row">
+          <div className="stat-row paper-account-desktop">
             <div className="stat">
+              <span className="metric-label">现金</span>
+              <strong className="metric-value">{account.cash.toFixed(2)}</strong>
+            </div>
+            <div className="stat">
+              <span className="metric-label">市值</span>
+              <strong className="metric-value">{account.market_value.toFixed(2)}</strong>
+            </div>
+            <div className="stat">
+              <span className="metric-label">总权益</span>
+              <strong className="metric-value">{account.equity.toFixed(2)}</strong>
+            </div>
+          </div>
+          <div className="paper-account-summary" aria-label="模拟盘账户摘要">
+            <div className="stat paper-account-primary">
+              <span className="metric-label">总权益</span>
+              <strong className="metric-value">{account.equity.toFixed(2)}</strong>
+            </div>
+            <div className="stat paper-account-primary">
               <span className="metric-label">总收益</span>
               <strong
-                className={`metric-value ${(pnl.historical.total.pnl || 0) >= 0 ? 'up' : 'down'}`}
+                className={`metric-value ${((pnl?.total.pnl ?? 0) || 0) >= 0 ? 'up' : 'down'}`}
               >
-                {pnl.historical.total.pnl >= 0 ? '+' : ''}
-                {pnl.historical.total.pnl.toFixed(2)}
+                {(pnl?.total.pnl ?? 0) >= 0 ? '+' : ''}
+                {(pnl?.total.pnl ?? 0).toFixed(2)}
               </strong>
-              <span className="meta-line">
-                浮盈 {pnl.historical.total.unrealized.toFixed(2)} · 已实现{' '}
-                {pnl.historical.total.realized.toFixed(2)}
-                {pnl.historical.total.return_pct != null
-                  ? ` · ${formatPct(pnl.historical.total.return_pct, 2)}`
-                  : ''}
-              </span>
+              {pnl?.total.return_pct != null ? (
+                <span className="meta-line">{formatPct(pnl.total.return_pct, 2)}</span>
+              ) : null}
             </div>
-            <div className="stat">
-              <span className="metric-label">总一键买入收益</span>
-              <strong
-                className={`metric-value ${(pnl.historical.one_click.pnl || 0) >= 0 ? 'up' : 'down'}`}
-              >
-                {pnl.historical.one_click.pnl >= 0 ? '+' : ''}
-                {pnl.historical.one_click.pnl.toFixed(2)}
-              </strong>
-              <span className="meta-line">
-                浮盈 {pnl.historical.one_click.unrealized.toFixed(2)} · 已实现{' '}
-                {pnl.historical.one_click.realized.toFixed(2)}
-              </span>
-            </div>
-            <div className="stat">
-              <span className="metric-label">总手动买入收益</span>
-              <strong
-                className={`metric-value ${(pnl.historical.manual.pnl || 0) >= 0 ? 'up' : 'down'}`}
-              >
-                {pnl.historical.manual.pnl >= 0 ? '+' : ''}
-                {pnl.historical.manual.pnl.toFixed(2)}
-              </strong>
-              <span className="meta-line">
-                浮盈 {pnl.historical.manual.unrealized.toFixed(2)} · 已实现{' '}
-                {pnl.historical.manual.realized.toFixed(2)}
-              </span>
-            </div>
-          </div>
-
-          <h2 className="section-title">持仓收益</h2>
-          <p className="meta-line">仅当前未平仓浮盈亏</p>
-          <div className="stat-row">
-            <div className="stat">
-              <span className="metric-label">总持仓收益</span>
-              <strong
-                className={`metric-value ${(pnl.holding.total.pnl || 0) >= 0 ? 'up' : 'down'}`}
-              >
-                {pnl.holding.total.pnl >= 0 ? '+' : ''}
-                {pnl.holding.total.pnl.toFixed(2)}
-              </strong>
-              <span className="meta-line">
-                {pnl.holding.total.open_cost
-                  ? `成本 ${pnl.holding.total.open_cost.toFixed(2)}`
-                  : '—'}
-                {pnl.holding.total.return_pct != null
-                  ? ` · ${formatPct(pnl.holding.total.return_pct, 2)}`
-                  : ''}
-              </span>
-            </div>
-            <div className="stat">
-              <span className="metric-label">持仓一键买入收益</span>
-              <strong
-                className={`metric-value ${(pnl.holding.one_click.pnl || 0) >= 0 ? 'up' : 'down'}`}
-              >
-                {pnl.holding.one_click.pnl >= 0 ? '+' : ''}
-                {pnl.holding.one_click.pnl.toFixed(2)}
-              </strong>
-              <span className="meta-line">
-                {pnl.holding.one_click.open_cost
-                  ? `成本 ${pnl.holding.one_click.open_cost.toFixed(2)}`
-                  : '—'}
-                {pnl.holding.one_click.return_pct != null
-                  ? ` · ${formatPct(pnl.holding.one_click.return_pct, 2)}`
-                  : ''}
-              </span>
-            </div>
-            <div className="stat">
-              <span className="metric-label">持仓手动买入收益</span>
-              <strong
-                className={`metric-value ${(pnl.holding.manual.pnl || 0) >= 0 ? 'up' : 'down'}`}
-              >
-                {pnl.holding.manual.pnl >= 0 ? '+' : ''}
-                {pnl.holding.manual.pnl.toFixed(2)}
-              </strong>
-              <span className="meta-line">
-                {pnl.holding.manual.open_cost
-                  ? `成本 ${pnl.holding.manual.open_cost.toFixed(2)}`
-                  : '—'}
-                {pnl.holding.manual.return_pct != null
-                  ? ` · ${formatPct(pnl.holding.manual.return_pct, 2)}`
-                  : ''}
-              </span>
+            <div className="paper-account-secondary">
+              <div className="stat">
+                <span className="metric-label">现金</span>
+                <strong className="metric-value">{account.cash.toFixed(2)}</strong>
+              </div>
+              <div className="stat">
+                <span className="metric-label">市值</span>
+                <strong className="metric-value">{account.market_value.toFixed(2)}</strong>
+              </div>
             </div>
           </div>
         </>
       ) : null}
 
-      <form className="form-actions form-actions--aligned" onSubmit={onReset}>
-        <input
-          className="input"
-          type="number"
-          min={1000}
-          value={cashInput}
-          onChange={(e) => setCashInput(e.target.value)}
-          style={{ maxWidth: '12rem' }}
-        />
-        <div className="field-actions">
-          <button className="btn ghost" type="submit">
-            重置资金（清空持仓）
-          </button>
-          <button
-            className="btn"
-            type="button"
-            disabled={marking || loading || !(account?.positions?.length)}
-            onClick={refreshMarkToMarket}
-          >
-            {marking && markProgress?.total
-              ? `刷新市值 ${markProgress.done}/${markProgress.total}`
-              : marking
-                ? '刷新中…'
-                : '刷新市值'}
-          </button>
-          <button
-            className="btn"
-            type="button"
-            disabled={sellingAll || marking || loading || !(account?.positions?.length)}
-            onClick={onSellAll}
-          >
-            {sellingAll ? '卖出中…' : '一键卖出'}
-          </button>
+      {pnl?.historical && pnl?.holding ? (
+        <div className="paper-pnl-sections">
+          <section className="paper-pnl-static">
+            <p className="meta-line">仅当前未平仓浮盈亏</p>
+            <div className="stat-row paper-pnl-stat-row">
+              <div className="stat">
+                <span className="metric-label">总持仓收益</span>
+                <strong
+                  className={`metric-value ${(pnl.holding.total.pnl || 0) >= 0 ? 'up' : 'down'}`}
+                >
+                  {pnl.holding.total.pnl >= 0 ? '+' : ''}
+                  {pnl.holding.total.pnl.toFixed(2)}
+                </strong>
+                <span className="meta-line">
+                  {pnl.holding.total.open_cost
+                    ? `成本 ${pnl.holding.total.open_cost.toFixed(2)}`
+                    : '—'}
+                  {pnl.holding.total.return_pct != null
+                    ? ` · ${formatPct(pnl.holding.total.return_pct, 2)}`
+                    : ''}
+                </span>
+              </div>
+              <div className="stat">
+                <span className="metric-label">持仓一键买入收益</span>
+                <strong
+                  className={`metric-value ${(pnl.holding.one_click.pnl || 0) >= 0 ? 'up' : 'down'}`}
+                >
+                  {pnl.holding.one_click.pnl >= 0 ? '+' : ''}
+                  {pnl.holding.one_click.pnl.toFixed(2)}
+                </strong>
+                <span className="meta-line">
+                  {pnl.holding.one_click.open_cost
+                    ? `成本 ${pnl.holding.one_click.open_cost.toFixed(2)}`
+                    : '—'}
+                  {pnl.holding.one_click.return_pct != null
+                    ? ` · ${formatPct(pnl.holding.one_click.return_pct, 2)}`
+                    : ''}
+                </span>
+              </div>
+              <div className="stat">
+                <span className="metric-label">持仓手动买入收益</span>
+                <strong
+                  className={`metric-value ${(pnl.holding.manual.pnl || 0) >= 0 ? 'up' : 'down'}`}
+                >
+                  {pnl.holding.manual.pnl >= 0 ? '+' : ''}
+                  {pnl.holding.manual.pnl.toFixed(2)}
+                </strong>
+                <span className="meta-line">
+                  {pnl.holding.manual.open_cost
+                    ? `成本 ${pnl.holding.manual.open_cost.toFixed(2)}`
+                    : '—'}
+                  {pnl.holding.manual.return_pct != null
+                    ? ` · ${formatPct(pnl.holding.manual.return_pct, 2)}`
+                    : ''}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <MobileDisclosure summary="历史收益" className="paper-pnl-disclosure">
+            <p className="meta-line">含持仓浮盈 + 卖出已实现</p>
+            <div className="stat-row paper-pnl-stat-row">
+              <div className="stat">
+                <span className="metric-label">总收益</span>
+                <strong
+                  className={`metric-value ${(pnl.historical.total.pnl || 0) >= 0 ? 'up' : 'down'}`}
+                >
+                  {pnl.historical.total.pnl >= 0 ? '+' : ''}
+                  {pnl.historical.total.pnl.toFixed(2)}
+                </strong>
+                <span className="meta-line">
+                  浮盈 {pnl.historical.total.unrealized.toFixed(2)} · 已实现{' '}
+                  {pnl.historical.total.realized.toFixed(2)}
+                  {pnl.historical.total.return_pct != null
+                    ? ` · ${formatPct(pnl.historical.total.return_pct, 2)}`
+                    : ''}
+                </span>
+              </div>
+              <div className="stat">
+                <span className="metric-label">总一键买入收益</span>
+                <strong
+                  className={`metric-value ${(pnl.historical.one_click.pnl || 0) >= 0 ? 'up' : 'down'}`}
+                >
+                  {pnl.historical.one_click.pnl >= 0 ? '+' : ''}
+                  {pnl.historical.one_click.pnl.toFixed(2)}
+                </strong>
+                <span className="meta-line">
+                  浮盈 {pnl.historical.one_click.unrealized.toFixed(2)} · 已实现{' '}
+                  {pnl.historical.one_click.realized.toFixed(2)}
+                </span>
+              </div>
+              <div className="stat">
+                <span className="metric-label">总手动买入收益</span>
+                <strong
+                  className={`metric-value ${(pnl.historical.manual.pnl || 0) >= 0 ? 'up' : 'down'}`}
+                >
+                  {pnl.historical.manual.pnl >= 0 ? '+' : ''}
+                  {pnl.historical.manual.pnl.toFixed(2)}
+                </strong>
+                <span className="meta-line">
+                  浮盈 {pnl.historical.manual.unrealized.toFixed(2)} · 已实现{' '}
+                  {pnl.historical.manual.realized.toFixed(2)}
+                </span>
+              </div>
+            </div>
+          </MobileDisclosure>
         </div>
-      </form>
+      ) : null}
+
+      <div className="paper-primary-actions">
+        <button
+          className="btn"
+          type="button"
+          disabled={marking || loading || !(account?.positions?.length)}
+          onClick={refreshMarkToMarket}
+        >
+          {marking && markProgress?.total
+            ? `刷新市值 ${markProgress.done}/${markProgress.total}`
+            : marking
+              ? '刷新中…'
+              : '刷新市值'}
+        </button>
+        <button
+          className="btn"
+          type="button"
+          disabled={sellingAll || marking || loading || !(account?.positions?.length)}
+          onClick={onSellAll}
+        >
+          {sellingAll ? '卖出中…' : '一键卖出'}
+        </button>
+        <MobileDisclosure summary="更多操作" className="paper-danger-actions">
+          <h2 className="section-title">下单</h2>
+          <form className="search-row paper-order-form" aria-label="下单" onSubmit={onOrder}>
+            <select
+              className="input"
+              value={side}
+              onChange={(e) => setSide(e.target.value as 'buy' | 'sell')}
+              style={{ maxWidth: '6rem' }}
+            >
+              <option value="buy">买入</option>
+              <option value="sell">卖出</option>
+            </select>
+            <input
+              className="input mono"
+              placeholder="代码"
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value)}
+              style={{ maxWidth: '8rem' }}
+            />
+            <input
+              className="input"
+              type="number"
+              min={100}
+              step={100}
+              value={qty}
+              onChange={(e) => setQty(Number(e.target.value))}
+              style={{ maxWidth: '8rem' }}
+            />
+            <button className="btn" type="submit">
+              提交
+            </button>
+          </form>
+          <form className="form-actions form-actions--aligned" onSubmit={onReset}>
+            <input
+              className="input"
+              type="number"
+              min={1000}
+              value={cashInput}
+              onChange={(e) => setCashInput(e.target.value)}
+              style={{ maxWidth: '12rem' }}
+            />
+            <div className="field-actions">
+              <button className="btn ghost" type="submit">
+                重置资金（清空持仓）
+              </button>
+            </div>
+          </form>
+        </MobileDisclosure>
+      </div>
 
       {marking && markProgress && markProgress.total > 0 ? (
         <div className="progress-bar" aria-valuenow={markPct}>
@@ -458,225 +536,266 @@ export default function PaperPage() {
         </div>
       ) : null}
 
-      <h2 className="section-title">下单</h2>
-      <form className="search-row" onSubmit={onOrder}>
-        <select
-          className="input"
-          value={side}
-          onChange={(e) => setSide(e.target.value as 'buy' | 'sell')}
-          style={{ maxWidth: '6rem' }}
-        >
-          <option value="buy">买入</option>
-          <option value="sell">卖出</option>
-        </select>
-        <input
-          className="input mono"
-          placeholder="代码"
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          style={{ maxWidth: '8rem' }}
-        />
-        <input
-          className="input"
-          type="number"
-          min={100}
-          step={100}
-          value={qty}
-          onChange={(e) => setQty(Number(e.target.value))}
-          style={{ maxWidth: '8rem' }}
-        />
-        <button className="btn" type="submit">
-          提交
-        </button>
-      </form>
-
       <h2 className="section-title">持仓</h2>
       <p className="meta-line">
         现价/市值默认来自库内缓存（成交价或上次刷新）；未刷新前可能接近成本。
       </p>
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>代码</th>
-              <th>名称</th>
-              <th>数量</th>
-              <th>成本</th>
-              <th>现价</th>
-              <th>市值</th>
-              <th>浮盈亏</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(account?.positions || []).map((p) => (
-              <tr key={p.symbol}>
-                <td className="mono">{p.symbol}</td>
-                <td>{p.name}</td>
-                <td>{p.qty}</td>
-                <td>{p.cost}</td>
-                <td>{p.last}</td>
-                <td>{p.market_value != null ? p.market_value.toFixed(2) : '—'}</td>
-                <td className={(p.pnl_pct || 0) >= 0 ? 'up' : 'down'}>
-                  {formatPct(p.pnl_pct, 2)}
-                </td>
-                <td className="row-actions">
-                  <button
-                    type="button"
-                    className="text-link"
-                    onClick={() => onSellPosition(p)}
-                  >
-                    卖出
-                  </button>
-                  <button
-                    type="button"
-                    className="text-link danger"
-                    onClick={() => onDeletePosition(p)}
-                  >
-                    删除
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {!account?.positions?.length && !loading ? (
-              <tr>
-                <td colSpan={8} className="muted">
-                  暂无持仓
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      <ResponsiveDataView
+        storageKey="advisor_paper_positions_view"
+        label="持仓"
+        cards={
+          (account?.positions?.length || 0) > 0 ? (
+            <div className="paper-card-list">
+              {(account?.positions || []).map((p) => (
+                <PaperPositionCard
+                  key={p.symbol}
+                  position={p}
+                  onSell={onSellPosition}
+                  onDelete={onDeletePosition}
+                />
+              ))}
+            </div>
+          ) : !loading ? (
+            <p className="muted">暂无持仓</p>
+          ) : null
+        }
+        table={
+          <div className="table-wrap paper-positions-table">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>代码</th>
+                  <th>名称</th>
+                  <th>数量</th>
+                  <th>成本</th>
+                  <th>现价</th>
+                  <th>市值</th>
+                  <th>浮盈亏</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(account?.positions || []).map((p) => (
+                  <tr key={p.symbol}>
+                    <td className="mono">{p.symbol}</td>
+                    <td>{p.name}</td>
+                    <td>{p.qty}</td>
+                    <td>{p.cost}</td>
+                    <td>{p.last}</td>
+                    <td>{p.market_value != null ? p.market_value.toFixed(2) : '—'}</td>
+                    <td className={(p.pnl_pct || 0) >= 0 ? 'up' : 'down'}>
+                      {formatPct(p.pnl_pct, 2)}
+                    </td>
+                    <td className="row-actions">
+                      <button
+                        type="button"
+                        className="text-link"
+                        onClick={() => onSellPosition(p)}
+                      >
+                        卖出
+                      </button>
+                      <button
+                        type="button"
+                        className="text-link danger"
+                        onClick={() => onDeletePosition(p)}
+                      >
+                        删除
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {!account?.positions?.length && !loading ? (
+                  <tr>
+                    <td colSpan={8} className="muted">
+                      暂无持仓
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        }
+      />
 
-      <h2 className="section-title">一键买入跟踪</h2>
-      <p className="meta-line">
-        一键买入 {perfTradesCount} 笔 · 持仓跟踪 {perfTotal} 条 · 第 {perfPage}/{perfPages}{' '}
-        页 · 账户权益 {perfEquity ?? '—'}
-        {perfLoading ? ' · 加载中…' : ''}
-      </p>
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>代码</th>
-              <th>名称</th>
-              <th>推荐日</th>
-              <th>买价</th>
-              <th>现价</th>
-              <th>浮盈亏</th>
-            </tr>
-          </thead>
-          <tbody>
-            {perfRows.map((r, i) => (
-              <tr key={`${String(r.symbol)}-${String(r.rec_date)}-${i}`}>
-                <td className="mono">{String(r.symbol)}</td>
-                <td>{String(r.name || '—')}</td>
-                <td>{String(r.rec_date || '—')}</td>
-                <td>{String(r.buy_price ?? '—')}</td>
-                <td>{String(r.last ?? '—')}</td>
-                <td>{formatPct(r.unrealized_pnl_pct as number | null, 2)}</td>
-              </tr>
-            ))}
-            {!perfRows.length && !perfLoading ? (
-              <tr>
-                <td colSpan={6} className="muted">
-                  暂无一键买入持仓
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-      <div className="pager">
-        <button
-          type="button"
-          className="btn ghost"
-          disabled={perfPage <= 1 || perfLoading}
-          onClick={() => loadPerf(perfPage - 1)}
-        >
-          上一页
-        </button>
-        <span className="pager-info">
-          {perfPage} / {perfPages}
-        </span>
-        <button
-          type="button"
-          className="btn ghost"
-          disabled={perfPage >= perfPages || perfLoading}
-          onClick={() => loadPerf(perfPage + 1)}
-        >
-          下一页
-        </button>
-      </div>
+      <section className="paper-data-section" aria-label="一键买入跟踪">
+        <h2 className="section-title">一键买入跟踪</h2>
+        <p className="meta-line">
+          一键买入 {perfTradesCount} 笔 · 持仓跟踪 {perfTotal} 条 · 第 {perfPage}/{perfPages}{' '}
+          页 · 账户权益 {perfEquity ?? '—'}
+          {perfLoading ? ' · 加载中…' : ''}
+        </p>
+        {perfError ? (
+          <p className="status error" role="alert">
+            {perfError}
+          </p>
+        ) : null}
+        <ResponsiveDataView
+        storageKey="advisor_paper_performance_view"
+        label="一键买入跟踪"
+        cards={
+          perfRows.length ? (
+            <div className="paper-card-list">
+              {perfRows.map((r, i) => (
+                <PaperPerformanceCard
+                  key={`${String(r.symbol)}-${String(r.rec_date)}-${i}`}
+                  row={r}
+                />
+              ))}
+            </div>
+          ) : !perfLoading ? (
+            <p className="muted">暂无一键买入持仓</p>
+          ) : null
+        }
+        table={
+          <div className="table-wrap paper-performance-table">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>代码</th>
+                  <th>名称</th>
+                  <th>推荐日</th>
+                  <th>买价</th>
+                  <th>现价</th>
+                  <th>浮盈亏</th>
+                </tr>
+              </thead>
+              <tbody>
+                {perfRows.map((r, i) => (
+                  <tr key={`${String(r.symbol)}-${String(r.rec_date)}-${i}`}>
+                    <td className="mono">{String(r.symbol)}</td>
+                    <td>{String(r.name || '—')}</td>
+                    <td>{String(r.rec_date || '—')}</td>
+                    <td>{String(r.buy_price ?? '—')}</td>
+                    <td>{String(r.last ?? '—')}</td>
+                    <td>{formatPct(r.unrealized_pnl_pct as number | null, 2)}</td>
+                  </tr>
+                ))}
+                {!perfRows.length && !perfLoading ? (
+                  <tr>
+                    <td colSpan={6} className="muted">
+                      暂无一键买入持仓
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        }
+        />
+        <div className="pager">
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={perfPage <= 1 || perfLoading}
+            onClick={() => loadPerf(perfPage - 1)}
+          >
+            上一页
+          </button>
+          <span className="pager-info">
+            {perfPage} / {perfPages}
+          </span>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={perfPage >= perfPages || perfLoading}
+            onClick={() => loadPerf(perfPage + 1)}
+          >
+            下一页
+          </button>
+        </div>
+      </section>
 
-      <h2 className="section-title">成交记录</h2>
-      <p className="meta-line">
-        共 {tradeTotal} 笔 · 第 {tradePage}/{tradePages} 页
-        {tradesLoading ? ' · 加载中…' : ''}
-      </p>
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>方向</th>
-              <th>代码</th>
-              <th>名称</th>
-              <th>数量</th>
-              <th>价格</th>
-              <th>来源</th>
-            </tr>
-          </thead>
-          <tbody>
-            {trades.map((t, i) => (
-              <tr key={`${String(t.created_at)}-${String(t.symbol)}-${i}`}>
-                <td>{String(t.created_at || '').slice(0, 19).replace('T', ' ')}</td>
-                <td>
-                  {String(t.side) === 'buy'
-                    ? '买入'
-                    : String(t.side) === 'sell'
-                      ? '卖出'
-                      : String(t.side)}
-                </td>
-                <td className="mono">{String(t.symbol)}</td>
-                <td>{String(t.name || '—')}</td>
-                <td>{String(t.qty)}</td>
-                <td>{String(t.price)}</td>
-                <td>{String(t.source)}</td>
-              </tr>
-            ))}
-            {!trades.length && !tradesLoading ? (
-              <tr>
-                <td colSpan={7} className="muted">
-                  暂无成交
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-      <div className="pager">
-        <button
-          type="button"
-          className="btn ghost"
-          disabled={tradePage <= 1 || tradesLoading}
-          onClick={() => loadTrades(tradePage - 1)}
-        >
-          上一页
-        </button>
-        <span className="pager-info">
-          {tradePage} / {tradePages}
-        </span>
-        <button
-          type="button"
-          className="btn ghost"
-          disabled={tradePage >= tradePages || tradesLoading}
-          onClick={() => loadTrades(tradePage + 1)}
-        >
-          下一页
-        </button>
-      </div>
+      <section className="paper-data-section" aria-label="成交记录">
+        <h2 className="section-title">成交记录</h2>
+        <p className="meta-line">
+          共 {tradeTotal} 笔 · 第 {tradePage}/{tradePages} 页
+          {tradesLoading ? ' · 加载中…' : ''}
+        </p>
+        {tradesError ? (
+          <p className="status error" role="alert">
+            {tradesError}
+          </p>
+        ) : null}
+        <ResponsiveDataView
+        storageKey="advisor_paper_trades_view"
+        label="成交记录"
+        cards={
+          trades.length ? (
+            <div className="paper-card-list">
+              {trades.map((t, i) => (
+                <PaperTradeCard key={`${String(t.created_at)}-${String(t.symbol)}-${i}`} trade={t} />
+              ))}
+            </div>
+          ) : !tradesLoading ? (
+            <p className="muted">暂无成交</p>
+          ) : null
+        }
+        table={
+          <div className="table-wrap paper-trades-table">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>方向</th>
+                  <th>代码</th>
+                  <th>名称</th>
+                  <th>数量</th>
+                  <th>价格</th>
+                  <th>来源</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trades.map((t, i) => (
+                  <tr key={`${String(t.created_at)}-${String(t.symbol)}-${i}`}>
+                    <td>{String(t.created_at || '').slice(0, 19).replace('T', ' ')}</td>
+                    <td>
+                      {String(t.side) === 'buy'
+                        ? '买入'
+                        : String(t.side) === 'sell'
+                          ? '卖出'
+                          : String(t.side)}
+                    </td>
+                    <td className="mono">{String(t.symbol)}</td>
+                    <td>{String(t.name || '—')}</td>
+                    <td>{String(t.qty)}</td>
+                    <td>{String(t.price)}</td>
+                    <td>{String(t.source)}</td>
+                  </tr>
+                ))}
+                {!trades.length && !tradesLoading ? (
+                  <tr>
+                    <td colSpan={7} className="muted">
+                      暂无成交
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        }
+        />
+        <div className="pager">
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={tradePage <= 1 || tradesLoading}
+            onClick={() => loadTrades(tradePage - 1)}
+          >
+            上一页
+          </button>
+          <span className="pager-info">
+            {tradePage} / {tradePages}
+          </span>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={tradePage >= tradePages || tradesLoading}
+            onClick={() => loadTrades(tradePage + 1)}
+          >
+            下一页
+          </button>
+        </div>
+      </section>
     </section>
   )
 }

@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
@@ -19,6 +20,10 @@ vi.mock('./auth', () => ({
 
 vi.mock('./committee/CommitteePage', () => ({
   default: () => <h1>投委会实时工作台</h1>,
+}))
+
+vi.mock('./pages/AgentChatPage', () => ({
+  default: () => <h1>投研助手</h1>,
 }))
 
 vi.mock('./pages/KnowledgePage', () => ({
@@ -67,4 +72,70 @@ it('知识库路由渲染知识库页且非 chat shell', () => {
   expect(screen.getByRole('heading', { name: '知识库' })).toBeInTheDocument()
   expect(container.querySelector('.app-shell')).toHaveClass('app-shell--agent')
   expect(container.querySelector('.app-shell')).not.toHaveClass('app-shell--agent-chat')
+})
+
+it('认证后的基础页与 Agent chat 保留导航和面板切换结构', () => {
+  const baseView = render(
+    <MemoryRouter initialEntries={['/']}>
+      <App />
+    </MemoryRouter>,
+  )
+  expect(screen.getByRole('link', { name: '模拟盘' })).toHaveAttribute('href', '/paper')
+  expect(baseView.container.querySelector('.topbar-nav-wrap .nav')).toBeInTheDocument()
+  baseView.unmount()
+
+  const agentView = render(
+    <MemoryRouter initialEntries={['/agent']}>
+      <App />
+    </MemoryRouter>,
+  )
+  expect(agentView.container.querySelector('.app-shell')).toHaveClass('app-shell--agent-chat')
+  expect(agentView.container.querySelector('.app-shell')).toHaveClass(
+    'app-shell--agent-chat-page',
+  )
+  expect(agentView.container.querySelector('.topbar-nav-wrap .nav')).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: '基础' })).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: 'Agent' })).toBeInTheDocument()
+})
+
+it('Agent 聊天页提供更多菜单可切换基础面板与 Agent 标签', async () => {
+  const user = userEvent.setup()
+  render(
+    <MemoryRouter initialEntries={['/agent']}>
+      <App />
+    </MemoryRouter>,
+  )
+
+  await user.click(screen.getByRole('button', { name: '更多' }))
+  expect(screen.getByRole('menu', { name: '页面与面板切换' })).toBeInTheDocument()
+  expect(screen.getByRole('menuitem', { name: '切换到基础' })).toBeInTheDocument()
+  expect(screen.getByRole('menuitem', { name: '知识库' })).toHaveAttribute(
+    'href',
+    '/agent/knowledge',
+  )
+  expect(screen.getByRole('menuitem', { name: '策略副驾' })).toHaveAttribute(
+    'href',
+    '/agent/strategy',
+  )
+  expect(screen.getByRole('menuitem', { name: 'DeepSeek 配置' })).toHaveAttribute(
+    'href',
+    '/agent/settings',
+  )
+
+  await user.click(screen.getByRole('menuitem', { name: '知识库' }))
+  expect(await screen.findByRole('heading', { name: '知识库' })).toBeInTheDocument()
+})
+
+it('Agent 聊天页更多菜单可切回基础面板', async () => {
+  const user = userEvent.setup()
+  render(
+    <MemoryRouter initialEntries={['/agent']}>
+      <App />
+    </MemoryRouter>,
+  )
+
+  await user.click(screen.getByRole('button', { name: '更多' }))
+  await user.click(screen.getByRole('menuitem', { name: '切换到基础' }))
+  expect(await screen.findByRole('link', { name: '今日关注' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '更多' })).not.toBeInTheDocument()
 })

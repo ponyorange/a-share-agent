@@ -310,6 +310,27 @@ def test_mark_to_market_and_recovery_journals_are_nontrade():
     assert not "recovery".startswith(("order:", "trade"))
 
 
+class _NoBoolDatabase(DB):
+    """Mimic PyMongo Database: truthiness raises NotImplementedError."""
+
+    def __bool__(self):
+        raise NotImplementedError(
+            "Database objects do not implement truth value testing or bool(). "
+            "Please compare with None instead: database is not None"
+        )
+
+
+def test_optional_db_helpers_do_not_bool_database(monkeypatch):
+    db = _NoBoolDatabase()
+    monkeypatch.setattr(paper, "_now", lambda: NOW)
+
+    assert paper.recover_stale_pending_mutations(300, user_id="u", _db=db) == []
+
+    snapshot = paper.get_account_snapshot_atomic("u", as_of=NOW, _db=db)
+    assert snapshot["user_id"] == "u"
+    assert snapshot["account_version"] == 1
+
+
 @pytest.mark.parametrize("status", ["committing", "archiving"])
 def test_get_account_rejects_fresh_unarchived_journal(monkeypatch, status):
     db = _committed_journal_fixture(status)

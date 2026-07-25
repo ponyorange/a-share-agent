@@ -13,6 +13,9 @@ import {
   type RecommendationsResponse,
 } from '../api'
 import { ActionBadge } from '../components/AdviceCard'
+import { MobileDisclosure } from '../components/MobileDisclosure'
+import { RecommendationCard } from '../components/RecommendationCard'
+import { ResponsiveDataView } from '../components/ResponsiveDataView'
 import { explorerKlineUrl } from '../explorerLinks'
 
 type BoardTab = 'etf' | 'hs' | 'star'
@@ -53,7 +56,7 @@ function BoardTable({ items }: { items: AdviceItem[] }) {
           {items.map((item) => (
             <tr key={item.symbol}>
               <td className="mono">{item.symbol}</td>
-              <td>{item.name}</td>
+              <td className="name-cell">{item.name}</td>
               <td>{item.close != null ? item.close : '—'}</td>
               <td className={chgClass(item.day_chg_pct)}>
                 {item.day_chg_pct == null ? '—' : formatPct(item.day_chg_pct, 2)}
@@ -73,7 +76,7 @@ function BoardTable({ items }: { items: AdviceItem[] }) {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  查看K线
+                  查看 K 线
                 </a>
               </td>
             </tr>
@@ -442,13 +445,72 @@ export default function RecommendationsPage() {
         ? Math.min(12, (refreshProgress.done || 0) * 6)
         : 0
 
+  const recommendationDate =
+    data?.trade_date || data?.snapshot?.trade_date || data?.as_of?.slice(0, 10) || '—'
+  const archiveStatus = data?.snapshot?.from_cache
+    ? '来自归档'
+    : data?.snapshot?.saved
+      ? '已归档'
+      : data?.snapshot?.reason
+        ? '未归档'
+        : '归档状态未知'
+
+  const metaLine = (
+    <>
+      {board
+        ? `大池 ${board.pool_size ?? '—'} → 精算 ${board.precise_size ?? board.scanned} → 推荐 ${board.count}`
+        : ''}
+      {data?.trade_date || data?.snapshot?.trade_date
+        ? ` · 有效交易日 ${data.trade_date || data.snapshot?.trade_date}`
+        : ''}
+      {data?.as_of ? ` · 截至 ${data.as_of}` : ''}
+      {data?.mode ? ` · ${data.mode}` : ''}
+      {data?.snapshot?.from_cache
+        ? ' · 来自归档（未重算）'
+        : data?.snapshot?.saved
+          ? ' · 已写入/覆盖归档'
+          : data?.snapshot?.reason
+            ? ` · 未归档：${data.snapshot.reason}`
+            : ''}
+      {needQuotes ? ' · 缺日涨幅时可点「加载价格/日涨幅」' : ''}
+      {(data?.errors?.length ?? 0) > 0
+        ? ` · 精算失败 ${data!.errors!.length}（已尽量用粗分兜底）`
+        : ''}
+      {data?.universe_source ? ` · 源 ${data.universe_source}` : ''}
+    </>
+  )
+
   return (
-    <section className="page">
+    <section className="page recommendations-page">
       <div className="page-hero">
         <h1>今日关注</h1>
-        <p>
-          大池粗筛 + Top 精算；按有效交易日归档。点「刷新候选池」会在后台跑完（关页面也继续），稍后回来可看新结果。
-        </p>
+        <MobileDisclosure summary="说明" className="recommendation-hero-desc">
+          <p>
+            大池粗筛 + Top 精算；按有效交易日归档。点「刷新候选池」会在后台跑完（关页面也继续），稍后回来可看新结果。
+          </p>
+          {data && !loading ? (
+            <div className="recommendation-summary" aria-label="推荐摘要">
+              <div className="summary-stat">
+                <span>大池</span>
+                <strong>{board?.pool_size ?? '—'}</strong>
+              </div>
+              <div className="summary-stat">
+                <span>精算</span>
+                <strong>{board?.precise_size ?? board?.scanned ?? '—'}</strong>
+              </div>
+              <div className="summary-stat">
+                <span>推荐</span>
+                <strong>{board?.count ?? 0}</strong>
+              </div>
+            </div>
+          ) : null}
+        </MobileDisclosure>
+        {data && !loading ? (
+          <div className="recommendation-mobile-meta" aria-label="推荐日期与归档状态">
+            <span>推荐日 {recommendationDate}</span>
+            <span>{archiveStatus}</span>
+          </div>
+        ) : null}
       </div>
 
       <div className="form-actions">
@@ -635,29 +697,25 @@ export default function RecommendationsPage() {
 
       {data && !loading ? (
         <>
-          <p className="meta-line">
-            {board
-              ? `大池 ${board.pool_size ?? '—'} → 精算 ${board.precise_size ?? board.scanned} → 推荐 ${board.count}`
-              : ''}
-            {data.trade_date || data.snapshot?.trade_date
-              ? ` · 有效交易日 ${data.trade_date || data.snapshot?.trade_date}`
-              : ''}
-            {data.as_of ? ` · 截至 ${data.as_of}` : ''}
-            {data.mode ? ` · ${data.mode}` : ''}
-            {data.snapshot?.from_cache
-              ? ' · 来自归档（未重算）'
-              : data.snapshot?.saved
-                ? ' · 已写入/覆盖归档'
-                : data.snapshot?.reason
-                  ? ` · 未归档：${data.snapshot.reason}`
-                  : ''}
-            {needQuotes ? ' · 缺日涨幅时可点「加载价格/日涨幅」' : ''}
-            {(data.errors?.length ?? 0) > 0
-              ? ` · 精算失败 ${data.errors!.length}（已尽量用粗分兜底）`
-              : ''}
-            {data.universe_source ? ` · 源 ${data.universe_source}` : ''}
-          </p>
-          <BoardTable items={items} />
+          <MobileDisclosure summary="筛选与数据源">
+            <p className="meta-line">{metaLine}</p>
+          </MobileDisclosure>
+          <ResponsiveDataView
+            storageKey="advisor_recommendations_view"
+            label="推荐"
+            cards={
+              items.length ? (
+                <div className="recommendation-card-list">
+                  {items.map((item) => (
+                    <RecommendationCard key={item.symbol} item={item} />
+                  ))}
+                </div>
+              ) : (
+                <p className="status">本板暂无推荐，可稍后重试或调低买入阈值。</p>
+              )
+            }
+            table={<BoardTable items={items} />}
+          />
           {!items.length && (data.errors?.length ?? 0) > 0 ? (
             <p className="status error">
               精算日线全部失败：{data.errors![0]?.error || '未知错误'}

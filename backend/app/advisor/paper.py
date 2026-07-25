@@ -397,7 +397,7 @@ def recover_pending_account_mutation(
     recovery_owner: str | None = None,
 ) -> dict[str, Any]:
     """Rollback a stuck fallback mutation to its latest immutable snapshot."""
-    db = _db or get_db()
+    db = _db if _db is not None else get_db()
     journal = db.paper_mutations.find_one(
         {"user_id": user_id, "mutation_id": mutation_id}
     )
@@ -625,7 +625,7 @@ def recover_stale_pending_mutations(
     """Recover only pending mutations older than the explicit age threshold."""
     if max_age_seconds <= 0:
         raise ValueError("max_age_seconds must be positive")
-    db = _db or get_db()
+    db = _db if _db is not None else get_db()
     cutoff = datetime.fromtimestamp(
         _now().timestamp() - max_age_seconds,
         tz=timezone.utc,
@@ -2524,7 +2524,7 @@ def get_account_snapshot_atomic(
     _allow_pending_mutation_id: str | None = None,
 ) -> dict[str, Any]:
     """Read one version-consistent current snapshot or an archived historical one."""
-    db = _db or get_db()
+    db = _db if _db is not None else get_db()
     as_of = as_of.astimezone(timezone.utc)
     if as_of.date() < _now().date():
         archived = db.paper_account_snapshots.find_one(

@@ -8,6 +8,7 @@ import {
   getUser,
   type AuthUser,
 } from './auth'
+import MobileAgentMoreMenu from './components/MobileAgentMoreMenu'
 import AdvicePage from './pages/AdvicePage'
 import AgentChatPage from './pages/AgentChatPage'
 import AgentSettingsPage from './pages/AgentSettingsPage'
@@ -40,6 +41,7 @@ export default function App() {
   const isAgent = location.pathname.startsWith('/agent')
   const isAgentChat =
     location.pathname === '/agent' || location.pathname === '/agent/committee'
+  const isAgentChatPage = location.pathname === '/agent'
 
   useEffect(() => {
     if (!getToken()) {
@@ -110,6 +112,7 @@ export default function App() {
         'app-shell',
         isAgent ? 'app-shell--agent' : '',
         isAgentChat ? 'app-shell--agent-chat' : '',
+        isAgentChatPage ? 'app-shell--agent-chat-page' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -140,31 +143,33 @@ export default function App() {
           <p className="brand">次日顾问</p>
           <p className="brand-sub">规则评分 · AKQuant 校验</p>
         </div>
-        <nav className="nav">
-          {isAgent ? (
-            <>
-              <NavLink to="/agent" end>
-                投研助手
-              </NavLink>
-              <NavLink to="/agent/knowledge">知识库</NavLink>
-              <NavLink to="/agent/strategy">策略副驾</NavLink>
-              <NavLink to="/agent/settings">DeepSeek 配置</NavLink>
-            </>
-          ) : (
-            <>
-              <NavLink to="/" end>
-                今日关注
-              </NavLink>
-              <NavLink to="/advice">标的诊断</NavLink>
-              <NavLink to="/portfolio">我的持仓</NavLink>
-              <NavLink to="/history">推荐历史</NavLink>
-              <NavLink to="/paper">模拟盘</NavLink>
-              <NavLink to="/leaderboard">龙虎榜</NavLink>
-              <NavLink to="/performance">策略表现</NavLink>
-              <NavLink to="/strategy">我的策略</NavLink>
-            </>
-          )}
-        </nav>
+        <div className="topbar-nav-wrap">
+          <nav className="nav" aria-label={isAgent ? 'Agent 导航' : '基础导航'}>
+            {isAgent ? (
+              <>
+                <NavLink to="/agent" end>
+                  投研助手
+                </NavLink>
+                <NavLink to="/agent/knowledge">知识库</NavLink>
+                <NavLink to="/agent/strategy">策略副驾</NavLink>
+                <NavLink to="/agent/settings">DeepSeek 配置</NavLink>
+              </>
+            ) : (
+              <>
+                <NavLink to="/" end>
+                  今日关注
+                </NavLink>
+                <NavLink to="/advice">标的诊断</NavLink>
+                <NavLink to="/portfolio">我的持仓</NavLink>
+                <NavLink to="/history">推荐历史</NavLink>
+                <NavLink to="/paper">模拟盘</NavLink>
+                <NavLink to="/leaderboard">龙虎榜</NavLink>
+                <NavLink to="/performance">策略表现</NavLink>
+                <NavLink to="/strategy">我的策略</NavLink>
+              </>
+            )}
+          </nav>
+        </div>
         <div className="user-bar">
           <span className="user-name">{user.username}</span>
           <button
@@ -204,6 +209,10 @@ export default function App() {
         <footer className="footer">
           <p>{DISCLAIMER}</p>
         </footer>
+      ) : null}
+
+      {isAgentChatPage ? (
+        <MobileAgentMoreMenu onSwitchToBase={() => switchPanel('base')} />
       ) : null}
     </div>
   )

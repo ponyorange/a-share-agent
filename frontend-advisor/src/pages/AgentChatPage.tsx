@@ -1,8 +1,11 @@
-import { memo, useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Navigate } from 'react-router-dom'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import { AgentComposer } from '../components/AgentComposer'
+import { AgentConversationDrawer } from '../components/AgentConversationDrawer'
+import { useMediaQuery } from '../components/ResponsiveDataView'
 import {
   createAgentSession,
   deleteAgentSession,
@@ -216,6 +219,7 @@ export const ChatBubble = memo(function ChatBubble({ m }: { m: Msg }) {
 })
 
 export default function AgentChatPage() {
+  const isMobile = useMediaQuery('(max-width: 768px)')
   const [ready, setReady] = useState<boolean | null>(null)
   const [sessions, setSessions] = useState<AgentSession[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -224,15 +228,18 @@ export default function AgentChatPage() {
   const [sending, setSending] = useState(false)
   const [liveTools, setLiveTools] = useState<{ tool: string; content: string }[]>([])
   const [liveSubagentProgress, setLiveSubagentProgress] = useState<SubagentProgress[]>([])
-  const [progressCollapsed, setProgressCollapsed] = useState(false)
+  const [progressCollapsed, setProgressCollapsed] = useState(isMobile)
   const [sessionTransitioning, setSessionTransitioning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+  const drawerTriggerRef = useRef<HTMLButtonElement>(null)
   const virtuosoRef = useRef<VirtuosoHandle | null>(null)
   const stickToBottomRef = useRef(true)
   const activeStreamRef = useRef(0)
   const sessionTransitionRef = useRef(0)
   const hasAnswerTokenRef = useRef(false)
+  const closeDrawer = useCallback(() => setDrawerOpen(false), [])
 
   const refreshSessions = useCallback(async () => {
     const res = await listAgentSessions()
@@ -297,7 +304,7 @@ export default function AgentChatPage() {
     setSending(false)
     setLiveTools([])
     setLiveSubagentProgress([])
-    setProgressCollapsed(false)
+    setProgressCollapsed(isMobile)
   }
 
   function abortActiveStream() {
@@ -332,21 +339,23 @@ export default function AgentChatPage() {
     setMessages(nextMessages)
   }
 
-  async function openSession(id: string) {
+  async function openSession(id: string): Promise<boolean> {
     const transitionToken = beginSessionTransition()
     abortActiveStream()
     resetLiveStreamState(true)
     normalizeStreamingTail()
     try {
       await loadSessionMessages(id)
+      return true
     } catch {
       setError(SAFE_SESSION_ERROR)
+      return false
     } finally {
       endSessionTransition(transitionToken)
     }
   }
 
-  async function handleNewChat() {
+  async function handleNewChat(): Promise<boolean> {
     const transitionToken = beginSessionTransition()
     abortActiveStream()
     resetLiveStreamState(true)
@@ -358,24 +367,27 @@ export default function AgentChatPage() {
       setMessages([])
       stickToBottomRef.current = true
       await refreshSessions()
+      return true
     } catch {
       setError(SAFE_SESSION_ERROR)
+      return false
     } finally {
       endSessionTransition(transitionToken)
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!window.confirm('删除该对话？')) return
+  async function handleDelete(id: string): Promise<boolean> {
+    if (!window.confirm('删除该对话？')) return false
     const deletingCurrent = sessionId === id
     if (!deletingCurrent) {
       try {
         await deleteAgentSession(id)
         await refreshSessions()
+        return true
       } catch {
         setError(SAFE_SESSION_ERROR)
+        return false
       }
-      return
     }
 
     const transitionToken = beginSessionTransition()
@@ -395,8 +407,10 @@ export default function AgentChatPage() {
         stickToBottomRef.current = true
         await refreshSessions()
       }
+      return true
     } catch {
       setError(SAFE_SESSION_ERROR)
+      return false
     } finally {
       endSessionTransition(transitionToken)
     }
@@ -412,7 +426,7 @@ export default function AgentChatPage() {
     activeStreamRef.current = streamId
     hasAnswerTokenRef.current = false
     setLiveSubagentProgress([])
-    setProgressCollapsed(false)
+    setProgressCollapsed(isMobile)
     stickToBottomRef.current = true
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setMessages((prev) => [...prev, { role: 'assistant', content: '', streaming: true }])
@@ -486,9 +500,9 @@ export default function AgentChatPage() {
             if (data.session_id) setSessionId(data.session_id)
             void refreshSessions()
           },
-          onError: (detail) => {
+          onError: () => {
             if (activeStreamRef.current !== streamId) return
-            setError(detail)
+            setError(SAFE_CHAT_ERROR)
             setMessages((prev) => {
               const copy = [...prev]
               const last = copy[copy.length - 1]
@@ -515,11 +529,6 @@ export default function AgentChatPage() {
     }
   }
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    await send()
-  }
-
   if (ready === null) {
     return (
       <section className="page">
@@ -531,6 +540,7 @@ export default function AgentChatPage() {
     return <Navigate to="/agent/settings" replace />
   }
   const composingDisabled = sending || sessionTransitioning || !sessionId
+  const currentSession = sessions.find((session) => session.session_id === sessionId)
 
   return (
     <section className="page agent-layout">
@@ -570,25 +580,63 @@ export default function AgentChatPage() {
       </aside>
 
       <div className="agent-main">
+        <header className="agent-mobile-header">
+          <button
+            ref={drawerTriggerRef}
+            type="button"
+            className="btn agent-mobile-menu"
+            aria-label="打开对话记录"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen(true)}
+          >
+            ☰
+          </button>
+          <span className="agent-mobile-title">{currentSession?.title || '新对话'}</span>
+          <button
+            type="button"
+            className="btn agent-mobile-new"
+            aria-label="移动端新对话"
+            disabled={sessionTransitioning}
+            onClick={() => {
+              void handleNewChat().then((succeeded) => {
+                if (succeeded) closeDrawer()
+              })
+            }}
+          >
+            ＋
+          </button>
+        </header>
+
+        <AgentConversationDrawer
+          open={drawerOpen}
+          sessions={sessions}
+          activeSessionId={sessionId}
+          disabled={sessionTransitioning}
+          triggerRef={drawerTriggerRef}
+          onClose={closeDrawer}
+          onNew={() => {
+            void handleNewChat().then((succeeded) => {
+              if (succeeded) closeDrawer()
+            })
+          }}
+          onOpen={(id) => {
+            void openSession(id).then((succeeded) => {
+              if (succeeded) closeDrawer()
+            })
+          }}
+          onDelete={(id) => {
+            void handleDelete(id).then((succeeded) => {
+              if (succeeded) closeDrawer()
+            })
+          }}
+        />
+
         {messages.length === 0 ? (
           <div className="agent-chat agent-chat-empty-wrap">
             <div className="agent-empty-block">
               <p className="agent-chat-empty">
                 我是投研助手。点下方快捷提问，或直接输入问题。
               </p>
-              <div className="agent-quick-prompts">
-                {QUICK_PROMPTS.map((q) => (
-                  <button
-                    key={q.label}
-                    type="button"
-                    className="agent-quick-chip"
-                    disabled={composingDisabled}
-                    onClick={() => void send(q.message)}
-                  >
-                    {q.label}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
         ) : (
@@ -621,41 +669,37 @@ export default function AgentChatPage() {
           />
         )}
 
-        {error ? <p className="status error">{error}</p> : null}
-
-        <div className="agent-quick-bar">
-          {QUICK_PROMPTS.map((q) => (
-            <button
-              key={q.label}
-              type="button"
-              className="agent-quick-chip"
-              disabled={composingDisabled}
-              onClick={() => void send(q.message)}
-            >
-              {q.label}
-            </button>
-          ))}
+        <div
+          className={`agent-quick-bar${input.trim() ? ' is-composing' : ''}`}
+          role="region"
+          aria-label="快捷问题"
+        >
+          <div className="agent-quick-scroll">
+            {QUICK_PROMPTS.map((q) => (
+              <button
+                key={q.label}
+                type="button"
+                className="agent-quick-chip"
+                disabled={composingDisabled}
+                onClick={() => void send(q.message)}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+          <span className="agent-quick-more" aria-hidden="true">
+            更多
+          </span>
         </div>
 
-        <form className="agent-composer" onSubmit={onSubmit}>
-          <textarea
-            className="input"
-            rows={2}
-            placeholder="问投研助手…（Enter 发送，Shift+Enter 换行）"
-            value={input}
-            disabled={composingDisabled}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                void send()
-              }
-            }}
-          />
-          <button className="btn" type="submit" disabled={composingDisabled || !input.trim()}>
-            {sending ? '生成中…' : '发送'}
-          </button>
-        </form>
+        <AgentComposer
+          value={input}
+          disabled={composingDisabled}
+          sending={sending}
+          error={error}
+          onChange={setInput}
+          onSend={() => void send()}
+        />
       </div>
     </section>
   )

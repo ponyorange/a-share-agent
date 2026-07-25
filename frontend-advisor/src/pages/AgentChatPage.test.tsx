@@ -1,9 +1,9 @@
 import '@testing-library/jest-dom/vitest'
 import { type ReactNode } from 'react'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { SubagentProgress } from '../agentApi'
 import AgentChatPage, {
   ChatBubble,
@@ -86,6 +86,10 @@ beforeEach(() => {
   api.streamAgentChat.mockResolvedValue(undefined)
 })
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 it('助手消息底部可复制正文', async () => {
   const user = userEvent.setup()
   const writeText = vi.fn().mockResolvedValue(undefined)
@@ -112,6 +116,21 @@ it('流式输出中不显示复制按钮', () => {
     />,
   )
   expect(screen.queryByRole('button', { name: '复制' })).not.toBeInTheDocument()
+})
+
+it('工具调用默认保持折叠', () => {
+  const { container } = render(
+    <ChatBubble
+      m={{
+        role: 'assistant',
+        content: '分析完成',
+        trace: [{ tool: 'search', content: 'result' }],
+      }}
+    />,
+  )
+
+  expect(screen.getByText('工具调用 1')).toBeInTheDocument()
+  expect(container.querySelector('.agent-trace')).not.toHaveAttribute('open')
 })
 
 it('合并相同进度条目并按新阶段追加', () => {
@@ -180,6 +199,42 @@ it('首个回答 token 后折叠进度，用户可展开且新对话会清空', 
   expect(screen.getByText(/stock_zh_index_daily_tx/)).toBeInTheDocument()
 
   await user.click(screen.getByRole('button', { name: '新对话' }))
+  expect(screen.queryByText(/stock_zh_index_daily_tx/)).not.toBeInTheDocument()
+
+  stream.resolve()
+})
+
+it('移动端在工具执行阶段就默认折叠子 Agent 进度', async () => {
+  const user = userEvent.setup()
+  const stream = deferred<void>()
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(max-width: 768px)',
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  )
+  api.streamAgentChat.mockImplementation(async (_message, _sessionId, handlers) => {
+    handlers.onSubagentProgress(completedFetchProgress)
+    await stream.promise
+  })
+
+  render(
+    <MemoryRouter>
+      <AgentChatPage />
+    </MemoryRouter>,
+  )
+
+  await user.type(await screen.findByRole('textbox', { name: '给投研助手发送消息' }), '移动查数据')
+  await user.click(screen.getByRole('button', { name: '发送' }))
+
+  expect(await screen.findByRole('button', { name: '展开进度' })).toBeInTheDocument()
   expect(screen.queryByText(/stock_zh_index_daily_tx/)).not.toBeInTheDocument()
 
   stream.resolve()
@@ -467,4 +522,112 @@ it('打开会话失败时结束已有内容的 streaming 助手尾泡', async ()
     streams[0].resolve()
     await Promise.resolve()
   })
+})
+
+it('移动顶栏打开对话记录并在成功选择会话后关闭抽屉', async () => {
+  const user = userEvent.setup()
+  api.listAgentSessions.mockResolvedValue({
+    sessions: [
+      { session_id: 's-old', title: '旧会话', message_count: 1 },
+      { session_id: 's-next', title: '下一会话', message_count: 2 },
+    ],
+  })
+  api.fetchAgentMessages.mockImplementation((id) =>
+    Promise.resolve({
+      session_id: id,
+      messages: [{ role: 'assistant', content: id === 's-next' ? '下一会话消息' : '旧会话消息' }],
+    }),
+  )
+
+  render(
+    <MemoryRouter>
+      <AgentChatPage />
+    </MemoryRouter>,
+  )
+
+  expect(await screen.findByRole('button', { name: '打开对话记录' })).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '打开对话记录' }))
+  const drawer = screen.getByRole('dialog', { name: '对话记录' })
+  await user.click(within(drawer).getByRole('button', { name: '打开 下一会话' }))
+
+  expect(await screen.findByText('下一会话消息')).toBeInTheDocument()
+  expect(screen.queryByRole('dialog', { name: '对话记录' })).not.toBeInTheDocument()
+})
+
+it('抽屉中新建会话成功后关闭，失败则保留抽屉和安全错误', async () => {
+  const user = userEvent.setup()
+  api.listAgentSessions.mockResolvedValue({
+    sessions: [{ session_id: 's-old', title: '旧会话', message_count: 1 }],
+  })
+  api.fetchAgentMessages.mockResolvedValue({
+    session_id: 's-old',
+    messages: [{ role: 'assistant', content: '旧会话消息' }],
+  })
+  api.createAgentSession
+    .mockRejectedValueOnce(new Error('secret create failure'))
+    .mockResolvedValueOnce({ session_id: 's-new' })
+
+  render(
+    <MemoryRouter>
+      <AgentChatPage />
+    </MemoryRouter>,
+  )
+
+  await screen.findByText('旧会话消息')
+  await user.click(screen.getByRole('button', { name: '打开对话记录' }))
+  await user.click(within(screen.getByRole('dialog', { name: '对话记录' })).getByRole('button', { name: '新对话' }))
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('会话操作失败，请稍后重试')
+  expect(screen.getByRole('dialog', { name: '对话记录' })).toBeInTheDocument()
+  expect(screen.queryByText(/secret create failure/)).not.toBeInTheDocument()
+
+  await user.click(within(screen.getByRole('dialog', { name: '对话记录' })).getByRole('button', { name: '新对话' }))
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog', { name: '对话记录' })).not.toBeInTheDocument(),
+  )
+})
+
+it('快捷问题区域可访问且集成 composer 继续使用既有流发送', async () => {
+  const user = userEvent.setup()
+
+  render(
+    <MemoryRouter>
+      <AgentChatPage />
+    </MemoryRouter>,
+  )
+
+  expect(await screen.findByRole('region', { name: '快捷问题' })).toBeInTheDocument()
+  for (const label of ['今日关注', '持仓诊断', '联播宏观']) {
+    expect(screen.getAllByRole('button', { name: label })).toHaveLength(1)
+  }
+  const textbox = screen.getByRole('textbox', { name: '给投研助手发送消息' })
+  await user.type(textbox, '分析组合')
+  expect(screen.getByRole('region', { name: '快捷问题' })).toHaveClass('is-composing')
+  await user.click(screen.getByRole('button', { name: '发送' }))
+
+  expect(api.streamAgentChat).toHaveBeenCalledWith(
+    '分析组合',
+    's-new',
+    expect.anything(),
+    expect.any(AbortSignal),
+  )
+})
+
+it('流接口错误只在 composer 展示安全文案', async () => {
+  const user = userEvent.setup()
+  api.streamAgentChat.mockImplementation(async (_message, _sessionId, handlers) => {
+    handlers.onError('secret upstream detail')
+  })
+
+  render(
+    <MemoryRouter>
+      <AgentChatPage />
+    </MemoryRouter>,
+  )
+
+  await user.type(await screen.findByRole('textbox', { name: '给投研助手发送消息' }), '触发错误')
+  await user.click(screen.getByRole('button', { name: '发送' }))
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('消息发送失败，请稍后重试')
+  expect(screen.queryByText(/secret upstream detail/)).not.toBeInTheDocument()
 })
