@@ -1,3 +1,6 @@
+import numpy as np
+import pandas as pd
+
 from app.advisor import rule_backtest as rb
 
 
@@ -45,3 +48,45 @@ def test_entry_matches_all():
     }
     assert rb.entry_matches(spec, {"mom_5": 0.03, "ma20_bias": 0.01})
     assert not rb.entry_matches(spec, {"mom_5": 0.01, "ma20_bias": 0.01})
+
+
+def _synth_df(n: int = 80, seed: int = 0) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    rets = rng.normal(0.002, 0.01, size=n)
+    close = 100 * np.cumprod(1 + rets)
+    vol = rng.integers(1_000_000, 2_000_000, size=n).astype(float)
+    vol[-10:] *= 3
+    times = pd.date_range("2024-01-01", periods=n, freq="B")
+    return pd.DataFrame(
+        {
+            "time": times.strftime("%Y-%m-%d"),
+            "open": close,
+            "high": close * 1.01,
+            "low": close * 0.99,
+            "close": close,
+            "volume": vol,
+            "amount": close * vol,
+        }
+    )
+
+
+def test_split_bar_range_70_30():
+    train_end, n = rb.split_bar_range(100, 0.7)
+    assert n == 100
+    assert train_end == 70
+
+
+def test_simulate_symbol_produces_trades():
+    df = _synth_df(90)
+    spec, errs = rb.validate_rule_spec(
+        {
+            "hold_days": 1,
+            "entry": {"all": [{"factor": "mom_5", "op": ">", "value": -1.0}]},
+        }
+    )
+    assert errs == []
+    out = rb.simulate_symbol(df, None, spec, sample_step=1)
+    assert out["trade_count"] >= 5
+    m = rb.metrics_from_trades(out["trades"], out["equity_rets"])
+    assert "total_return" in m and "sharpe" in m and "max_drawdown" in m
+    assert m["trade_count"] == out["trade_count"]
