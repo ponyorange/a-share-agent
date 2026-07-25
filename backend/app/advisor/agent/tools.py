@@ -979,6 +979,134 @@ def build_tools(user_id: str) -> list[Any]:
         return json.dumps(data, ensure_ascii=False, default=str)
 
     @tool
+    def compile_knowledge_rules(
+        rule_json: str,
+        text: str = "",
+        knowledge_id: str = "",
+    ) -> str:
+        """将 Agent 起草的规则 JSON 校验为 RuleSpec。
+        输入 rule_json（必填）；可选 knowledge_id/text 做溯源。
+        不写入知识库。失败返回 errors 列表供澄清。"""
+        from ..knowledge import get_item
+        from ..rule_backtest import validate_rule_spec
+
+        _bind()
+        try:
+            raw = json.loads(rule_json or "")
+        except json.JSONDecodeError:
+            return json.dumps(
+                {"ok": False, "error": "rule_json 不是合法 JSON"},
+                ensure_ascii=False,
+            )
+        if not isinstance(raw, dict):
+            return json.dumps(
+                {"ok": False, "error": "rule_json 必须是 JSON 对象"},
+                ensure_ascii=False,
+            )
+        kid = (knowledge_id or "").strip()
+        source_text = (text or "").strip()
+        if kid:
+            item = get_item(user_id, kid)
+            if not item:
+                return json.dumps(
+                    {"ok": False, "error": "知识条目不存在", "id": kid},
+                    ensure_ascii=False,
+                )
+            raw["source_knowledge_id"] = kid
+            if not source_text:
+                source_text = str(item.get("body") or "")
+        if not (raw.get("natural_language_summary") or "").strip() and source_text:
+            raw["natural_language_summary"] = source_text[:200]
+        spec, errors = validate_rule_spec(raw)
+        if errors or spec is None:
+            return json.dumps(
+                {"ok": False, "errors": errors},
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {"ok": True, "rule": spec},
+            ensure_ascii=False,
+            default=str,
+        )
+
+    @tool
+    def run_rule_backtest(
+        rule_json: str,
+        symbols: str = "",
+        segment: str = "all",
+    ) -> str:
+        """对 RuleSpec 做机械历史回测。symbols 逗号分隔，空=默认抽样池。
+        segment=all|train|valid；all 时返回 in_sample 与 out_of_sample。"""
+        from ..rule_backtest import run_rule_backtest_report, validate_rule_spec
+
+        _bind()
+        try:
+            raw = json.loads(rule_json or "")
+        except json.JSONDecodeError:
+            return json.dumps(
+                {"ok": False, "error": "rule_json 不是合法 JSON"},
+                ensure_ascii=False,
+            )
+        spec, errors = validate_rule_spec(raw if isinstance(raw, dict) else None)
+        if errors or spec is None:
+            return json.dumps(
+                {"ok": False, "errors": errors},
+                ensure_ascii=False,
+            )
+        sym_list = [
+            s.strip()
+            for s in str(symbols or "").split(",")
+            if s.strip()
+        ] or None
+        report = run_rule_backtest_report(
+            spec, symbols=sym_list, segment=segment or "all"
+        )
+        return json.dumps(report, ensure_ascii=False, default=str)
+
+    @tool
+    def optimize_knowledge_rules(
+        rule_json: str,
+        objective: str = "C",
+        symbols: str = "",
+        min_sharpe: float = 0.0,
+        max_dd: float = 0.25,
+        max_trials: int = 20,
+    ) -> str:
+        """在参数邻域内有限次搜索（默认≤20）。按 objective=A|B|C 在样本内选优，
+        并返回样本外指标。无可行解时 feasible=false 且带 closest，勿自动写库。"""
+        from ..rule_backtest import validate_rule_spec
+        from ..rule_optimize import optimize_rules
+
+        _bind()
+        try:
+            raw = json.loads(rule_json or "")
+        except json.JSONDecodeError:
+            return json.dumps(
+                {"ok": False, "error": "rule_json 不是合法 JSON"},
+                ensure_ascii=False,
+            )
+        spec, errors = validate_rule_spec(raw if isinstance(raw, dict) else None)
+        if errors or spec is None:
+            return json.dumps(
+                {"ok": False, "errors": errors},
+                ensure_ascii=False,
+            )
+        sym_list = [
+            s.strip()
+            for s in str(symbols or "").split(",")
+            if s.strip()
+        ] or None
+        out = optimize_rules(
+            spec,
+            objective=objective or "C",
+            symbols=sym_list,
+            min_sharpe=float(min_sharpe),
+            max_dd=float(max_dd),
+            max_trials=int(max_trials),
+        )
+        return json.dumps(out, ensure_ascii=False, default=str)
+
+    @tool
     def load_knowledge(knowledge_id: str) -> str:
         """按 id 加载用户可选/知识库正文。目录在系统提示「用户可选知识目录」中。
         仅能加载当前用户且已启用的条目。"""
@@ -1221,6 +1349,9 @@ def build_tools(user_id: str) -> list[Any]:
         fetch_market_indices,
         fetch_index_extremes,
         fetch_symbol_daily_ma,
+        compile_knowledge_rules,
+        run_rule_backtest,
+        optimize_knowledge_rules,
         load_knowledge,
         list_knowledge,
         save_knowledge,
