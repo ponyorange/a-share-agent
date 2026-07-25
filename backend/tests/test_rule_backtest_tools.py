@@ -40,6 +40,14 @@ def test_compile_knowledge_rules_bad_factor():
     assert out["errors"]
 
 
+def test_system_prompt_mentions_rule_backtest():
+    from app.advisor.agent.graph import SYSTEM_PROMPT
+
+    assert "compile_knowledge_rules" in SYSTEM_PROMPT
+    assert "optimize_knowledge_rules" in SYSTEM_PROMPT
+    assert "样本内" in SYSTEM_PROMPT or "in_sample" in SYSTEM_PROMPT
+
+
 def test_optimize_knowledge_rules_json(monkeypatch):
     from app.advisor import rule_optimize as ro
 
