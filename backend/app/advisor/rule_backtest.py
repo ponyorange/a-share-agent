@@ -9,7 +9,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .features import compute_factors
+from .config_loader import load_config
+from .features import compute_factors, fetch_daily_df, load_benchmark
+from .universe import build_universe
 
 ALLOWED_FACTORS = frozenset(
     {
@@ -247,4 +249,171 @@ def simulate_symbol(
         "trades": trades,
         "equity_rets": equity,
         "trade_count": len(trades),
+    }
+
+
+def _rule_cfg() -> dict[str, Any]:
+    return load_config().get("rule_backtest") or {}
+
+
+def resolve_symbols(symbols: list[str] | None = None) -> list[str]:
+    if symbols:
+        out: list[str] = []
+        seen: set[str] = set()
+        for s in symbols:
+            s = str(s or "").strip()
+            if len(s) == 6 and s not in seen:
+                seen.add(s)
+                out.append(s)
+        return out or ["510300", "510500", "159915"]
+
+    cfg = _rule_cfg()
+    per_board = int(cfg.get("max_symbols_per_board", 8))
+    board_ids = [str(b) for b in (cfg.get("boards") or ["etf", "hs"])]
+    try:
+        universe = build_universe(force=False)
+    except Exception:
+        return ["510300", "510500", "159915"]
+
+    out = []
+    seen = set()
+    for bid in board_ids:
+        block = (universe.get("boards") or {}).get(bid) or {}
+        items = block.get("symbols") or block.get("items") or []
+        # universe boards may be list or {symbols: [...]}
+        if isinstance(block, list):
+            items = block
+        for u in list(items)[:per_board]:
+            if isinstance(u, dict):
+                s = str(u.get("symbol") or "").strip()
+            else:
+                s = str(u or "").strip()
+            if len(s) == 6 and s not in seen:
+                seen.add(s)
+                out.append(s)
+    return out or ["510300", "510500", "159915"]
+
+
+def _truncate_lookback(df: pd.DataFrame, lookback: int) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    if lookback and len(df) > lookback + 5:
+        return df.iloc[-(lookback + 5) :].reset_index(drop=True)
+    return df.reset_index(drop=True)
+
+
+def _aggregate_symbol_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    trades: list[dict[str, Any]] = []
+    max_len = 0
+    for r in runs:
+        trades.extend(r.get("trades") or [])
+        max_len = max(max_len, len(r.get("equity_rets") or []))
+    if max_len == 0:
+        return metrics_from_trades([], [])
+    # equal-weight average of daily equity rets across symbols
+    stacked = np.zeros(max_len, dtype=float)
+    counts = np.zeros(max_len, dtype=float)
+    for r in runs:
+        eq = r.get("equity_rets") or []
+        for i, v in enumerate(eq):
+            stacked[i] += float(v)
+            counts[i] += 1.0
+    avg = np.divide(
+        stacked, np.maximum(counts, 1.0), out=np.zeros_like(stacked), where=counts > 0
+    )
+    return metrics_from_trades(trades, avg.tolist())
+
+
+def _simulate_symbols(
+    spec: dict[str, Any],
+    syms: list[str],
+    *,
+    sample_step: int,
+    lookback: int,
+    bench_df: pd.DataFrame | None,
+    segment: str = "full",
+) -> dict[str, Any]:
+    """segment: full | train | valid — when train/valid, split each df 70/30."""
+    train_ratio = float((_rule_cfg() or {}).get("train_ratio", 0.7))
+    runs: list[dict[str, Any]] = []
+    for sym in syms:
+        try:
+            _name, df = fetch_daily_df(sym)
+        except Exception:
+            continue
+        df = _truncate_lookback(df, lookback)
+        if df is None or len(df) < 30:
+            continue
+        lo = 0
+        hi = None
+        if segment == "train":
+            train_end, _n = split_bar_range(len(df), train_ratio)
+            lo, hi = 0, train_end
+        elif segment == "valid":
+            train_end, n = split_bar_range(len(df), train_ratio)
+            lo, hi = train_end, n
+        runs.append(
+            simulate_symbol(
+                df,
+                bench_df,
+                spec,
+                sample_step=sample_step,
+                index_lo=lo,
+                index_hi=hi,
+            )
+        )
+    return _aggregate_symbol_runs(runs)
+
+
+def run_rule_backtest_report(
+    spec: dict[str, Any],
+    *,
+    symbols: list[str] | None = None,
+    segment: str = "all",
+    sample_step: int | None = None,
+) -> dict[str, Any]:
+    cfg = _rule_cfg()
+    lookback = int(cfg.get("lookback_bars", 240))
+    step = int(sample_step if sample_step is not None else cfg.get("sample_step", 5))
+    seg = (segment or "all").strip().lower()
+    if seg not in ("all", "train", "valid"):
+        return {"ok": False, "error": f"无效 segment: {segment}"}
+
+    try:
+        bench_df = load_benchmark()
+    except Exception:
+        bench_df = None
+
+    syms = resolve_symbols(symbols)
+    if not syms:
+        return {"ok": False, "error": "无可用标的", "symbols": []}
+
+    if seg == "all":
+        full = _simulate_symbols(
+            spec, syms, sample_step=step, lookback=lookback, bench_df=bench_df, segment="full"
+        )
+        inn = _simulate_symbols(
+            spec, syms, sample_step=step, lookback=lookback, bench_df=bench_df, segment="train"
+        )
+        out = _simulate_symbols(
+            spec, syms, sample_step=step, lookback=lookback, bench_df=bench_df, segment="valid"
+        )
+        return {
+            "ok": True,
+            "symbols": syms,
+            "segment": "all",
+            "metrics": full,
+            "in_sample": inn,
+            "out_of_sample": out,
+        }
+
+    mapped = "train" if seg == "train" else "valid"
+    metrics = _simulate_symbols(
+        spec, syms, sample_step=step, lookback=lookback, bench_df=bench_df, segment=mapped
+    )
+    return {
+        "ok": True,
+        "symbols": syms,
+        "segment": seg,
+        "metrics": metrics,
     }

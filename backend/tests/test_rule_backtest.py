@@ -90,3 +90,36 @@ def test_simulate_symbol_produces_trades():
     m = rb.metrics_from_trades(out["trades"], out["equity_rets"])
     assert "total_return" in m and "sharpe" in m and "max_drawdown" in m
     assert m["trade_count"] == out["trade_count"]
+
+
+def test_run_rule_backtest_report_split(monkeypatch):
+    df = _synth_df(100)
+
+    def fake_fetch(symbol):
+        return symbol, df.copy()
+
+    monkeypatch.setattr(rb, "fetch_daily_df", fake_fetch)
+    monkeypatch.setattr(rb, "load_benchmark", lambda: None)
+    monkeypatch.setattr(rb, "resolve_symbols", lambda symbols=None: ["AAA", "BBB"])
+
+    spec, _ = rb.validate_rule_spec(
+        {
+            "hold_days": 1,
+            "entry": {"all": [{"factor": "mom_5", "op": ">", "value": -1.0}]},
+        }
+    )
+    report = rb.run_rule_backtest_report(spec, symbols=["AAA", "BBB"], segment="all")
+    assert report["ok"] is True
+    assert "in_sample" in report and "out_of_sample" in report
+    assert set(report["in_sample"]) >= {
+        "total_return",
+        "sharpe",
+        "max_drawdown",
+        "trade_count",
+    }
+    assert set(report["out_of_sample"]) >= {
+        "total_return",
+        "sharpe",
+        "max_drawdown",
+        "trade_count",
+    }

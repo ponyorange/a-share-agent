@@ -130,6 +130,20 @@ backtest:
   boards:
     - etf
     - hs
+# ---------- 知识规则回测 / 调优（Agent 工具）----------
+rule_backtest:
+  lookback_bars: 240
+  sample_step: 5
+  train_ratio: 0.7
+  min_trades: 5
+  max_trials: 20
+  max_trials_hard: 30
+  max_symbols_per_board: 8
+  default_min_sharpe: 0.0
+  default_max_dd: 0.25
+  boards:
+    - etf
+    - hs
 # ---------- 今日关注（推荐列表）----------
 recommendations:
   # 默认每板返回的推荐条数（可被 API 的 top 参数覆盖）
