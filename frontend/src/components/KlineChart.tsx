@@ -243,7 +243,7 @@ export function KlineChart({ data, onHover }: Props) {
       },
       handleScale: {
         axisPressedMouseMove: { time: true, price: true },
-        mouseWheel: true,
+        mouseWheel: false,
         pinch: true,
       },
     })

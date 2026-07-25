@@ -320,6 +320,17 @@ def test_data_agent_prompt_documents_sandbox_datasets_contract():
     assert "submit_data_result" in DATA_AGENT_PROMPT
 
 
+def test_data_agent_prompt_prefers_stable_etf_industry_ipo_interfaces():
+    assert "fund_etf" in DATA_AGENT_PROMPT
+    assert "fund_etf_hist_sina" in DATA_AGENT_PROMPT
+    assert "industry_spot" in DATA_AGENT_PROMPT
+    assert "stock_board_industry_spot_em" in DATA_AGENT_PROMPT
+    assert "stock_board_industry_hist_em" in DATA_AGENT_PROMPT
+    assert "第一选择" in DATA_AGENT_PROMPT or "不要把" in DATA_AGENT_PROMPT
+    assert "ipo_declare" in DATA_AGENT_PROMPT or "stock_ipo_declare_em" in DATA_AGENT_PROMPT
+    assert "provider_error" in DATA_AGENT_PROMPT
+
+
 def test_submit_data_result_tool_accepts_valid_payload(tmp_path):
     from app.advisor.agent.data_agent.graph import build_submit_tool
 
@@ -492,6 +503,87 @@ def test_parse_data_agent_result_accepts_fenced_json_with_trailing_prose():
     assert result.answer == "ok"
     assert result.failures[0].code == "no_data"
 
+
+def test_parse_normalizes_source_extra_fields_and_computation_object_notes(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        meta = workspace.create_dataset(
+            "akshare",
+            "stock_zh_index_daily_tx",
+            {"symbol": "sh000300"},
+            {
+                "columns": ["close"],
+                "rows": [{"close": i} for i in range(20)],
+                "returned": 20,
+                "total": 20,
+                "truncated": False,
+                "data_time": "2026-07-15",
+            },
+        )
+        evidence = workspace.record_sandbox_result(
+            {"latest_close": 4019.06, "period_high": 4019.06}
+        )
+        result = parse_data_agent_result(
+            json.dumps(
+                {
+                    "answer": "ok",
+                    "data": {
+                        "result_id": evidence.result_id,
+                        "payload": {"latest_close": 4019.06, "period_high": 4019.06},
+                    },
+                    "sources": [
+                        {
+                            "source": "akshare",
+                            "interface": "stock_zh_index_daily_tx",
+                            "params_summary": {"symbol": "sh000300"},
+                            "data_time": "2026-07-15",
+                            "rows": "20",
+                            "truncated": "false",
+                            "dataset_id": meta.dataset_id,
+                            "columns": ["close"],
+                            "sample": [{"close": 1}],
+                        }
+                    ],
+                    "computation": [
+                        {"step": "取近20日收盘"},
+                        "pandas describe",
+                    ],
+                    "warnings": [{"note": "仅供参考"}],
+                    "failures": [],
+                },
+                ensure_ascii=False,
+            ),
+            workspace=workspace,
+        )
+
+    assert result.failures == []
+    assert result.sources[0].rows == 20
+    assert result.sources[0].truncated is False
+    assert result.computation == ["取近20日收盘", "pandas describe"]
+    assert result.warnings == ["仅供参考"]
+
+
+def test_submit_data_result_tool_returns_field_hints_on_schema_error(tmp_path):
+    from app.advisor.agent.data_agent.graph import build_submit_tool
+
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        tool = build_submit_tool(workspace)
+        payload = json.loads(
+            tool.invoke(
+                {
+                    "answer": "ok",
+                    "data_json": "{}",
+                    "sources_json": '[{"source":"","interface":"demo"}]',
+                    "computation_json": "[]",
+                    "warnings_json": "[]",
+                    "failures_json": "[]",
+                }
+            )
+        )
+
+    assert payload["ok"] is False
+    assert payload["error"] == "invalid_agent_schema"
+    assert "sources" in payload["message"]
+    assert "string_too_short" in payload["message"] or "too_short" in payload["message"]
 
 def test_parse_normalizes_params_summary_string_and_computation_result_reference(tmp_path):
     with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
