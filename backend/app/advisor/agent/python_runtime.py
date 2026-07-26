@@ -197,7 +197,8 @@ def build_agent_python_tools(user_id: str) -> list[BaseTool]:
         dataset_ids_json: str = "[]",
         inline_datasets_json: str = "{}",
     ) -> str:
-        """在沙箱运行 Python。预置 pd/np；可用 datasets['id']。
+        """在沙箱运行 Python。已预置 pd/np（推荐直接用，也可 import pandas/numpy）；
+        仅允许 pandas/numpy/math/statistics/datetime。可用 datasets['id']。
         优先赋值 result；否则回传 stdout/stderr。小计算用本工具；大表/跨源仍用 delegate_data_task。"""
         emit_progress(step="run_python", status="started", phase="main_agent")
         if not workspace.begin_python_call():

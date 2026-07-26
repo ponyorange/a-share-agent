@@ -209,8 +209,9 @@ def _map_runtime_error_code(exc: RuntimeError) -> str:
 def build_python_tool(workspace: DatasetWorkspace, client: SandboxClient) -> BaseTool:
     @tool
     def run_python_analysis(code: str, dataset_ids_json: str) -> str:
-        """在沙箱中运行只读 Python 分析。预置 pd/np（勿再 import）；用 datasets['dataset_id']
-        取 DataFrame；必须赋值给 result。禁止 read_csv/打开文件或访问网络。"""
+        """在沙箱中运行只读 Python 分析。已预置 pd/np（推荐直接用，也可 import pandas/numpy）；
+        用 datasets['dataset_id'] 取 DataFrame；必须赋值给 result。
+        仅允许 pandas/numpy/math/statistics/datetime；禁止 read_csv/打开文件或访问网络。"""
         emit_progress(step="sandbox", status="started")
         if not workspace.begin_python_analysis():
             emit_progress(

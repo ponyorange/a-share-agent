@@ -75,6 +75,7 @@ SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）�
 18. 小计算、试跑、对本轮小结果二次加工：使用 run_python_script；
    需要喂入本轮工具 JSON 时先 register_tool_dataset。
    Provider 外部数据/跨源/大表仍用 delegate_data_task（规则 15）。
+   沙箱已预置 pd/np（可直接用或 import pandas/numpy）；仅允许 pandas/numpy/math/statistics/datetime。
    解读优先 result，其次 stdout/stderr；禁止编造未工具返回的数据进沙箱。
 19. 将聊天摘要发到用户邮箱：使用 send_chat_summary_email；
    先 confirm=false 预览收件人/主题/摘要，用户明确同意后再 confirm=true。
