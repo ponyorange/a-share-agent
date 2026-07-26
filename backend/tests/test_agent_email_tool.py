@@ -5,6 +5,7 @@ from bson import ObjectId
 
 from app.advisor.agent import tools as tools_mod
 from app.advisor.agent.tools import build_tools
+from app.advisor import context as advisor_context
 
 
 class FakeUsers:
@@ -24,6 +25,7 @@ class FakeDb:
 
 def _tool(monkeypatch, user_doc, send=None):
     monkeypatch.setattr(tools_mod, "get_db", lambda: FakeDb(user_doc))
+    monkeypatch.setattr(advisor_context, "bind_user", lambda _uid: None)
     if send is not None:
         monkeypatch.setattr(tools_mod, "send_email", send)
     by_name = {t.name: t for t in build_tools(str(user_doc["_id"]) if user_doc else "u1")}

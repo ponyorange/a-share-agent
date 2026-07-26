@@ -59,6 +59,14 @@ cp .env.example .env
 | `TUSHARE_TOKEN` | Tushare Pro Token（调用 Tushare 接口必填） |
 | `AKSHARE_USE_SYSTEM_PROXY=1` | 使用系统代理 |
 | `AKSHARE_DISABLE_HOST_REWRITE=1` | 关闭东财 host 改写 |
+| `MAIL_HOST` / `MAIL_PORT` | 可选 SMTP（默认 `smtp.163.com` / `465`） |
+| `MAIL_USER` / `MAIL_PASS` / `MAIL_FROM` | 发件账号；`MAIL_PASS` 为 163 **授权码**（非登录密码） |
+
+### 邮件（可选）
+
+配置 `MAIL_*` 后可用于：个人资料页绑定邮箱验证码、登录页忘记密码、Agent 将聊天摘要发到已验证邮箱。  
+163 授权码：邮箱设置 → POP3/SMTP/IMAP → 开启 SMTP → 新增授权码。真实密钥只放本机/部署机 `.env`，勿提交。  
+前端入口：顶栏用户名 → `/account`；登录页「忘记密码」。
 
 生产启动必须显式设置 `APP_ENV=production`、`MONGODB_URI` 和至少 32 字节的
 高熵 `JWT_SECRET`。用户 LLM API Key 使用独立的
