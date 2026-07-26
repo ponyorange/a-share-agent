@@ -129,3 +129,4 @@ def test_system_prompt_mentions_knowledge_write_confirm():
     assert "save_knowledge" in SYSTEM_PROMPT
     assert "confirm=true" in SYSTEM_PROMPT
     assert "list_knowledge" in SYSTEM_PROMPT
+    assert "禁止用纯文本假装预览" in SYSTEM_PROMPT

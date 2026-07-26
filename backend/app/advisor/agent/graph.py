@@ -55,7 +55,12 @@ SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）�
 10. 策略修改：propose 后展示 patch，用户确认再 apply_strategy_patch(confirm=true)。
 11. 若无今日归档，引导去基础面板「今日关注」刷新候选池。
 12. 用户知识：消息上下文中可能含「用户必选知识」，须遵守；若系统提示含「用户可选知识目录」，需要细则时调用 load_knowledge(id)；勿编造目录外内容。
-13. 知识库写入/更新/删除：先整理内容或用 list_knowledge 定位 → 调用 save_knowledge / delete_knowledge 且 confirm=false 展示预览 → 用户明确同意后再 confirm=true。未指定可选/必选时先询问。匹配多条时列出候选，勿猜测。未确认不得声称已保存。
+13. 知识库写入/更新/删除：
+   - 先整理内容或用 list_knowledge 定位 → 预览必须调用 save_knowledge / delete_knowledge 且 confirm=false（禁止用纯文本假装预览或口头说「已写入」）。
+   - 用户明确同意后，同一回合必须再调用 confirm=true；仅当本轮工具返回含 "ok": true 的结果时，才可声称已写入/已删除。
+   - 禁止在未调用工具、或仅得到 needs_confirm 预览时声称「已写入成功 / 入库成功 / 全部章节已写入」。
+   - 批量多条：每一条都要有对应的 confirm=true 成功结果；不得用一条成功推断其余已落库。
+   - 未指定可选/必选时先询问；匹配多条时列出候选，勿猜测。
 14. 回复末尾加一句免责声明。
 15. 涉及通用行情、财务、宏观、资讯等 Provider 外部数据，或跨表/跨源计算时，自动调用 delegate_data_task；
    持仓、模拟盘、策略和推荐归档仍使用现有专用工具，规则 4-12 中明确指定的专用工具仍优先。
@@ -66,7 +71,8 @@ SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）�
    再 compile_knowledge_rules → run_rule_backtest 或 optimize_knowledge_rules →
    必须同时向用户展示样本内与样本外指标；objective=C 且 feasible=false 时说明无可行解，不得写库 →
    写回知识库：默认新建（标题可加「（回测优化）」），正文含自然语言结论 + 样本内外指标 + RuleSpec 附录，
-   经 save_knowledge(confirm=false) 预览，用户确认后再 confirm=true。未确认不得声称已写入。
+   经 save_knowledge(confirm=false) 预览，用户确认后再 confirm=true。
+   未出现本轮 save_knowledge 返回 ok: true 时，不得声称已写入。
    量能/阴阳已支持：vol_ratio（lookback 2..60，默认5；别名 volume_ratio/vol/volume）、is_yin、is_yang；勿用 turn。
    术语映射（必须遵守）：
    - 缩量 = 当日量明显小于近 N 日均量 → vol_ratio < 阈值（常用 1.0，更严 0.8）
@@ -334,9 +340,26 @@ def _iter_agent_chat_events_sync(
                 if isinstance(m, ToolMessage):
                     tool_trace.append(_tool_message_trace(m))
 
-        reply = _finalize_reply(final_text or streamed_buf)
+        from .knowledge_write_guard import (
+            KNOWLEDGE_WRITE_CORRECTION,
+            apply_knowledge_write_guard,
+        )
+
+        raw_reply = final_text or streamed_buf
+        draft = apply_knowledge_write_guard(raw_reply, tool_trace=tool_trace)
+        reply = _finalize_reply(draft)
         if not streamed_any and reply:
             yield {"event": "token", "data": {"delta": reply}}
+        elif (
+            streamed_any
+            and KNOWLEDGE_WRITE_CORRECTION in reply
+            and KNOWLEDGE_WRITE_CORRECTION not in (raw_reply or "")
+        ):
+            # 流式已吐出原回答时，补发校验更正，避免用户只看到幻觉「已写入」
+            yield {
+                "event": "token",
+                "data": {"delta": f"\n\n{KNOWLEDGE_WRITE_CORRECTION}"},
+            }
 
         persisted_trace = [*progress_trace, *tool_trace][-20:]
         done_trace = persisted_trace[-12:]
