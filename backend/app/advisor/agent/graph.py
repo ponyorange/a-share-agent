@@ -88,6 +88,7 @@ SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）�
    A 股结构化新闻/联播/指数点位仍优先专用工具（规则 6–9）。
 21. 回答「现在几点 / 今天几号 / 当前日期」等：以系统提示「当前时间」一节为准（北京时间），
    不要编造，也不必为此调用 Python；需要脚本内取时可 import datetime/time/zoneinfo。
+22. 回答「当前用什么模型」：以系统提示「运行配置」一节的模型名为准；也可调用 get_user_data_overview 核对。
 """
 
 _USER_SYSTEM_PROMPT_HEADER = """## 用户系统提示词
@@ -114,11 +115,32 @@ def _current_time_section(*, now: datetime | None = None) -> str:
     )
 
 
+def _runtime_config_section(user_id: str) -> str:
+    from ..llm_settings import public_llm_settings
+
+    llm = public_llm_settings(user_id)
+    model = str(llm.get("model") or "（未配置）")
+    configured = "已配置" if llm.get("configured") else "未配置"
+    hint = llm.get("key_hint")
+    key_line = f"- API Key：{hint}\n" if hint else ""
+    return (
+        "## 运行配置\n"
+        f"- DeepSeek：{configured}\n"
+        f"- 主对话模型：{model}\n"
+        f"{key_line}"
+        "回答「当前模型」时以本节为准（此即本轮请求实际使用的模型名）。"
+    )
+
+
 def build_system_prompt(user_id: str) -> str:
     from ..agent_config import get_system_prompt
     from ..knowledge import build_knowledge_prompt_section
 
-    parts = [SYSTEM_PROMPT.rstrip(), _current_time_section()]
+    parts = [
+        SYSTEM_PROMPT.rstrip(),
+        _current_time_section(),
+        _runtime_config_section(user_id),
+    ]
     user_prompt = (get_system_prompt(user_id) or "").strip()
     if user_prompt:
         parts.append(_USER_SYSTEM_PROMPT_HEADER.rstrip() + "\n" + user_prompt)

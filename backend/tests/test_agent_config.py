@@ -60,6 +60,25 @@ def test_build_system_prompt_appends_user_and_catalog():
     assert "消息上下文" in agent_graph.SYSTEM_PROMPT
     assert "## 当前时间" in text
     assert "Asia/Shanghai" in text
+    assert "## 运行配置" in text
+    assert "主对话模型" in text
+
+
+def test_runtime_config_section_includes_model():
+    from app.advisor.agent import graph as agent_graph
+
+    with patch(
+        "app.advisor.llm_settings.public_llm_settings",
+        return_value={
+            "configured": True,
+            "model": "deepseek-v4-pro",
+            "key_hint": "sk-a…z9",
+        },
+    ):
+        text = agent_graph._runtime_config_section("u1")
+    assert "deepseek-v4-pro" in text
+    assert "已配置" in text
+    assert "sk-a…z9" in text
 
 
 def test_current_time_section_uses_shanghai():
