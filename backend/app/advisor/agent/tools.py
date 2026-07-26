@@ -39,6 +39,8 @@ from ..user_strategy import (
     strategy_public_view,
     update_user_strategy,
 )
+from ...db import get_db
+from ...mail import send_email
 from . import unstructured as ustr
 from .data_agent.delegate import build_delegate_data_tool
 from .python_runtime import build_agent_python_tools
@@ -106,11 +108,103 @@ def _slim_rec_items(items: list[dict[str, Any]], limit: int = 12) -> list[dict[s
     return out
 
 
+def _verified_email_for_user(user_id: str) -> str | None:
+    from bson import ObjectId
+
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        return None
+    user = get_db().users.find_one({"_id": oid})
+    if not user:
+        return None
+    email = user.get("email")
+    if not isinstance(email, str) or not user.get("email_verified_at"):
+        return None
+    return email.strip().lower()
+
+
 def build_tools(user_id: str) -> list[Any]:
     """Create tools closed over user_id (and re-bind context on each call)."""
 
     def _bind() -> None:
         context.bind_user(user_id)
+
+    @tool
+    def send_chat_summary_email(
+        subject: str,
+        summary_markdown: str,
+        confirm: bool = False,
+    ) -> str:
+        """把当前对话要点摘要发送到用户已验证邮箱。
+        先 confirm=false 预览收件人/主题/摘要；用户明确同意后再 confirm=true。
+        无已验证邮箱时引导用户去个人资料页绑定。"""
+        _bind()
+        to_addr = _verified_email_for_user(user_id)
+        if not to_addr:
+            return json.dumps(
+                {
+                    "applied": False,
+                    "error": {
+                        "code": "email_not_verified",
+                        "message": "用户尚未绑定已验证邮箱，请引导前往个人资料页 /account 绑定后再发送",
+                    },
+                },
+                ensure_ascii=False,
+            )
+        subject_clean = (subject or "").strip()[:200] or "投研助手聊天摘要"
+        body = (summary_markdown or "").strip()
+        if not body:
+            return json.dumps(
+                {
+                    "applied": False,
+                    "error": {
+                        "code": "summary_empty",
+                        "message": "摘要内容为空",
+                    },
+                },
+                ensure_ascii=False,
+            )
+        preview = {
+            "to": to_addr,
+            "subject": subject_clean,
+            "summary_preview": body[:800],
+            "summary_chars": len(body),
+        }
+        if not confirm:
+            return _need_confirm("send_chat_summary_email", preview)
+        try:
+            send_email(to_addr, subject_clean, body)
+        except RuntimeError as exc:
+            code = str(exc)
+            return json.dumps(
+                {
+                    "applied": False,
+                    "error": {
+                        "code": (
+                            code
+                            if code in {"mail_not_configured", "mail_send_failed"}
+                            else "mail_send_failed"
+                        ),
+                        "message": (
+                            "邮件服务未配置"
+                            if code == "mail_not_configured"
+                            else "邮件发送失败"
+                        ),
+                    },
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "applied": True,
+                "action": "send_chat_summary_email",
+                "to": to_addr,
+                "subject": subject_clean,
+                "message": "邮件已发送",
+            },
+            ensure_ascii=False,
+        )
 
     @tool
     def get_today_recommendations(board: str = "all") -> str:
@@ -1385,6 +1479,7 @@ def build_tools(user_id: str) -> list[Any]:
         list_knowledge,
         save_knowledge,
         delete_knowledge,
+        send_chat_summary_email,
         *build_agent_python_tools(user_id),
         build_delegate_data_tool(user_id),
     ]
