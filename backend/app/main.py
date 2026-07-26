@@ -199,6 +199,52 @@ def market(source: str) -> dict[str, Any]:
         ) from exc
 
 
+@app.get("/api/{source}/fund/search")
+def fund_search(
+    source: str,
+    q: str = Query(default="", description="代码/简称/拼音"),
+    limit: int = Query(default=20, ge=1, le=50),
+) -> dict[str, Any]:
+    provider = _provider_or_404(source)
+    if "fund" not in provider.features:
+        raise HTTPException(
+            status_code=404,
+            detail=f"数据源 {source} 暂不支持基金详情（features={list(provider.features)}）",
+        )
+    get_search = getattr(provider, "get_fund_search", None)
+    if get_search is None:
+        raise HTTPException(status_code=404, detail="基金搜索未实现")
+    try:
+        return get_search(q=q, limit=limit)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"基金搜索失败: {type(exc).__name__}"
+        ) from exc
+
+
+@app.get("/api/{source}/fund/{symbol}")
+def fund_detail(source: str, symbol: str) -> dict[str, Any]:
+    provider = _provider_or_404(source)
+    if "fund" not in provider.features:
+        raise HTTPException(
+            status_code=404,
+            detail=f"数据源 {source} 暂不支持基金详情（features={list(provider.features)}）",
+        )
+    get_detail = getattr(provider, "get_fund_detail", None)
+    if get_detail is None:
+        raise HTTPException(status_code=404, detail="基金详情未实现")
+    try:
+        return get_detail(symbol=symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"基金详情获取失败: {type(exc).__name__}"
+        ) from exc
+
+
 @app.get("/api/{source}/quote")
 def quote(
     source: str,

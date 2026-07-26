@@ -1,4 +1,4 @@
-export type SourceFeature = 'explorer' | 'market' | 'kline' | 'quote'
+export type SourceFeature = 'explorer' | 'market' | 'kline' | 'quote' | 'fund'
 
 export type DataSourceInfo = {
   id: string
@@ -14,7 +14,7 @@ export const FALLBACK_SOURCES: DataSourceInfo[] = [
   {
     id: 'akshare',
     label: 'AKShare',
-    features: ['explorer', 'market', 'kline', 'quote'],
+    features: ['explorer', 'market', 'kline', 'quote', 'fund'],
     docs_url: 'https://akshare.akfamily.xyz/',
     ready: true,
   },
@@ -46,5 +46,8 @@ export function hasFeature(
 
 export function sourcePath(sourceId: string, feature: SourceFeature = 'explorer'): string {
   if (feature === 'explorer') return `/${sourceId}`
-  return `/${sourceId}/${feature === 'market' ? 'market' : 'kline'}`
+  if (feature === 'market') return `/${sourceId}/market`
+  if (feature === 'kline') return `/${sourceId}/kline`
+  if (feature === 'fund') return `/${sourceId}/fund`
+  return `/${sourceId}`
 }

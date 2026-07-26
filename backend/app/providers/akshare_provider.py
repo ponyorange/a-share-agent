@@ -1,4 +1,4 @@
-"""AKShare data source: explorer + market + kline."""
+"""AKShare data source: explorer + market + kline + quote + fund."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Any
 import akshare as ak
 
 from .. import catalog
+from .. import fund as fund_service
 from .. import kline as kline_service
 from .. import market as market_service
 from .. import quote as quote_service
@@ -16,9 +17,8 @@ from ..serialize import normalize_result
 class AkshareProvider:
     id = "akshare"
     label = "AKShare"
-    features = ("explorer", "market", "kline", "quote")
+    features = ("explorer", "market", "kline", "quote", "fund")
     docs_url = "https://akshare.akfamily.xyz/"
-
     def describe(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -97,3 +97,11 @@ class AkshareProvider:
 
     def get_quote(self, symbol: str, tick_limit: int = 40) -> dict[str, Any]:
         return quote_service.get_quote(symbol=symbol, tick_limit=tick_limit)
+
+    def get_fund_search(self, q: str, limit: int = 20) -> dict[str, Any]:
+        items = fund_service.search_funds(q, limit=limit)
+        return {"source": self.id, "q": (q or "").strip(), "items": items}
+
+    def get_fund_detail(self, symbol: str) -> dict[str, Any]:
+        detail = fund_service.get_fund_detail(symbol)
+        return {"source": self.id, **detail}

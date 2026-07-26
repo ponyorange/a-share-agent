@@ -137,8 +137,9 @@ npm run dev
 - BaoStock 接口浏览器：<http://127.0.0.1:5173/baostock>
 - 大盘：<http://127.0.0.1:5173/akshare/market>
 - K 线：<http://127.0.0.1:5173/akshare/kline?symbol=000001&range=daily>
+- 基金详情：<http://127.0.0.1:5173/akshare/fund?symbol=025857>
 
-旧路径 `/`、`/market`、`/kline` 会重定向到 AKShare。
+旧路径 `/`、`/market`、`/kline`、`/fund` 会重定向到 AKShare。
 
 ## 启动短期交易顾问
 
@@ -174,6 +175,8 @@ POST /api/{source}/fetch
 GET  /api/{source}/market          # 若 source 支持
 GET  /api/{source}/kline           # 若 source 支持
 GET  /api/{source}/quote           # 盘口：五档 + 分时成交（akshare）
+GET  /api/{source}/fund/search     # 场外基金搜索（akshare）
+GET  /api/{source}/fund/{symbol}   # 场外基金档案 + 净值（akshare）
 
 GET  /api/advisor/recommendations?top=15&board=all   # board=etf|hs|star|all
 GET  /api/advisor/advice?symbol=510300
