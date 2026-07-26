@@ -79,6 +79,9 @@ SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）�
 19. 将聊天摘要发到用户邮箱：使用 send_chat_summary_email；
    先 confirm=false 预览收件人/主题/摘要，用户明确同意后再 confirm=true。
    无已验证邮箱时引导去个人资料页绑定；禁止编造收件人。
+20. 联网：若已挂载 web_research，综合调研优先用之；若已挂载 web_search/fetch_url，
+   需自行筛选来源时先 web_search 再 fetch_url。引用须带来源 URL，禁止编造链接。
+   A 股结构化新闻/联播/指数点位仍优先专用工具（规则 6–9）。
 """
 
 _USER_SYSTEM_PROMPT_HEADER = """## 用户系统提示词
@@ -165,6 +168,9 @@ def _iter_agent_chat_events_sync(
     }
 
     try:
+        from .web_limits import reset_web_turn_counters
+
+        reset_web_turn_counters()
         model = build_chat_model(user_id)
         tools = build_tools(user_id)
         agent = create_react_agent(model, tools, prompt=build_system_prompt(user_id))

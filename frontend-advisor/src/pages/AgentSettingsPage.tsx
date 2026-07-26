@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   clearLlmSettings,
+  clearTavilySettings,
   fetchLlmSettings,
   saveLlmSettings,
   type LlmSettings,
@@ -12,6 +13,9 @@ export default function AgentSettingsPage() {
   const [settings, setSettings] = useState<LlmSettings | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('deepseek-v4-flash')
+  const [webResearchEnabled, setWebResearchEnabled] = useState(true)
+  const [tavilyEnabled, setTavilyEnabled] = useState(false)
+  const [tavilyKey, setTavilyKey] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -22,6 +26,8 @@ export default function AgentSettingsPage() {
       .then((s) => {
         setSettings(s)
         if (s.model) setModel(s.model)
+        setWebResearchEnabled(s.web_research_enabled !== false)
+        setTavilyEnabled(Boolean(s.tavily_enabled))
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false))
@@ -31,12 +37,38 @@ export default function AgentSettingsPage() {
     setSaving(true)
     setError(null)
     setMsg(null)
+    if (
+      tavilyEnabled &&
+      !settings?.tavily_configured &&
+      !tavilyKey.trim()
+    ) {
+      setError('开启 Tavily 前请先填写有效的 API Key')
+      setSaving(false)
+      return
+    }
+    if (!settings?.configured && !apiKey.trim()) {
+      setError('请先填写 DeepSeek API Key')
+      setSaving(false)
+      return
+    }
     try {
-      const s = await saveLlmSettings({ api_key: apiKey, model })
+      const body: Parameters<typeof saveLlmSettings>[0] = {
+        model,
+        web_research_enabled: webResearchEnabled,
+        tavily_enabled: tavilyEnabled,
+      }
+      if (apiKey.trim()) body.api_key = apiKey.trim()
+      if (tavilyKey.trim()) body.tavily_api_key = tavilyKey.trim()
+      const s = await saveLlmSettings(body)
       setSettings(s)
       setApiKey('')
-      setMsg('已保存并通过 DeepSeek 校验，可以开始使用 Agent。')
-      setTimeout(() => navigate('/agent'), 600)
+      setTavilyKey('')
+      setWebResearchEnabled(s.web_research_enabled !== false)
+      setTavilyEnabled(Boolean(s.tavily_enabled))
+      setMsg('已保存。')
+      if (s.configured) {
+        setTimeout(() => navigate('/agent'), 600)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -51,13 +83,35 @@ export default function AgentSettingsPage() {
     try {
       const s = await clearLlmSettings()
       setSettings(s)
-      setMsg('已清除。')
+      setMsg('已清除 DeepSeek Key。')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
     }
   }
+
+  async function handleClearTavily() {
+    if (!window.confirm('清除 Tavily API Key，并关闭 Tavily 搜索？')) return
+    setSaving(true)
+    setError(null)
+    try {
+      const s = await clearTavilySettings()
+      setSettings(s)
+      setTavilyEnabled(false)
+      setTavilyKey('')
+      setMsg('已清除 Tavily Key。')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const canSave =
+    Boolean(apiKey.trim()) ||
+    Boolean(settings?.configured) ||
+    Boolean(tavilyKey.trim())
 
   return (
     <section className="page">
@@ -115,18 +169,85 @@ export default function AgentSettingsPage() {
         </label>
       </div>
 
+      <h2 className="section-title">联网搜索</h2>
+      <p className="meta-line">
+        可同时开启或同时关闭。DeepSeek 联网综述复用上方 Key；Tavily 需自备 API Key。
+      </p>
+      <div className="strategy-grid" style={{ maxWidth: '28rem' }}>
+        <label className="strategy-field">
+          <span>
+            <input
+              type="checkbox"
+              checked={webResearchEnabled}
+              onChange={(e) => setWebResearchEnabled(e.target.checked)}
+            />{' '}
+            DeepSeek 联网综述（web_research）
+          </span>
+          <span className="meta-line">默认开启；使用固定轻量模型做服务端搜索。</span>
+        </label>
+        <label className="strategy-field">
+          <span>
+            <input
+              type="checkbox"
+              checked={tavilyEnabled}
+              onChange={(e) => setTavilyEnabled(e.target.checked)}
+            />{' '}
+            Tavily 搜索 + 网页抓取
+          </span>
+          <span className="meta-line">
+            文档见{' '}
+            <a
+              className="text-link"
+              href="https://docs.tavily.com/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Tavily
+            </a>
+            。
+          </span>
+        </label>
+        {tavilyEnabled ? (
+          <label className="strategy-field">
+            <span>Tavily API Key</span>
+            <input
+              className="input mono"
+              type="password"
+              autoComplete="off"
+              placeholder={
+                settings?.tavily_configured
+                  ? `已配置（${settings.tavily_key_hint}），输入新 Key 以覆盖`
+                  : 'tvly-…'
+              }
+              value={tavilyKey}
+              onChange={(e) => setTavilyKey(e.target.value)}
+            />
+          </label>
+        ) : null}
+      </div>
+
       <div className="form-actions">
         <button
           type="button"
           className="btn"
-          disabled={saving || !apiKey.trim()}
+          disabled={saving || !canSave}
           onClick={handleSave}
         >
-          {saving ? '校验中…' : '保存并校验'}
+          {saving ? '保存中…' : '保存'}
         </button>
         {settings?.configured ? (
           <button type="button" className="btn ghost" disabled={saving} onClick={handleClear}>
-            清除 Key
+            清除 DeepSeek Key
+          </button>
+        ) : null}
+        {settings?.tavily_configured ? (
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={saving}
+            onClick={handleClearTavily}
+          >
+            清除 Tavily Key
           </button>
         ) : null}
         <Link className="text-link" to="/agent">

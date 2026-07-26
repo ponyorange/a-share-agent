@@ -53,11 +53,19 @@ const STEP_LABELS: Record<SubagentProgress['step'], string> = {
   sandbox: '清洗数据',
   submit: '提交结果',
   run_python: '执行脚本',
+  web_research: '联网调研',
+  web_search: '网页搜索',
+  fetch_url: '网页抓取',
 }
+
+const WEB_STEPS = new Set(['web_research', 'web_search', 'fetch_url'])
 
 function progressPanelTitle(items: SubagentProgress[]): string {
   if (items.length > 0 && items.every((item) => item.phase === 'main_agent')) {
-    return 'Python 执行'
+    const steps = items.map((item) => item.step)
+    if (steps.every((step) => WEB_STEPS.has(step))) return '联网搜索'
+    if (steps.every((step) => step === 'run_python')) return 'Python 执行'
+    return '执行进度'
   }
   if (items.length > 0 && items.every((item) => item.phase === 'data_agent')) {
     return '数据子 Agent'

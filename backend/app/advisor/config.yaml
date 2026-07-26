@@ -187,3 +187,26 @@ agent_python:
   sandbox_timeout_seconds: 30
   sandbox_memory_mb: 512
   max_output_bytes: 1048576
+
+# 主 Agent 联网：web_research / web_search / fetch_url（用户开关在 llm settings）
+agent_web:
+  web_research:
+    model: deepseek-v4-flash
+    anthropic_base_url: https://api.deepseek.com/anthropic
+    server_tool_type: web_search_20250305
+    max_tokens: 8192
+    timeout_seconds: 120
+    max_query_chars: 500
+    max_calls_per_turn: 3
+  web_search:
+    max_results_default: 5
+    max_results_cap: 10
+    max_calls_per_turn: 5
+    validate_query: ping
+  fetch_url:
+    timeout_seconds: 20
+    max_bytes: 524288
+    max_text_chars: 80000
+    max_redirects: 3
+    allowed_ports: [80, 443]
+    max_calls_per_turn: 8

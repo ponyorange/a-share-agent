@@ -55,8 +55,9 @@ from .user_strategy import (
 )
 from .llm_settings import (
     clear_llm_settings,
+    clear_tavily_settings,
     public_llm_settings,
-    save_llm_settings,
+    update_llm_settings,
 )
 from .ui_settings import get_ui_settings, save_ui_settings
 from .agent.graph import iter_agent_chat_events, run_agent_chat
@@ -139,9 +140,12 @@ def strategy_reset(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
 
 
 class LlmSettingsBody(BaseModel):
-    api_key: str = Field(..., min_length=8)
+    api_key: str | None = Field(default=None)
     model: str | None = Field(default=None)
     base_url: str | None = Field(default=None)
+    web_research_enabled: bool | None = Field(default=None)
+    tavily_enabled: bool | None = Field(default=None)
+    tavily_api_key: str | None = Field(default=None)
 
 
 class UiColorsBody(BaseModel):
@@ -198,12 +202,15 @@ def llm_settings_put(
 ) -> dict[str, Any]:
     uid = _bind(user)
     try:
-        return save_llm_settings(
+        return update_llm_settings(
             uid,
             api_key=body.api_key,
             model=body.model,
             base_url=body.base_url,
-            validate=True,
+            web_research_enabled=body.web_research_enabled,
+            tavily_enabled=body.tavily_enabled,
+            tavily_api_key=body.tavily_api_key,
+            validate_deepseek=True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -218,6 +225,14 @@ def llm_settings_put(
 def llm_settings_delete(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
     uid = _bind(user)
     return clear_llm_settings(uid)
+
+
+@router.delete("/llm/settings/tavily")
+def llm_settings_tavily_delete(
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    uid = _bind(user)
+    return clear_tavily_settings(uid)
 
 
 class KnowledgeBody(BaseModel):

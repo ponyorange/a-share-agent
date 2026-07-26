@@ -44,6 +44,7 @@ from ...mail import send_email
 from . import unstructured as ustr
 from .data_agent.delegate import build_delegate_data_tool
 from .python_runtime import build_agent_python_tools
+from .web_tools import build_web_tools
 
 
 def _need_confirm(action: str, preview: dict[str, Any]) -> str:
@@ -1480,6 +1481,7 @@ def build_tools(user_id: str) -> list[Any]:
         save_knowledge,
         delete_knowledge,
         send_chat_summary_email,
+        *build_web_tools(user_id),
         *build_agent_python_tools(user_id),
         build_delegate_data_tool(user_id),
     ]

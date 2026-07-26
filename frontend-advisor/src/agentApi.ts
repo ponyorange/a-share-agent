@@ -7,6 +7,11 @@ export type LlmSettings = {
   base_url?: string
   key_hint?: string | null
   last_validated_at?: string | null
+  web_research_enabled?: boolean
+  tavily_enabled?: boolean
+  tavily_configured?: boolean
+  tavily_key_hint?: string | null
+  tavily_validated_at?: string | null
 }
 
 export function fetchLlmSettings(): Promise<LlmSettings> {
@@ -14,9 +19,12 @@ export function fetchLlmSettings(): Promise<LlmSettings> {
 }
 
 export function saveLlmSettings(body: {
-  api_key: string
+  api_key?: string
   model?: string
   base_url?: string
+  web_research_enabled?: boolean
+  tavily_enabled?: boolean
+  tavily_api_key?: string
 }): Promise<LlmSettings> {
   return authFetch('/api/advisor/llm/settings', {
     method: 'PUT',
@@ -26,6 +34,10 @@ export function saveLlmSettings(body: {
 
 export function clearLlmSettings(): Promise<LlmSettings> {
   return authFetch('/api/advisor/llm/settings', { method: 'DELETE' })
+}
+
+export function clearTavilySettings(): Promise<LlmSettings> {
+  return authFetch('/api/advisor/llm/settings/tavily', { method: 'DELETE' })
 }
 
 export type AgentChatResult = {
@@ -46,6 +58,9 @@ export type SubagentProgress = {
     | 'sandbox'
     | 'submit'
     | 'run_python'
+    | 'web_research'
+    | 'web_search'
+    | 'fetch_url'
   status: 'started' | 'completed' | 'failed'
   message: string
   source?: string
