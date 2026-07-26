@@ -29,6 +29,12 @@ def test_execute_task_exposes_dataframes_and_requires_result():
         ("import statistics\nresult = statistics.mean([2, 4])", 3),
         ("import datetime\nresult = datetime.date(2026, 7, 24)", "2026-07-24"),
         ("from math import sqrt\nresult = sqrt(16)", 4.0),
+        ("import time\nresult = time.time() > 0", True),
+        (
+            "from zoneinfo import ZoneInfo\n"
+            "result = str(ZoneInfo('Asia/Shanghai'))",
+            "Asia/Shanghai",
+        ),
     ],
 )
 def test_execute_task_allows_every_declared_import(statement: str, expected):

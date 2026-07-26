@@ -27,7 +27,15 @@ DATASETS_DIR = Path("/input/datasets")
 OUTPUT_DIR = Path("/output")
 DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
 
-ALLOWED_IMPORT_ROOTS = {"pandas", "numpy", "math", "statistics", "datetime"}
+ALLOWED_IMPORT_ROOTS = {
+    "pandas",
+    "numpy",
+    "math",
+    "statistics",
+    "datetime",
+    "time",
+    "zoneinfo",
+}
 VALIDATION_ERROR_CODES = {
     "import_not_allowed",
     "invalid_output_limit",

@@ -5,7 +5,9 @@ from __future__ import annotations
 import contextvars
 import queue
 import threading
+from datetime import datetime
 from typing import Any, Iterator
+from zoneinfo import ZoneInfo
 
 from langchain_core.messages import (
     AIMessage,
@@ -75,7 +77,8 @@ SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）�
 18. 小计算、试跑、对本轮小结果二次加工：使用 run_python_script；
    需要喂入本轮工具 JSON 时先 register_tool_dataset。
    Provider 外部数据/跨源/大表仍用 delegate_data_task（规则 15）。
-   沙箱已预置 pd/np（可直接用或 import pandas/numpy）；仅允许 pandas/numpy/math/statistics/datetime。
+   沙箱已预置 pd/np（可直接用或 import pandas/numpy）；
+   仅允许 pandas/numpy/math/statistics/datetime/time/zoneinfo。
    解读优先 result，其次 stdout/stderr；禁止编造未工具返回的数据进沙箱。
 19. 将聊天摘要发到用户邮箱：使用 send_chat_summary_email；
    先 confirm=false 预览收件人/主题/摘要，用户明确同意后再 confirm=true。
@@ -83,18 +86,39 @@ SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）�
 20. 联网：若已挂载 web_research，综合调研优先用之；若已挂载 web_search/fetch_url，
    需自行筛选来源时先 web_search 再 fetch_url。引用须带来源 URL，禁止编造链接。
    A 股结构化新闻/联播/指数点位仍优先专用工具（规则 6–9）。
+21. 回答「现在几点 / 今天几号 / 当前日期」等：以系统提示「当前时间」一节为准（北京时间），
+   不要编造，也不必为此调用 Python；需要脚本内取时可 import datetime/time/zoneinfo。
 """
 
 _USER_SYSTEM_PROMPT_HEADER = """## 用户系统提示词
 （优先级高于上文默认自称/语气；工具调用、确认流程与免责声明等产品规则仍须遵守。）
 """
 
+_AGENT_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _current_time_section(*, now: datetime | None = None) -> str:
+    current = now or datetime.now(_AGENT_TZ)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=_AGENT_TZ)
+    else:
+        current = current.astimezone(_AGENT_TZ)
+    stamped = current.strftime("%Y-%m-%d %H:%M:%S")
+    weekday = "一二三四五六日"[current.weekday()]
+    return (
+        "## 当前时间\n"
+        f"- 时区：Asia/Shanghai（北京时间）\n"
+        f"- 现在：{stamped}（星期{weekday}）\n"
+        f"- ISO：{current.isoformat()}\n"
+        "回答当前时刻/日期时以本节为准。"
+    )
+
 
 def build_system_prompt(user_id: str) -> str:
     from ..agent_config import get_system_prompt
     from ..knowledge import build_knowledge_prompt_section
 
-    parts = [SYSTEM_PROMPT.rstrip()]
+    parts = [SYSTEM_PROMPT.rstrip(), _current_time_section()]
     user_prompt = (get_system_prompt(user_id) or "").strip()
     if user_prompt:
         parts.append(_USER_SYSTEM_PROMPT_HEADER.rstrip() + "\n" + user_prompt)

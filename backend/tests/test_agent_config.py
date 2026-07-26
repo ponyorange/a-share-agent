@@ -58,3 +58,18 @@ def test_build_system_prompt_appends_user_and_catalog():
     assert "用户可选知识目录" in text
     assert "必选知识已在系统提示中" not in agent_graph.SYSTEM_PROMPT
     assert "消息上下文" in agent_graph.SYSTEM_PROMPT
+    assert "## 当前时间" in text
+    assert "Asia/Shanghai" in text
+
+
+def test_current_time_section_uses_shanghai():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.advisor.agent import graph as agent_graph
+
+    fixed = datetime(2026, 7, 26, 14, 30, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    text = agent_graph._current_time_section(now=fixed)
+    assert "2026-07-26 14:30:00" in text
+    assert "星期日" in text
+    assert "Asia/Shanghai" in text
