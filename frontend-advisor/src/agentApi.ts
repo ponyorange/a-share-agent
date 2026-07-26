@@ -36,8 +36,16 @@ export type AgentChatResult = {
 }
 
 export type SubagentProgress = {
-  phase: 'data_agent'
-  step: 'delegate' | 'list_sources' | 'search' | 'describe' | 'fetch' | 'sandbox' | 'submit'
+  phase: 'data_agent' | 'main_agent'
+  step:
+    | 'delegate'
+    | 'list_sources'
+    | 'search'
+    | 'describe'
+    | 'fetch'
+    | 'sandbox'
+    | 'submit'
+    | 'run_python'
   status: 'started' | 'completed' | 'failed'
   message: string
   source?: string

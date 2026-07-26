@@ -113,6 +113,8 @@ class SandboxClient:
         code: str,
         datasets: dict[str, list[dict[str, Any]]],
         limits: DataAgentLimits,
+        *,
+        require_result: bool = True,
     ) -> Any:
         body = {
             "code": code,
@@ -120,6 +122,7 @@ class SandboxClient:
             "timeout_seconds": limits.sandbox_timeout_seconds,
             "memory_mb": limits.sandbox_memory_mb,
             "max_output_bytes": limits.max_output_bytes,
+            "require_result": require_result,
         }
         try:
             response = self._client.post(
@@ -158,9 +161,18 @@ class SandboxClient:
             raise RuntimeError(f"sandbox_rejected:{code}") from None
 
         result = payload.get("result")
-        _validate_value(result)
         self.last_metrics = _safe_metrics(payload.get("metrics"))
-        return result
+        if require_result:
+            _validate_value(result)
+            return result
+
+        stdout = payload.get("stdout") or ""
+        stderr = payload.get("stderr") or ""
+        if not isinstance(stdout, str) or not isinstance(stderr, str):
+            raise RuntimeError("sandbox_invalid_output") from None
+        if result is not None:
+            _validate_value(result)
+        return {"result": result, "stdout": stdout, "stderr": stderr}
 
 
 def _parse_dataset_ids(dataset_ids_json: str) -> list[str]:
@@ -210,6 +222,24 @@ def build_python_tool(workspace: DatasetWorkspace, client: SandboxClient) -> Bas
         try:
             dataset_ids = _parse_dataset_ids(dataset_ids_json)
             datasets = workspace.export(dataset_ids)
+        except ValueError:
+            workspace.abort_python_analysis()
+            emit_progress(
+                step="sandbox",
+                status="failed",
+                error_code="invalid_dataset_ids",
+            )
+            return _tool_error("invalid_dataset_ids")
+        except KeyError:
+            workspace.abort_python_analysis()
+            emit_progress(
+                step="sandbox",
+                status="failed",
+                error_code="dataset_not_in_request",
+            )
+            return _tool_error("dataset_not_in_request")
+
+        try:
             result = client.execute(code, datasets, workspace.limits)
             try:
                 evidence = workspace.record_sandbox_result(result)
@@ -230,20 +260,6 @@ def build_python_tool(workspace: DatasetWorkspace, client: SandboxClient) -> Bas
                 ensure_ascii=False,
                 allow_nan=False,
             )
-        except ValueError:
-            emit_progress(
-                step="sandbox",
-                status="failed",
-                error_code="invalid_dataset_ids",
-            )
-            return _tool_error("invalid_dataset_ids")
-        except KeyError:
-            emit_progress(
-                step="sandbox",
-                status="failed",
-                error_code="dataset_not_in_request",
-            )
-            return _tool_error("dataset_not_in_request")
         except RuntimeError as exc:
             error_code = _map_runtime_error_code(exc)
             emit_progress(

@@ -31,7 +31,7 @@ def test_data_agent_limits_match_approved_defaults():
         {"sandbox_timeout_seconds": 31},
         {"sandbox_memory_mb": 513},
         {"max_output_bytes": 1024 * 1024 + 1},
-        {"max_python_retries": 3},
+        {"max_python_retries": 6},
     ],
     ids=[
         "max_rows_per_fetch",

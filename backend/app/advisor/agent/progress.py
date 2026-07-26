@@ -8,18 +8,20 @@ from typing import Callable, Iterator, Literal
 
 ProgressStep = Literal[
     "delegate", "list_sources", "search", "describe",
-    "fetch", "sandbox", "submit",
+    "fetch", "sandbox", "submit", "run_python",
 ]
+ProgressPhase = Literal["data_agent", "main_agent"]
 ProgressStatus = Literal["started", "completed", "failed"]
 ProgressSink = Callable[[dict[str, object]], None]
 
 PROGRESS_STEPS: frozenset[str] = frozenset({
     "delegate", "list_sources", "search", "describe",
-    "fetch", "sandbox", "submit",
+    "fetch", "sandbox", "submit", "run_python",
 })
+PROGRESS_PHASES: frozenset[str] = frozenset({"data_agent", "main_agent"})
 PROGRESS_STATUSES: frozenset[str] = frozenset({"started", "completed", "failed"})
 _ALLOWED_EMIT_KEYS: frozenset[str] = frozenset({
-    "step", "status", "source", "interface", "rows", "truncated", "error_code",
+    "step", "status", "phase", "source", "interface", "rows", "truncated", "error_code",
 })
 _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
@@ -51,6 +53,12 @@ def _validate_status(status: object) -> ProgressStatus:
     if not isinstance(status, str) or status not in PROGRESS_STATUSES:
         raise ProgressValidationError(f"invalid progress status: {status!r}")
     return status  # type: ignore[return-value]
+
+
+def _validate_phase(phase: object) -> ProgressPhase:
+    if not isinstance(phase, str) or phase not in PROGRESS_PHASES:
+        raise ProgressValidationError(f"invalid progress phase: {phase!r}")
+    return phase  # type: ignore[return-value]
 
 
 def _validate_error_code(error_code: object) -> str:
@@ -127,6 +135,13 @@ def _stage_message(
             return "计算完成"
         return "数据计算失败"
 
+    if step == "run_python":
+        if status == "started":
+            return "正在执行 Python 脚本"
+        if status == "completed":
+            return "Python 脚本执行完成"
+        return "Python 脚本执行失败"
+
     if step == "submit":
         if status == "started":
             return "正在校验来源与结果"
@@ -146,11 +161,12 @@ class ProgressEvent:
     rows: int | None = None
     truncated: bool | None = None
     error_code: str | None = None
-    phase: Literal["data_agent"] = "data_agent"
+    phase: ProgressPhase = "data_agent"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "step", _validate_step(self.step))
         object.__setattr__(self, "status", _validate_status(self.status))
+        object.__setattr__(self, "phase", _validate_phase(self.phase))
         if self.source is not None:
             object.__setattr__(
                 self,
@@ -207,6 +223,7 @@ def emit_progress(**kwargs: object) -> None:
         rows=kwargs.get("rows"),  # type: ignore[arg-type]
         truncated=kwargs.get("truncated"),  # type: ignore[arg-type]
         error_code=kwargs.get("error_code"),  # type: ignore[arg-type]
+        phase=kwargs.get("phase", "data_agent"),  # type: ignore[arg-type]
     )
     sink = _SINK.get()
     if sink is None:
@@ -250,4 +267,6 @@ def progress_to_tool_trace(event: dict[str, object]) -> dict[str, str]:
         detail += f"，错误码 {_validate_error_code(error_code)}"
 
     content = f"{prefix}：{detail}" if prefix else detail
-    return {"tool": f"data_agent.{step}", "content": content[:800]}
+    phase_value = event.get("phase", "data_agent")
+    phase = _validate_phase(phase_value) if phase_value is not None else "data_agent"
+    return {"tool": f"{phase}.{step}", "content": content[:800]}

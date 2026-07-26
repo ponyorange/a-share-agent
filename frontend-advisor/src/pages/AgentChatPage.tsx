@@ -52,6 +52,17 @@ const STEP_LABELS: Record<SubagentProgress['step'], string> = {
   fetch: '获取数据',
   sandbox: '清洗数据',
   submit: '提交结果',
+  run_python: '执行脚本',
+}
+
+function progressPanelTitle(items: SubagentProgress[]): string {
+  if (items.length > 0 && items.every((item) => item.phase === 'main_agent')) {
+    return 'Python 执行'
+  }
+  if (items.length > 0 && items.every((item) => item.phase === 'data_agent')) {
+    return '数据子 Agent'
+  }
+  return '执行进度'
 }
 
 const STATUS_LABELS: Record<SubagentProgress['status'], string> = {
@@ -95,7 +106,7 @@ export function SubagentProgressPanel({
     <section className="subagent-progress" aria-label="子 Agent 实时进度">
       <div className="subagent-progress-header">
         <div>
-          <span className="subagent-progress-title">数据子 Agent</span>
+          <span className="subagent-progress-title">{progressPanelTitle(items)}</span>
           <span className="subagent-progress-summary">
             {runningCount > 0 ? `${runningCount} 项运行中` : `${items.length} 项进度`}
           </span>

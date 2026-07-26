@@ -146,14 +146,24 @@ class DatasetWorkspace:
     def has_sandbox_result(self) -> bool:
         return bool(self._sandbox_results)
 
+    @property
+    def max_python_attempts(self) -> int:
+        """首次尝试 + 修正重试；与设计「最多重试 N 次」对齐。"""
+        return self.limits.max_python_retries + 1
+
     def begin_python_analysis(self) -> bool:
-        if self._python_analysis_calls >= self.limits.max_python_retries:
+        if self._python_analysis_calls >= self.max_python_attempts:
             return False
         self._python_analysis_calls += 1
         return True
 
+    def abort_python_analysis(self) -> None:
+        """预执行校验失败时归还配额（未真正进入沙箱）。"""
+        if self._python_analysis_calls > 0:
+            self._python_analysis_calls -= 1
+
     def record_sandbox_result(self, result: JsonValue) -> SandboxResultEvidence:
-        if len(self._sandbox_results) >= self.limits.max_python_retries:
+        if len(self._sandbox_results) >= self.max_python_attempts:
             raise ValueError("sandbox_result_limit_exceeded")
         normalized, canonical = _canonical_json(result)
         if len(canonical) > self.limits.max_output_bytes:

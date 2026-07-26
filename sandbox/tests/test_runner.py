@@ -93,6 +93,35 @@ def test_execute_task_requires_result():
         execute_task("value = 1", {}, max_output_bytes=1024)
 
 
+def test_execute_task_stdout_fallback_when_result_optional():
+    payload = execute_task(
+        "print('hello')",
+        {},
+        max_output_bytes=1024,
+        require_result=False,
+    )
+    assert payload["result"] is None
+    assert "hello" in payload["stdout"]
+    assert payload["stderr"] == ""
+
+
+def test_execute_task_still_requires_result_by_default():
+    with pytest.raises(ValueError, match="^result_not_assigned$"):
+        execute_task("print('x')", {}, max_output_bytes=1024)
+
+
+def test_execute_task_optional_result_includes_assigned_result_and_stdout():
+    payload = execute_task(
+        "print('ok'); result = {'n': 1}",
+        {},
+        max_output_bytes=1024,
+        require_result=False,
+    )
+    assert payload["result"] == {"n": 1}
+    assert "ok" in payload["stdout"]
+    assert payload["stderr"] == ""
+
+
 @pytest.mark.parametrize("expression", ["float('nan')", "float('inf')", "-float('inf')"])
 def test_execute_task_rejects_non_finite_numbers(expression: str):
     with pytest.raises(ValueError, match="^result_not_finite$"):

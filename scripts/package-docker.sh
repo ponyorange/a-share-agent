@@ -3,12 +3,12 @@
 #
 # 用法：
 #   ./scripts/package-docker.sh
-#   IMAGE_TAG=1.0.0 ./scripts/package-docker.sh
 #   PLATFORM=linux/arm64 ./scripts/package-docker.sh   # Apple Silicon 本机调试
 #   DOCKER_MIRROR=docker.1ms.run ./scripts/package-docker.sh
 #   ./scripts/package-docker.sh --skip-build   # 仅导出已有镜像与部署文件
 #
 # 默认 PLATFORM=linux/amd64（绿联 NAS / 常见 x86 服务器）。
+# 产物固定为 *-${ARCH}.tar.gz（不带日期）；镜像名以架构后缀结尾，标签默认 latest。
 # 若在 arm64 Mac 上打出 arm 镜像再拿到 Intel NAS，会报：exec format error
 #
 set -euo pipefail
@@ -20,18 +20,19 @@ DOCKERFILE="${DEPLOY}/Dockerfile"
 RUNNER_DOCKERFILE="${ROOT}/sandbox/runner/Dockerfile"
 CONTROLLER_DOCKERFILE="${ROOT}/sandbox/controller/Dockerfile"
 
-IMAGE_NAME="${IMAGE_NAME:-share-data}"
-RUNNER_IMAGE_NAME="${RUNNER_IMAGE_NAME:-share-data-python-sandbox}"
-CONTROLLER_IMAGE_NAME="${CONTROLLER_IMAGE_NAME:-share-data-sandbox-controller}"
-IMAGE_TAG="${IMAGE_TAG:-$(date +%Y%m%d%H%M)}"
+# 绿联 NAS（Intel）等 x86 机器请用 amd64；本机 Apple Silicon 调试可改 arm64
+PLATFORM="${PLATFORM:-linux/amd64}"
+ARCH_NAME="${PLATFORM##*/}"
+IMAGE_NAME="${IMAGE_NAME:-share-data-${ARCH_NAME}}"
+RUNNER_IMAGE_NAME="${RUNNER_IMAGE_NAME:-share-data-python-sandbox-${ARCH_NAME}}"
+CONTROLLER_IMAGE_NAME="${CONTROLLER_IMAGE_NAME:-share-data-sandbox-controller-${ARCH_NAME}}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
 FULL_TAG="${IMAGE_NAME}:${IMAGE_TAG}"
 LATEST_TAG="${IMAGE_NAME}:latest"
 RUNNER_FULL_TAG="${RUNNER_IMAGE_NAME}:${IMAGE_TAG}"
 RUNNER_LATEST_TAG="${RUNNER_IMAGE_NAME}:latest"
 CONTROLLER_FULL_TAG="${CONTROLLER_IMAGE_NAME}:${IMAGE_TAG}"
 CONTROLLER_LATEST_TAG="${CONTROLLER_IMAGE_NAME}:latest"
-# 绿联 NAS（Intel）等 x86 机器请用 amd64；本机 Apple Silicon 调试可改 arm64
-PLATFORM="${PLATFORM:-linux/amd64}"
 
 SKIP_BUILD=0
 for arg in "$@"; do
@@ -69,8 +70,12 @@ fi
 mkdir -p "$DIST"
 # 清理旧的打包产物（保留目录）
 rm -f \
+  "${DIST}/${IMAGE_NAME}.tar.gz" \
   "${DIST}/${IMAGE_NAME}-"*.tar.gz \
+  "${DIST}/share-data-"*.tar.gz \
+  "${DIST}/${RUNNER_IMAGE_NAME}.tar.gz" \
   "${DIST}/${RUNNER_IMAGE_NAME}-"*.tar.gz \
+  "${DIST}/${CONTROLLER_IMAGE_NAME}.tar.gz" \
   "${DIST}/${CONTROLLER_IMAGE_NAME}-"*.tar.gz \
   "${DIST}/docker-compose.yml" \
   "${DIST}/.env.example" \
@@ -187,11 +192,11 @@ else
   echo "==> 跳过构建，使用已有镜像 ${FULL_TAG} / ${CONTROLLER_FULL_TAG} / ${RUNNER_FULL_TAG}"
 fi
 
-TAR_NAME="${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
+TAR_NAME="${IMAGE_NAME}.tar.gz"
 TAR_PATH="${DIST}/${TAR_NAME}"
-RUNNER_TAR_NAME="${RUNNER_IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
+RUNNER_TAR_NAME="${RUNNER_IMAGE_NAME}.tar.gz"
 RUNNER_TAR_PATH="${DIST}/${RUNNER_TAR_NAME}"
-CONTROLLER_TAR_NAME="${CONTROLLER_IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
+CONTROLLER_TAR_NAME="${CONTROLLER_IMAGE_NAME}.tar.gz"
 CONTROLLER_TAR_PATH="${DIST}/${CONTROLLER_TAR_NAME}"
 
 echo "==> 导出镜像 → dist/${TAR_NAME}"

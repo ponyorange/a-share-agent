@@ -41,6 +41,7 @@ from ..user_strategy import (
 )
 from . import unstructured as ustr
 from .data_agent.delegate import build_delegate_data_tool
+from .python_runtime import build_agent_python_tools
 
 
 def _need_confirm(action: str, preview: dict[str, Any]) -> str:
@@ -1384,5 +1385,6 @@ def build_tools(user_id: str) -> list[Any]:
         list_knowledge,
         save_knowledge,
         delete_knowledge,
+        *build_agent_python_tools(user_id),
         build_delegate_data_tool(user_id),
     ]

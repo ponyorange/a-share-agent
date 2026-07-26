@@ -193,6 +193,21 @@ it('进度面板安全展示白名单字段和数据摘要', () => {
   expect(screen.queryByText(/secret/)).not.toBeInTheDocument()
 })
 
+it('主 Agent Python 进度显示为 Python 执行而非数据子 Agent', () => {
+  const pythonProgress: SubagentProgress = {
+    phase: 'main_agent',
+    step: 'run_python',
+    status: 'completed',
+    message: 'Python 脚本执行完成',
+  }
+  render(<SubagentProgressPanel items={[pythonProgress]} collapsed={false} />)
+
+  expect(screen.getByText('Python 执行')).toBeInTheDocument()
+  expect(screen.getByText('执行脚本')).toBeInTheDocument()
+  expect(screen.queryByText('数据子 Agent')).not.toBeInTheDocument()
+  expect(screen.queryByText('清洗数据')).not.toBeInTheDocument()
+})
+
 it('首个回答 token 后折叠进度，用户可展开且新对话会清空', async () => {
   const user = userEvent.setup()
   const stream = deferred<void>()

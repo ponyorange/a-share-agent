@@ -148,9 +148,11 @@ def test_workspace_records_bounded_canonical_sandbox_evidence(tmp_path):
     ) as workspace:
         first = workspace.record_sandbox_result({"z": 1, "a": [2.0]})
         second = workspace.record_sandbox_result({"ok": True})
+        third = workspace.record_sandbox_result({"third": True})
 
         assert first.result == {"a": [2.0], "z": 1}
         assert first.result_id != second.result_id
+        assert third.result == {"third": True}
         assert first.summary == {"type": "object", "bytes": 17}
         assert workspace.matches_sandbox_result({"a": [2.0], "z": 1})
         assert workspace.matches_sandbox_result(
@@ -161,7 +163,7 @@ def test_workspace_records_bounded_canonical_sandbox_evidence(tmp_path):
         )
         assert not workspace.matches_sandbox_result({"z": 999, "a": [2.0]})
         with pytest.raises(ValueError, match="sandbox_result_limit_exceeded"):
-            workspace.record_sandbox_result({"third": True})
+            workspace.record_sandbox_result({"fourth": True})
 
 
 def test_dataset_metadata_bounds_and_sanitizes_untrusted_samples(tmp_path):

@@ -72,6 +72,10 @@ SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）�
    - vol_ratio 定义 = 当日 volume ÷ 前 N 日均 volume（不含当日）；1.0 表示持平均量
    - 缩量阴：is_yin>=1 且 vol_ratio lookback=N op=< value=1.0；放量阳：is_yang>=1 且 vol_ratio > 1.5
    用户说缩量/放量时必须用 vol_ratio 表达，禁止声称不支持或改用绝对 volume/turn。
+18. 小计算、试跑、对本轮小结果二次加工：使用 run_python_script；
+   需要喂入本轮工具 JSON 时先 register_tool_dataset。
+   Provider 外部数据/跨源/大表仍用 delegate_data_task（规则 15）。
+   解读优先 result，其次 stdout/stderr；禁止编造未工具返回的数据进沙箱。
 """
 
 _USER_SYSTEM_PROMPT_HEADER = """## 用户系统提示词

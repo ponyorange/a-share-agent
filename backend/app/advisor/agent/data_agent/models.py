@@ -27,7 +27,8 @@ class DataAgentLimits(BaseModel):
     sandbox_timeout_seconds: int = Field(default=30, ge=1, le=30)
     sandbox_memory_mb: int = Field(default=512, ge=128, le=512)
     max_output_bytes: int = Field(default=1024 * 1024, ge=1024, le=1024 * 1024)
-    max_python_retries: int = Field(default=2, ge=0, le=2)
+    # 语义：首次失败后的「修正重试」次数上限；总调用次数 = max_python_retries + 1
+    max_python_retries: int = Field(default=2, ge=0, le=5)
     max_agent_steps: int = Field(default=60, ge=4, le=80)
 
     @classmethod

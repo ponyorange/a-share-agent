@@ -61,11 +61,14 @@ class ExecuteRequest(BaseModel):
     timeout_seconds: int = Field(gt=0)
     memory_mb: int = Field(gt=0)
     max_output_bytes: int = Field(gt=0)
+    require_result: bool = True
 
 
 class ExecuteResponse(BaseModel):
     ok: bool
     result: Any | None = None
+    stdout: str = ""
+    stderr: str = ""
     error: str | None = None
     metrics: dict[str, int]
 
@@ -308,9 +311,18 @@ class DockerExecutor:
         input_volume = None
         output_volume = None
 
-        def response(ok: bool, *, result: Any = None, error: str | None = None):
+        def response(
+            ok: bool,
+            *,
+            result: Any = None,
+            error: str | None = None,
+            stdout: str = "",
+            stderr: str = "",
+        ):
             payload: dict[str, Any] = {
                 "ok": ok,
+                "stdout": stdout,
+                "stderr": stderr,
                 "metrics": {
                     "elapsed_ms": max(
                         0,
@@ -340,6 +352,7 @@ class DockerExecutor:
                 {
                     "code": request.code,
                     "max_output_bytes": max_output_bytes,
+                    "require_result": request.require_result,
                 },
             )
         )
@@ -366,6 +379,7 @@ class DockerExecutor:
                 user="65532:65532",
                 cap_drop=["ALL"],
                 security_opt=["no-new-privileges:true"],
+                read_only=True,
                 mem_limit=f"{memory_mb}m",
                 nano_cpus=1_000_000_000,
                 pids_limit=32,
@@ -424,12 +438,28 @@ class DockerExecutor:
 
             if int(status.get("StatusCode", 1)) == 0:
                 stream, stat = container.get_archive("/output/result.json")
-                result = _read_json_archive(
+                result_payload = _read_json_archive(
                     stream,
                     expected_name="result.json",
                     archive_size=stat.get("size"),
                 )
-                return response(True, result=result)
+                if not request.require_result and isinstance(result_payload, dict):
+                    stdout = result_payload.get("stdout")
+                    stderr = result_payload.get("stderr")
+                    if (
+                        "result" in result_payload
+                        and isinstance(stdout, str)
+                        and isinstance(stderr, str)
+                        and set(result_payload) <= {"result", "stdout", "stderr"}
+                    ):
+                        return response(
+                            True,
+                            result=result_payload.get("result"),
+                            stdout=stdout,
+                            stderr=stderr,
+                        )
+                    return response(False, error="runner_failed")
+                return response(True, result=result_payload)
 
             stream, stat = container.get_archive("/output/error.json")
             error_payload = _read_json_archive(

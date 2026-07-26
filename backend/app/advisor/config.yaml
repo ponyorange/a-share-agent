@@ -174,5 +174,16 @@ data_agent:
   sandbox_timeout_seconds: 30
   sandbox_memory_mb: 512
   max_output_bytes: 1048576
-  max_python_retries: 2
+  # 首次失败后的修正重试次数；总 run_python_analysis 次数 = 本值 + 1
+  max_python_retries: 4
   max_agent_steps: 60
+
+# 主 Agent 直连 Python 沙箱（小计算 / 本轮小表；大表仍走 data_agent）
+agent_python:
+  max_rows_per_dataset: 200
+  max_bytes_per_dataset: 204800
+  max_registered_datasets: 5
+  max_python_calls: 3
+  sandbox_timeout_seconds: 30
+  sandbox_memory_mb: 512
+  max_output_bytes: 1048576

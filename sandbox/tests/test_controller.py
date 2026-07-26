@@ -17,6 +17,7 @@ REQUEST = {
     "timeout_seconds": 30,
     "memory_mb": 512,
     "max_output_bytes": 1_048_576,
+    "require_result": True,
 }
 
 
@@ -499,8 +500,8 @@ def test_executor_uses_fixed_security_create_kwargs_and_hard_caps():
     assert client.create_kwargs["pids_limit"] == 32
     assert client.create_kwargs["labels"] == {"share-data.sandbox": "ephemeral"}
     assert client.create_kwargs["detach"] is True
+    assert client.create_kwargs["read_only"] is True
     assert "tmpfs" not in client.create_kwargs
-    assert "read_only" not in client.create_kwargs
     mounts = client.create_kwargs["mounts"]
     assert [mount["Target"] for mount in mounts] == ["/input", "/output", "/tmp"]
     assert mounts[0]["Type"] == "volume"
@@ -516,6 +517,7 @@ def test_executor_uses_fixed_security_create_kwargs_and_hard_caps():
     with tarfile.open(fileobj=io.BytesIO(archive_bytes)) as archive:
         task = json.load(archive.extractfile("task.json"))
     assert task["max_output_bytes"] == 1_048_576
+    assert task["require_result"] is True
 
 
 def test_executor_puts_task_and_datasets_in_safe_archive_paths():
@@ -531,6 +533,54 @@ def test_executor_puts_task_and_datasets_in_safe_archive_paths():
     with tarfile.open(fileobj=io.BytesIO(container.put_calls[0][1])) as archive:
         assert archive.getnames() == ["datasets/prices.json", "task.json"]
         assert json.load(archive.extractfile("datasets/prices.json")) == [{"close": 3}]
+        task = json.load(archive.extractfile("task.json"))
+        assert task["require_result"] is True
+
+
+def test_executor_writes_require_result_false_into_task_json():
+    container = FakeContainer(
+        archives={
+            "/output/result.json": _archive(
+                "result.json",
+                {"result": None, "stdout": "hello\n", "stderr": ""},
+            )
+        }
+    )
+    executor, _ = _executor(container)
+    body = {**REQUEST, "require_result": False}
+
+    response = executor.execute(controller.ExecuteRequest(**body))
+
+    with tarfile.open(fileobj=io.BytesIO(container.put_calls[0][1])) as archive:
+        task = json.load(archive.extractfile("task.json"))
+    assert task["require_result"] is False
+    assert response["ok"] is True
+    assert response["result"] is None
+    assert response["stdout"] == "hello\n"
+    assert response["stderr"] == ""
+
+
+def test_execute_endpoint_accepts_stdout_stderr_in_response_model():
+    class StdoutExecutor:
+        def execute(self, request):
+            return {
+                "ok": True,
+                "result": None,
+                "stdout": "hi",
+                "stderr": "",
+                "metrics": {"elapsed_ms": 1},
+            }
+
+    controller.app.dependency_overrides[controller.get_executor] = lambda: StdoutExecutor()
+    client = TestClient(controller.app)
+    response = client.post(
+        "/v1/execute",
+        headers={"X-Sandbox-Token": TOKEN},
+        json={**REQUEST, "require_result": False},
+    )
+    assert response.status_code == 200
+    assert response.json()["stdout"] == "hi"
+    assert response.json()["result"] is None
 
 
 @pytest.mark.parametrize(

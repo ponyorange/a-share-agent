@@ -17,6 +17,7 @@ def test_sandbox_client_sends_token_and_returns_result():
         assert body["timeout_seconds"] == 30
         assert body["memory_mb"] == 512
         assert body["max_output_bytes"] == 1024 * 1024
+        assert body["require_result"] is True
         return httpx.Response(
             200,
             json={
@@ -34,6 +35,35 @@ def test_sandbox_client_sends_token_and_returns_result():
     result = client.execute("result={'mean': 2.0}", {"a": [{"x": 2}]}, DataAgentLimits())
     assert result == {"mean": 2.0}
     assert client.last_metrics == {"elapsed_ms": 4, "memory_peak_mb": 12}
+
+
+def test_sandbox_client_require_result_false_returns_stdout_payload():
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["require_result"] is False
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "result": None,
+                "stdout": "hello\n",
+                "stderr": "",
+                "metrics": {"elapsed_ms": 2},
+            },
+        )
+
+    client = SandboxClient(
+        base_url="http://sandbox",
+        token="test-sandbox-token",
+        transport=httpx.MockTransport(handler),
+    )
+    payload = client.execute(
+        "print('hello')",
+        {},
+        DataAgentLimits(),
+        require_result=False,
+    )
+    assert payload == {"result": None, "stdout": "hello\n", "stderr": ""}
 
 
 def test_sandbox_client_maps_timeout():
@@ -305,7 +335,7 @@ def test_python_analysis_tool_emits_progress_without_code_or_rows(tmp_path):
     assert captured["datasets"] == {meta.dataset_id: [{"secret": "do-not-leak"}]}
 
 
-def test_python_analysis_tool_rejects_third_call_without_executing_client(tmp_path):
+def test_python_analysis_tool_rejects_after_retries_plus_first_attempt(tmp_path):
     class CountingClient:
         def __init__(self):
             self.execute_calls = 0
@@ -334,17 +364,73 @@ def test_python_analysis_tool_rejects_third_call_without_executing_client(tmp_pa
             "dataset_ids_json": json.dumps([meta.dataset_id]),
         }
 
-        first = json.loads(tool.invoke(arguments))
-        second = json.loads(tool.invoke(arguments))
-        assert first["result"] == {"call": 1}
-        assert second["result"] == {"call": 2}
-        assert first["result_id"] != second["result_id"]
+        # retries=2 → 最多 3 次（首次 + 2 次修正）
+        results = [json.loads(tool.invoke(arguments)) for _ in range(3)]
+        assert [item["result"] for item in results] == [
+            {"call": 1},
+            {"call": 2},
+            {"call": 3},
+        ]
+        assert len({item["result_id"] for item in results}) == 3
         assert json.loads(tool.invoke(arguments)) == {
             "error": {
                 "code": "python_retry_limit_exceeded",
                 "message": "Python 分析重试次数已达上限",
             }
         }
+
+    assert client.execute_calls == 3
+
+
+def test_python_analysis_invalid_dataset_ids_do_not_consume_retry(tmp_path):
+    class CountingClient:
+        def __init__(self):
+            self.execute_calls = 0
+
+        def execute(self, code, datasets, limits):
+            self.execute_calls += 1
+            return {"call": self.execute_calls}
+
+    with DatasetWorkspace(DataAgentLimits(max_python_retries=1), root=tmp_path / "r") as workspace:
+        meta = workspace.create_dataset(
+            "akshare",
+            "demo",
+            {},
+            {
+                "columns": ["x"],
+                "rows": [{"x": 1}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+            },
+        )
+        client = CountingClient()
+        tool = build_python_tool(workspace, client)
+        bad = json.loads(
+            tool.invoke(
+                {"code": "result=1", "dataset_ids_json": "[]"},
+            )
+        )
+        assert bad["error"]["code"] == "invalid_dataset_ids"
+        ok = json.loads(
+            tool.invoke(
+                {
+                    "code": "result=1",
+                    "dataset_ids_json": json.dumps([meta.dataset_id]),
+                }
+            )
+        )
+        assert ok["result"] == {"call": 1}
+        # retries=1 → 共 2 次；若坏请求吞配额则会在此失败
+        ok2 = json.loads(
+            tool.invoke(
+                {
+                    "code": "result=2",
+                    "dataset_ids_json": json.dumps([meta.dataset_id]),
+                }
+            )
+        )
+        assert ok2["result"] == {"call": 2}
 
     assert client.execute_calls == 2
 

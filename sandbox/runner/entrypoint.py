@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import importlib
+import io
 import json
 import math
 import os
@@ -102,6 +104,7 @@ SAFE_BUILTINS = {
     "list": list,
     "max": max,
     "min": min,
+    "print": print,
     "range": range,
     "round": round,
     "set": set,
@@ -168,6 +171,7 @@ def execute_task(
     raw_datasets: dict[str, list[dict[str, Any]]],
     *,
     max_output_bytes: int,
+    require_result: bool = True,
 ) -> Any:
     if (
         not isinstance(max_output_bytes, int)
@@ -188,21 +192,54 @@ def execute_task(
         "np": np,
         "__builtins__": SAFE_BUILTINS,
     }
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
     try:
-        exec(compile(tree, "<generated>", "exec"), scope, scope)
+        with (
+            contextlib.redirect_stdout(stdout_buffer),
+            contextlib.redirect_stderr(stderr_buffer),
+        ):
+            exec(compile(tree, "<generated>", "exec"), scope, scope)
     except RunnerValidationError:
         raise
     except Exception as exc:
         raise GeneratedCodeError(_safe_exception_type(exc)) from None
+
+    stdout_text = stdout_buffer.getvalue()
+    stderr_text = stderr_buffer.getvalue()
+
     if "result" not in scope:
-        raise RunnerValidationError("result_not_assigned")
+        if require_result:
+            raise RunnerValidationError("result_not_assigned")
+        payload = {
+            "result": None,
+            "stdout": stdout_text,
+            "stderr": stderr_text,
+        }
+        encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode(
+            "utf-8"
+        )
+        if len(encoded) > effective_max_output_bytes:
+            raise RunnerValidationError("output_too_large")
+        return payload
 
     _reject_non_finite(scope["result"])
     safe = json_safe(_normalize_numpy_scalars(scope["result"]))
-    encoded = json.dumps(safe, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    if require_result:
+        encoded = json.dumps(safe, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        if len(encoded) > effective_max_output_bytes:
+            raise RunnerValidationError("output_too_large")
+        return safe
+
+    payload = {
+        "result": safe,
+        "stdout": stdout_text,
+        "stderr": stderr_text,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
     if len(encoded) > effective_max_output_bytes:
         raise RunnerValidationError("output_too_large")
-    return safe
+    return payload
 
 
 def _atomic_write_json(path: Path, payload: Any) -> None:
@@ -265,6 +302,7 @@ def main() -> int:
                 "max_output_bytes",
                 DEFAULT_MAX_OUTPUT_BYTES,
             ),
+            require_result=bool(task.get("require_result", True)),
         )
         _atomic_write_json(OUTPUT_DIR / "result.json", result)
         (OUTPUT_DIR / "error.json").unlink(missing_ok=True)
