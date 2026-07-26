@@ -195,14 +195,23 @@ export default function AgentSettingsPage() {
             Tavily 搜索 + 网页抓取
           </span>
           <span className="meta-line">
-            文档见{' '}
+            在{' '}
+            <a
+              className="text-link"
+              href="https://app.tavily.com/home"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Tavily 控制台
+            </a>
+            {' '}获取 API Key；用法见{' '}
             <a
               className="text-link"
               href="https://docs.tavily.com/"
               target="_blank"
               rel="noreferrer"
             >
-              Tavily
+              文档
             </a>
             。
           </span>
@@ -222,6 +231,18 @@ export default function AgentSettingsPage() {
               value={tavilyKey}
               onChange={(e) => setTavilyKey(e.target.value)}
             />
+            <span className="meta-line">
+              还没有 Key？前往{' '}
+              <a
+                className="text-link"
+                href="https://app.tavily.com/home"
+                target="_blank"
+                rel="noreferrer"
+              >
+                app.tavily.com/home
+              </a>
+              {' '}登录后创建。
+            </span>
           </label>
         ) : null}
       </div>
