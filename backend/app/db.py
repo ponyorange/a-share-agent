@@ -56,6 +56,15 @@ def _ensure_partial_unique_index(
 def ensure_indexes() -> None:
     db = get_db()
     db.users.create_index("username", unique=True)
+    _ensure_partial_unique_index(
+        db.users,
+        [("email", ASCENDING)],
+        name="email_1",
+        partial_filter={"email": {"$type": "string"}},
+    )
+    db.email_verification_codes.create_index(
+        [("user_id", ASCENDING), ("purpose", ASCENDING), ("created_at", DESCENDING)]
+    )
     db.portfolios.create_index("user_id", unique=True)
     db.paper_accounts.create_index("user_id", unique=True)
     db.paper_positions.create_index(
