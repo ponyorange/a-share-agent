@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
   AUTH_CHANGED_EVENT,
   clearSession,
@@ -9,6 +9,7 @@ import {
   type AuthUser,
 } from './auth'
 import MobileAgentMoreMenu from './components/MobileAgentMoreMenu'
+import AccountPage from './pages/AccountPage'
 import AdvicePage from './pages/AdvicePage'
 import AgentChatPage from './pages/AgentChatPage'
 import AgentSettingsPage from './pages/AgentSettingsPage'
@@ -179,7 +180,9 @@ export default function App() {
             </nav>
           </div>
           <div className="user-bar">
-            <span className="user-name">{user.username}</span>
+            <Link className="user-name" to="/account">
+              {user.username}
+            </Link>
             <button
               type="button"
               className="btn ghost"
@@ -204,6 +207,7 @@ export default function App() {
             <Route path="/performance" element={<PerformancePage />} />
             <Route path="/strategy" element={<StrategyPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/account" element={<AccountPage />} />
             <Route path="/agent" element={<AgentChatPage />} />
             <Route path="/agent/committee" element={<CommitteePage />} />
             <Route path="/agent/config" element={<KnowledgePage />} />

@@ -117,6 +117,23 @@ body:has(.app-shell--agent-chat) {
 .user-name {
   font-size: 0.9rem;
   color: var(--muted);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.user-name:hover {
+  color: var(--brand);
+  text-decoration: underline;
+}
+
+.card-block {
+  margin-top: 1.5rem;
+}
+
+.btn-row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .auth-page {

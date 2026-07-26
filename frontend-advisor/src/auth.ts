@@ -2,7 +2,12 @@ const TOKEN_KEY = 'advisor_token'
 const USER_KEY = 'advisor_user'
 export const AUTH_CHANGED_EVENT = 'advisor-auth-changed'
 
-export type AuthUser = { id: string; username: string }
+export type AuthUser = {
+  id: string
+  username: string
+  email?: string | null
+  email_verified?: boolean
+}
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
@@ -70,4 +75,43 @@ export function register(username: string, password: string, password2: string) 
 
 export function fetchMe() {
   return authFetch<{ user: AuthUser }>('/api/auth/me')
+}
+
+export function sendEmailBindCode(email: string) {
+  return authFetch<{ ok: boolean; message: string }>('/api/auth/account/email/send-code', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function verifyEmailBind(email: string, code: string) {
+  return authFetch<{ ok: boolean; user: AuthUser }>('/api/auth/account/email/verify', {
+    method: 'POST',
+    body: JSON.stringify({ email, code }),
+  })
+}
+
+export function changePassword(oldPassword: string, newPassword: string) {
+  return authFetch<{ ok: boolean; message: string }>('/api/auth/account/password', {
+    method: 'POST',
+    body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+  })
+}
+
+export function sendPasswordResetCode(account: string) {
+  return authFetch<{ ok: boolean; message: string }>('/api/auth/password-reset/send-code', {
+    method: 'POST',
+    body: JSON.stringify({ account }),
+  })
+}
+
+export function confirmPasswordReset(account: string, code: string, newPassword: string) {
+  return authFetch<{ ok: boolean; message: string }>('/api/auth/password-reset/confirm', {
+    method: 'POST',
+    body: JSON.stringify({
+      account,
+      code,
+      new_password: newPassword,
+    }),
+  })
 }

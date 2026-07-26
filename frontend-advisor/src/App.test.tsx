@@ -6,6 +6,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
+import * as auth from './auth'
 import App from './App'
 
 const authState = vi.hoisted(() => ({ token: null as string | null }))
@@ -55,6 +56,9 @@ beforeEach(() => {
   authState.token = null
   themeProviderUserIds.length = 0
   bootstrapTheme.mockClear()
+  vi.mocked(auth.fetchMe).mockResolvedValue({
+    user: { id: 'u1', username: 'tester' },
+  })
 })
 
 it('收到统一认证变更事件后立即返回登录页', async () => {
@@ -180,6 +184,19 @@ it('基础导航提供设置入口并渲染设置路由', () => {
   expect(screen.getByRole('link', { name: '设置' })).toHaveAttribute('href', '/settings')
   expect(screen.getByRole('heading', { name: '配色设置' })).toBeInTheDocument()
   expect(screen.queryByRole('navigation', { name: 'Agent 导航' })).not.toBeInTheDocument()
+})
+
+it('顶栏用户名进入个人资料页', async () => {
+  authState.token = 't'
+  render(
+    <MemoryRouter initialEntries={['/']}>
+      <App />
+    </MemoryRouter>,
+  )
+  expect(await screen.findByRole('link', { name: 'tester' })).toHaveAttribute(
+    'href',
+    '/account',
+  )
 })
 
 it('ThemeProvider 包裹登录态和退出后的应用树', async () => {
