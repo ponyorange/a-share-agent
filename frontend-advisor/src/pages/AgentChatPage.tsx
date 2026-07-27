@@ -17,6 +17,7 @@ import {
   type SubagentProgress,
 } from '../agentApi'
 import { copyText } from '../copyText'
+import { agentMarkdownComponents } from '../linkifyStockSymbols'
 
 type Msg = {
   role: 'user' | 'assistant'
@@ -192,7 +193,7 @@ export const ChatBubble = memo(function ChatBubble({ m }: { m: Msg }) {
       <div className="agent-bubble-role">{m.role === 'user' ? '你' : '投研助手'}</div>
       {m.role === 'assistant' ? (
         <div className="agent-md">
-          <Markdown remarkPlugins={[remarkGfm]}>
+          <Markdown remarkPlugins={[remarkGfm]} components={agentMarkdownComponents}>
             {m.content || (m.streaming ? '…' : '')}
           </Markdown>
         </div>

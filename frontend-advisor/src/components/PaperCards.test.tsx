@@ -41,6 +41,10 @@ it('持仓卡片展示持仓字段并触发卖出和删除回调', async () => {
   expect(within(card).getByText('1.35')).toBeInTheDocument()
   expect(within(card).getByText('270.00')).toBeInTheDocument()
   expect(within(card).getByText('9.76%')).toBeInTheDocument()
+  expect(within(card).getByRole('link', { name: '查看K线' })).toHaveAttribute(
+    'href',
+    expect.stringContaining('symbol=159518'),
+  )
 
   await user.click(within(card).getByRole('button', { name: '卖出' }))
   await user.click(within(card).getByRole('button', { name: '删除' }))

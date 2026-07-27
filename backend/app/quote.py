@@ -56,7 +56,7 @@ def _book_has_levels(asks: list[dict], bids: list[dict]) -> bool:
 
 
 def trading_session(now: datetime | None = None) -> dict[str, Any]:
-    """A-share continuous auction window (ignore holidays; weekday only)."""
+    """A-share continuous auction window (weekday + time; holidays via calendar)."""
     now = now or datetime.now(_CN)
     if now.tzinfo is None:
         now = now.replace(tzinfo=_CN)
@@ -69,12 +69,20 @@ def trading_session(now: datetime | None = None) -> dict[str, Any]:
     morning = time(9, 15) <= t <= time(11, 30)
     afternoon = time(13, 0) <= t <= time(15, 5)
     is_weekday = weekday < 5
-    is_trading = is_weekday and (morning or afternoon)
+    trade_day = is_weekday
+    try:
+        from .advisor.calendar_util import is_trading_day
+
+        trade_day = bool(is_trading_day(now.date()))
+    except Exception:
+        trade_day = is_weekday
+    is_trading = trade_day and (morning or afternoon)
 
     return {
         "timezone": "Asia/Shanghai",
         "now": now.isoformat(timespec="seconds"),
         "is_weekday": is_weekday,
+        "is_trading_day": trade_day,
         "is_trading": is_trading,
         "refresh_recommended": is_trading,
     }
@@ -248,6 +256,46 @@ def _fetch_ticks(symbol: str, limit: int = 40) -> list[dict[str, Any]]:
         )
     ticks.reverse()
     return ticks
+
+
+def get_last_quote(symbol: str) -> dict[str, Any]:
+    """Lightweight last price + pre_close (no ticks / order book)."""
+    symbol = normalize_symbol(symbol)
+    _ = market_prefix(symbol)
+    snap: dict[str, Any] | None = None
+    err: str | None = None
+    try:
+        snap = _fetch_snapshot_em(symbol)
+    except Exception as exc:
+        err = f"{type(exc).__name__}: {exc}"
+    if snap is None or snap.get("price") is None:
+        try:
+            snap = _fetch_book_tencent(symbol)
+            err = None
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            err = f"{err}; {detail}" if err else detail
+            snap = snap or {"symbol": symbol, "name": symbol}
+    price = _num(snap.get("price")) if snap else None
+    pre_close = _num(snap.get("pre_close")) if snap else None
+    change = _num(snap.get("change")) if snap else None
+    change_pct = _num(snap.get("change_pct")) if snap else None
+    # Prefer computing ratio from price/pre_close for consistent downstream math.
+    day_chg_pct: float | None = None
+    if price is not None and pre_close is not None and pre_close > 0:
+        day_chg_pct = price / pre_close - 1.0
+        if change is None:
+            change = price - pre_close
+    return {
+        "symbol": str((snap or {}).get("symbol") or symbol),
+        "name": str((snap or {}).get("name") or symbol),
+        "price": price,
+        "pre_close": pre_close,
+        "change": change,
+        "change_pct": change_pct,
+        "day_chg_pct": day_chg_pct,
+        "error": err,
+    }
 
 
 def get_quote(symbol: str, tick_limit: int = 40) -> dict[str, Any]:

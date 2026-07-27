@@ -20,6 +20,7 @@ import {
   PaperTradeCard,
 } from '../components/PaperCards'
 import { ResponsiveDataView } from '../components/ResponsiveDataView'
+import { explorerKlineUrl } from '../explorerLinks'
 
 const TRADE_PAGE_SIZE = 20
 const PERF_PAGE_SIZE = 20
@@ -586,6 +587,14 @@ export default function PaperPage() {
                       {formatPct(p.pnl_pct, 2)}
                     </td>
                     <td className="row-actions">
+                      <a
+                        className="text-link"
+                        href={explorerKlineUrl(p.symbol)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        查看K线
+                      </a>
                       <button
                         type="button"
                         className="text-link"

@@ -905,6 +905,20 @@ def portfolio_get(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
     return load_portfolio(user["id"])
 
 
+@router.get("/portfolio/marks")
+def portfolio_marks_get(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    """真实持仓市值/盈亏快照（含交易时段信息，供前端轮询）。"""
+    from .portfolio import portfolio_marks
+
+    _bind(user)
+    try:
+        return portfolio_marks(user["id"])
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"持仓行情失败: {type(exc).__name__}"
+        ) from exc
+
+
 @router.post("/portfolio")
 def portfolio_set(
     body: PortfolioPayload, user: dict[str, Any] = Depends(_user)

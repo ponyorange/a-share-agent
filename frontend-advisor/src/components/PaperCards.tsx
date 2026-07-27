@@ -1,4 +1,5 @@
 import { formatPct, type PaperAccount } from '../api'
+import { explorerKlineUrl } from '../explorerLinks'
 
 function display(value: unknown) {
   if (value == null || value === '') return '—'
@@ -56,6 +57,14 @@ export function PaperPositionCard(props: {
         />
       </CardMetrics>
       <div className="paper-card-actions">
+        <a
+          className="text-link"
+          href={explorerKlineUrl(position.symbol)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          查看K线
+        </a>
         <button type="button" className="text-link" onClick={() => props.onSell(position)}>
           卖出
         </button>

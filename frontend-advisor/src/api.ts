@@ -87,6 +87,41 @@ export type PortfolioResponse = {
   positions: Position[]
 }
 
+export type PortfolioMarkItem = {
+  symbol: string
+  name?: string | null
+  qty: number
+  cost: number
+  price: number | null
+  pre_close: number | null
+  day_chg_pct: number | null
+  day_pnl: number | null
+  market_value: number | null
+  position_pnl: number | null
+  position_pnl_pct: number | null
+  weight: number | null
+  error?: string | null
+}
+
+export type PortfolioMarksResponse = {
+  session: {
+    timezone?: string
+    now?: string
+    is_weekday?: boolean
+    is_trading_day?: boolean
+    is_trading: boolean
+    refresh_recommended?: boolean
+  }
+  updated_at?: string | null
+  count: number
+  total_market_value: number
+  total_cost: number
+  total_day_pnl: number
+  total_position_pnl: number
+  total_return_pct: number | null
+  items: PortfolioMarkItem[]
+}
+
 export type PortfolioAdviceResponse = {
   as_of: string | null
   count: number
@@ -519,6 +554,10 @@ export function fetchAdvice(symbol: string): Promise<AdviceItem> {
 
 export function fetchPortfolio(): Promise<PortfolioResponse> {
   return authFetch('/api/advisor/portfolio')
+}
+
+export function fetchPortfolioMarks(): Promise<PortfolioMarksResponse> {
+  return authFetch('/api/advisor/portfolio/marks')
 }
 
 export function fetchPortfolioAdvice(): Promise<PortfolioAdviceResponse> {

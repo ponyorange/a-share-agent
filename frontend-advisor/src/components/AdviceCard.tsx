@@ -1,5 +1,6 @@
 import type { AdviceItem, FactorContribution } from '../api'
 import { formatPct, formatScore } from '../api'
+import { explorerKlineUrl } from '../explorerLinks'
 
 const ACTION_CLASS: Record<string, string> = {
   buy: 'action-buy',
@@ -63,6 +64,16 @@ export function AdviceCard({ item }: { item: AdviceItem }) {
       </div>
       {item.rationale ? <p className="rationale">{item.rationale}</p> : null}
       {item.factors?.length ? <FactorBars factors={item.factors} /> : null}
+      <footer className="advice-card-actions">
+        <a
+          className="text-link"
+          href={explorerKlineUrl(item.symbol)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          查看K线
+        </a>
+      </footer>
     </article>
   )
 }
