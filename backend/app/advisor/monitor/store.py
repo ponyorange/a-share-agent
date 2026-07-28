@@ -40,7 +40,13 @@ def _serialize(doc: dict[str, Any] | None) -> dict[str, Any] | None:
     oid = out.pop("_id", None)
     if oid is not None:
         out["id"] = str(oid)
-    for key in ("created_at", "updated_at", "last_run_at", "last_alert_at"):
+    for key in (
+        "created_at",
+        "updated_at",
+        "last_run_at",
+        "last_alert_at",
+        "last_llm_at",
+    ):
         val = out.get(key)
         if isinstance(val, datetime):
             out[key] = val.isoformat()
@@ -113,12 +119,42 @@ def create_job(user_id: str, body: CreateJobBody | dict[str, Any]) -> dict[str, 
         rid = (r.id or uuid4().hex[:8]).strip() or uuid4().hex[:8]
         rules.append(rule_to_dict(r, rid))
 
+    llm_enabled = bool(body.llm_enabled)
+    if llm_enabled:
+        from ..llm_settings import resolve_llm_credentials
+
+        try:
+            resolve_llm_credentials(user_id)
+        except ValueError as exc:
+            raise ValueError(
+                "请先在 Agent 设置中配置 DeepSeek API Key"
+            ) from exc
+
     now = datetime.now(timezone.utc)
     cooldown = (
         int(body.cooldown_sec)
         if body.cooldown_sec is not None and body.cooldown_sec > 0
         else DEFAULT_COOLDOWN_SEC
     )
+    try:
+        llm_interval = (
+            int(body.llm_interval_sec)
+            if body.llm_interval_sec is not None and body.llm_interval_sec > 0
+            else 900
+        )
+    except (TypeError, ValueError):
+        llm_interval = 900
+    try:
+        llm_anom = (
+            float(body.llm_anomaly_abs_chg)
+            if body.llm_anomaly_abs_chg is not None
+            else 0.03
+        )
+    except (TypeError, ValueError):
+        llm_anom = 0.03
+    if llm_anom <= 0:
+        llm_anom = 0.03
+
     doc = {
         "user_id": user_id,
         "title": body.title,
@@ -129,15 +165,19 @@ def create_job(user_id: str, body: CreateJobBody | dict[str, Any]) -> dict[str, 
         "note": (body.note or None),
         "notify_email": email,
         "cooldown_sec": cooldown,
-        "llm_enabled": False,
-        "llm_interval_sec": 900,
-        "llm_anomaly_abs_chg": 0.03,
+        "llm_enabled": llm_enabled,
+        "llm_interval_sec": llm_interval,
+        "llm_anomaly_abs_chg": llm_anom,
+        "knowledge_ids": list(body.knowledge_ids or []),
         "created_at": now,
         "updated_at": now,
         "last_run_at": None,
         "last_alert_at": None,
+        "last_llm_at": None,
+        "llm_symbol_baselines": {},
         "alert_cooldowns": {},
         "last_error": None,
+        "last_llm_error": None,
     }
     res = db.agent_monitor_jobs.insert_one(doc)
     doc["_id"] = res.inserted_id

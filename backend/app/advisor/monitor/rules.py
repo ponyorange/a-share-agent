@@ -5,13 +5,23 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+FLOW_TYPES = frozenset({"flow_spike_in", "flow_spike_out"})
 RULE_TYPES = frozenset(
-    {"price_below", "price_above", "day_chg_below", "day_chg_above"}
+    {
+        "price_below",
+        "price_above",
+        "day_chg_below",
+        "day_chg_above",
+        *FLOW_TYPES,
+    }
 )
+MEAN_ABS_FLOOR = 1e4
 
 
 def evaluate_rule(rule: dict[str, Any], quote: dict[str, Any]) -> bool:
     rtype = str(rule.get("type") or "")
+    if rtype in FLOW_TYPES:
+        return False
     if rtype not in RULE_TYPES:
         return False
     try:
@@ -43,8 +53,69 @@ def evaluate_rule(rule: dict[str, Any], quote: dict[str, Any]) -> bool:
     return pct >= threshold
 
 
+def evaluate_flow_rule(rule: dict[str, Any], flow: dict[str, Any] | None) -> bool:
+    if not flow or not flow.get("ok"):
+        return False
+    rtype = str(rule.get("type") or "")
+    if rtype not in FLOW_TYPES:
+        return False
+    try:
+        value = (
+            float(rule["value"])
+            if rule.get("value") is not None
+            else 0.10
+        )
+    except (TypeError, ValueError):
+        value = 0.10
+    try:
+        mult = (
+            float(rule["mult"])
+            if rule.get("mult") is not None
+            else 3.0
+        )
+    except (TypeError, ValueError):
+        mult = 3.0
+
+    net = flow.get("net_inflow")
+    if net is None:
+        return False
+    try:
+        net_f = float(net)
+    except (TypeError, ValueError):
+        return False
+
+    if rtype == "flow_spike_in" and net_f <= 0:
+        return False
+    if rtype == "flow_spike_out" and net_f >= 0:
+        return False
+
+    rel = False
+    avg = flow.get("avg_net_inflow")
+    if avg is not None:
+        try:
+            avg_f = float(avg)
+        except (TypeError, ValueError):
+            avg_f = None
+        if avg_f is not None and abs(avg_f) >= MEAN_ABS_FLOOR:
+            rel = abs(net_f) >= mult * abs(avg_f)
+
+    pct = False
+    ratio = flow.get("ratio")
+    if ratio is not None:
+        try:
+            pct = abs(float(ratio)) >= value
+        except (TypeError, ValueError):
+            pct = False
+
+    return rel or pct
+
+
 def cooldown_key(symbol: str, rule_id: str) -> str:
     return f"{symbol}:{rule_id}"
+
+
+def llm_cooldown_key(symbol: str) -> str:
+    return f"llm:{symbol}"
 
 
 def _parse_ts(raw: Any) -> datetime | None:

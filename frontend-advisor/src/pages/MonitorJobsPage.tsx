@@ -20,6 +20,8 @@ const RULE_LABEL: Record<string, string> = {
   price_above: '现价≥',
   day_chg_below: '涨跌幅≤',
   day_chg_above: '涨跌幅≥',
+  flow_spike_in: '主力流入异动',
+  flow_spike_out: '主力流出异动',
 }
 
 function formatRule(rule: MonitorRule): string {
@@ -27,6 +29,12 @@ function formatRule(rule: MonitorRule): string {
   if (rule.type.startsWith('day_chg')) {
     const pct = Number(rule.value) * 100
     const body = `${label}${Number.isFinite(pct) ? pct.toFixed(2) + '%' : rule.value}`
+    return rule.hint ? `${body}（${rule.hint}）` : body
+  }
+  if (rule.type.startsWith('flow_spike')) {
+    const pct = Number(rule.value) * 100
+    const mult = rule.mult != null ? `×${rule.mult}` : '×3'
+    const body = `${label}（占比≥${Number.isFinite(pct) ? pct.toFixed(1) : rule.value}% / ${mult}）`
     return rule.hint ? `${body}（${rule.hint}）` : body
   }
   const body = `${label}${rule.value}`
@@ -86,7 +94,7 @@ export default function MonitorJobsPage() {
     <section className="page">
       <div className="page-hero">
         <p>
-          盯盘任务在交易时段由后台轮询规则，触发后向已验证邮箱发告警（不下单）。可在投研助手对话里创建。
+          规则/资金异动即时邮件告警，可同时开启 Agent 看盘（间隔或涨跌异动后综合研判，仅买/卖发信，不下单）。在投研助手对话里创建。
         </p>
       </div>
 
@@ -115,7 +123,7 @@ export default function MonitorJobsPage() {
         ) : null}
         {!loading && jobs.length === 0 ? (
           <p className="muted">
-            暂无定时任务。可在投研助手对话里说「帮我盯收藏里跌超 3% 的标的发邮件」。
+            暂无定时任务。可在投研助手说「按我的知识库盯收藏，主力资金异动要通知，并帮我看盘」。
           </p>
         ) : null}
         {jobs.length > 0 ? (
@@ -126,8 +134,10 @@ export default function MonitorJobsPage() {
                   <th>标题</th>
                   <th>范围</th>
                   <th>状态</th>
+                  <th>看盘</th>
                   <th>规则</th>
                   <th>最近运行 / 告警</th>
+                  <th>最近看盘</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -152,6 +162,7 @@ export default function MonitorJobsPage() {
                         {scopeExtra}
                       </td>
                       <td>{job.status === 'running' ? '运行中' : '已暂停'}</td>
+                      <td>{job.llm_enabled ? '开' : '关'}</td>
                       <td>
                         {(job.rules || []).map(formatRule).join('；') || '—'}
                       </td>
@@ -160,6 +171,14 @@ export default function MonitorJobsPage() {
                         <div className="cell-sub">{formatTs(job.last_alert_at)}</div>
                         {job.last_error ? (
                           <div className="cell-sub status error">{job.last_error}</div>
+                        ) : null}
+                      </td>
+                      <td>
+                        <div className="cell-main">{formatTs(job.last_llm_at)}</div>
+                        {job.last_llm_error ? (
+                          <div className="cell-sub status error">
+                            {job.last_llm_error}
+                          </div>
                         ) : null}
                       </td>
                       <td className="row-actions">

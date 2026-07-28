@@ -340,8 +340,12 @@ def build_tools(user_id: str) -> list[Any]:
                 "scope": j.get("scope"),
                 "symbols": j.get("symbols"),
                 "rules": j.get("rules"),
+                "llm_enabled": j.get("llm_enabled"),
+                "knowledge_ids": j.get("knowledge_ids"),
                 "last_run_at": j.get("last_run_at"),
                 "last_alert_at": j.get("last_alert_at"),
+                "last_llm_at": j.get("last_llm_at"),
+                "last_llm_error": j.get("last_llm_error"),
             }
             for j in jobs
         ]
@@ -358,9 +362,16 @@ def build_tools(user_id: str) -> list[Any]:
         rules_json: str,
         symbols_json: str = "[]",
         note: str = "",
+        llm_enabled: bool = False,
+        knowledge_ids_json: str = "[]",
+        llm_interval_sec: int = 900,
+        llm_anomaly_abs_chg: float = 0.03,
     ) -> str:
         """创建盯盘任务。scope=watchlist|portfolio|symbols。
-        rules_json 为规则数组 JSON。缺邮箱或字段非法返回 ok:false。
+        rules_json 为规则数组 JSON（可含 flow_spike_in/out）。
+        llm_enabled 开启 Agent 看盘（需已配置 DeepSeek）。
+        knowledge_ids_json 为额外知识 ID 数组。
+        缺邮箱或字段非法返回 ok:false。
         创建前须已与用户确认规则；本工具本身不再二次 confirm。"""
         _bind()
         from ..monitor.store import create_job
@@ -368,6 +379,7 @@ def build_tools(user_id: str) -> list[Any]:
         try:
             rules = json.loads(rules_json or "[]")
             symbols = json.loads(symbols_json or "[]")
+            knowledge_ids = json.loads(knowledge_ids_json or "[]")
         except json.JSONDecodeError as exc:
             return json.dumps(
                 {"ok": False, "error": f"JSON 无效: {exc}"},
@@ -383,6 +395,11 @@ def build_tools(user_id: str) -> list[Any]:
                 {"ok": False, "error": "symbols_json 须为数组"},
                 ensure_ascii=False,
             )
+        if not isinstance(knowledge_ids, list):
+            return json.dumps(
+                {"ok": False, "error": "knowledge_ids_json 须为数组"},
+                ensure_ascii=False,
+            )
         try:
             job = create_job(
                 user_id,
@@ -392,6 +409,10 @@ def build_tools(user_id: str) -> list[Any]:
                     "symbols": symbols,
                     "rules": rules,
                     "note": note or None,
+                    "llm_enabled": bool(llm_enabled),
+                    "knowledge_ids": knowledge_ids,
+                    "llm_interval_sec": llm_interval_sec,
+                    "llm_anomaly_abs_chg": llm_anomaly_abs_chg,
                 },
             )
             return json.dumps(

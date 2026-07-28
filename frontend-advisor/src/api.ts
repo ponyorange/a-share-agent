@@ -619,9 +619,18 @@ export function removeWatchlist(symbol: string): Promise<WatchlistResponse> {
 
 export type MonitorRule = {
   id?: string
-  type: 'price_below' | 'price_above' | 'day_chg_below' | 'day_chg_above' | string
+  type:
+    | 'price_below'
+    | 'price_above'
+    | 'day_chg_below'
+    | 'day_chg_above'
+    | 'flow_spike_in'
+    | 'flow_spike_out'
+    | string
   value: number
   hint?: string | null
+  mult?: number | null
+  window_days?: number | null
 }
 
 export type MonitorJob = {
@@ -634,9 +643,15 @@ export type MonitorJob = {
   note?: string | null
   notify_email?: string | null
   cooldown_sec?: number
+  llm_enabled?: boolean
+  llm_interval_sec?: number
+  llm_anomaly_abs_chg?: number
+  knowledge_ids?: string[]
   last_run_at?: string | null
   last_alert_at?: string | null
+  last_llm_at?: string | null
   last_error?: string | null
+  last_llm_error?: string | null
   created_at?: string | null
   updated_at?: string | null
 }

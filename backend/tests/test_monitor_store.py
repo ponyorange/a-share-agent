@@ -187,3 +187,61 @@ def test_resolve_symbols_watchlist(monkeypatch):
         {"scope": "watchlist", "user_id": "u1", "symbols": []}
     )
     assert out == ["510300", "159915"]
+
+
+def test_create_llm_requires_key(monkeypatch):
+    uid = _uid()
+    db = _FakeDB(
+        {
+            "_id": uid,
+            "email": "a@example.com",
+            "email_verified_at": datetime.now(timezone.utc),
+        }
+    )
+    monkeypatch.setattr(store_mod, "get_db", lambda: db)
+    monkeypatch.setattr(
+        "app.advisor.llm_settings.resolve_llm_credentials",
+        lambda _uid: (_ for _ in ()).throw(ValueError("no key")),
+    )
+    with pytest.raises(ValueError, match="DeepSeek"):
+        store_mod.create_job(
+            str(uid),
+            {
+                "title": "看盘",
+                "scope": "symbols",
+                "symbols": ["510300"],
+                "rules": [{"type": "price_below", "value": 1}],
+                "llm_enabled": True,
+            },
+        )
+
+
+def test_create_with_flow_and_knowledge(monkeypatch):
+    uid = _uid()
+    db = _FakeDB(
+        {
+            "_id": uid,
+            "email": "a@example.com",
+            "email_verified_at": datetime.now(timezone.utc),
+        }
+    )
+    monkeypatch.setattr(store_mod, "get_db", lambda: db)
+    monkeypatch.setattr(
+        "app.advisor.llm_settings.resolve_llm_credentials",
+        lambda _uid: {"api_key": "k", "model": "m", "base_url": "http://x"},
+    )
+    job = store_mod.create_job(
+        str(uid),
+        {
+            "title": "看盘",
+            "scope": "symbols",
+            "symbols": ["510300"],
+            "rules": [{"type": "flow_spike_in", "value": 0.1, "mult": 3}],
+            "llm_enabled": True,
+            "knowledge_ids": ["k1", "k1", "k2"],
+        },
+    )
+    assert job["llm_enabled"] is True
+    assert job["knowledge_ids"] == ["k1", "k2"]
+    assert job["rules"][0]["type"] == "flow_spike_in"
+    assert job["rules"][0].get("mult") == 3.0
