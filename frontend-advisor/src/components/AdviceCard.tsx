@@ -1,6 +1,7 @@
 import type { AdviceItem, FactorContribution } from '../api'
 import { formatPct, formatScore } from '../api'
 import { explorerKlineUrl } from '../explorerLinks'
+import { StarToggle } from './StarToggle'
 
 const ACTION_CLASS: Record<string, string> = {
   buy: 'action-buy',
@@ -33,7 +34,17 @@ export function FactorBars({ factors }: { factors: FactorContribution[] }) {
   )
 }
 
-export function AdviceCard({ item }: { item: AdviceItem }) {
+export function AdviceCard({
+  item,
+  starred,
+  starBusy,
+  onToggleStar,
+}: {
+  item: AdviceItem
+  starred?: boolean
+  starBusy?: boolean
+  onToggleStar?: (next: boolean) => void | Promise<void>
+}) {
   return (
     <article className="advice-card">
       <header className="advice-card-head">
@@ -65,6 +76,14 @@ export function AdviceCard({ item }: { item: AdviceItem }) {
       {item.rationale ? <p className="rationale">{item.rationale}</p> : null}
       {item.factors?.length ? <FactorBars factors={item.factors} /> : null}
       <footer className="advice-card-actions">
+        {onToggleStar ? (
+          <StarToggle
+            symbol={item.symbol}
+            starred={Boolean(starred)}
+            busy={starBusy}
+            onToggle={onToggleStar}
+          />
+        ) : null}
         <a
           className="text-link"
           href={explorerKlineUrl(item.symbol)}

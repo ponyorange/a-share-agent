@@ -560,6 +560,63 @@ export function fetchPortfolioMarks(): Promise<PortfolioMarksResponse> {
   return authFetch('/api/advisor/portfolio/marks')
 }
 
+export type WatchlistItem = {
+  symbol: string
+  name?: string | null
+  added_at?: string | null
+}
+
+export type WatchlistResponse = { items: WatchlistItem[] }
+
+export type WatchlistMarkItem = WatchlistItem & {
+  price: number | null
+  pre_close: number | null
+  day_chg_pct: number | null
+  error?: string | null
+}
+
+export type WatchlistMarksResponse = {
+  session: {
+    timezone?: string
+    now?: string
+    is_weekday?: boolean
+    is_trading_day?: boolean
+    is_trading: boolean
+    refresh_recommended?: boolean
+  }
+  updated_at?: string | null
+  count: number
+  items: WatchlistMarkItem[]
+}
+
+export type WatchlistStatusResponse = { starred: Record<string, boolean> }
+
+export function fetchWatchlist(): Promise<WatchlistResponse> {
+  return authFetch('/api/advisor/watchlist')
+}
+
+export function fetchWatchlistMarks(): Promise<WatchlistMarksResponse> {
+  return authFetch('/api/advisor/watchlist/marks')
+}
+
+export function fetchWatchlistStatus(symbols: string[]): Promise<WatchlistStatusResponse> {
+  const q = encodeURIComponent(symbols.join(','))
+  return authFetch(`/api/advisor/watchlist/status?symbols=${q}`)
+}
+
+export function addWatchlist(symbol: string, name?: string): Promise<WatchlistResponse> {
+  const qs = name ? `?name=${encodeURIComponent(name)}` : ''
+  return authFetch(`/api/advisor/watchlist/${encodeURIComponent(symbol)}${qs}`, {
+    method: 'POST',
+  })
+}
+
+export function removeWatchlist(symbol: string): Promise<WatchlistResponse> {
+  return authFetch(`/api/advisor/watchlist/${encodeURIComponent(symbol)}`, {
+    method: 'DELETE',
+  })
+}
+
 export function fetchPortfolioAdvice(): Promise<PortfolioAdviceResponse> {
   return authFetch('/api/advisor/portfolio/advice')
 }

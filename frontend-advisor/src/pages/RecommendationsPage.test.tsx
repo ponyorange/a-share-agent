@@ -7,6 +7,7 @@ import RecommendationsPage from './RecommendationsPage'
 
 const fetchActiveRecommendationsRefresh = vi.hoisted(() => vi.fn())
 const fetchRecommendations = vi.hoisted(() => vi.fn())
+const fetchWatchlistStatus = vi.hoisted(() => vi.fn())
 const streamOneClickBuy = vi.hoisted(() => vi.fn())
 const streamRecommendationsRefresh = vi.hoisted(() => vi.fn())
 const streamRecommendationsRefreshJob = vi.hoisted(() => vi.fn())
@@ -15,6 +16,9 @@ const streamRecQuotes = vi.hoisted(() => vi.fn())
 vi.mock('../api', () => ({
   fetchActiveRecommendationsRefresh,
   fetchRecommendations,
+  fetchWatchlistStatus,
+  addWatchlist: vi.fn(),
+  removeWatchlist: vi.fn(),
   formatPct: (v: number | null | undefined, digits = 1) =>
     v == null || Number.isNaN(v) ? '—' : `${(v * 100).toFixed(digits)}%`,
   formatScore: (v: number | null | undefined) =>
@@ -42,11 +46,13 @@ beforeEach(() => {
   setViewport(true)
   fetchActiveRecommendationsRefresh.mockReset()
   fetchRecommendations.mockReset()
+  fetchWatchlistStatus.mockReset()
   streamOneClickBuy.mockReset()
   streamRecommendationsRefresh.mockReset()
   streamRecommendationsRefreshJob.mockReset()
   streamRecQuotes.mockReset()
   fetchActiveRecommendationsRefresh.mockResolvedValue({ job: null })
+  fetchWatchlistStatus.mockResolvedValue({ starred: {} })
   fetchRecommendations.mockResolvedValue({
     as_of: '2026-07-24 15:00:00',
     trade_date: '2026-07-24',

@@ -3,6 +3,7 @@ import type { AdviceItem } from '../api'
 import { formatPct, formatScore } from '../api'
 import { explorerKlineUrl } from '../explorerLinks'
 import { ActionBadge } from './AdviceCard'
+import { StarToggle } from './StarToggle'
 
 function chgClass(v: number | null | undefined): string {
   if (v == null || Number.isNaN(v)) return ''
@@ -11,7 +12,17 @@ function chgClass(v: number | null | undefined): string {
   return ''
 }
 
-export function RecommendationCard({ item }: { item: AdviceItem }) {
+export function RecommendationCard({
+  item,
+  starred,
+  starBusy,
+  onToggleStar,
+}: {
+  item: AdviceItem
+  starred?: boolean
+  starBusy?: boolean
+  onToggleStar?: (next: boolean) => void | Promise<void>
+}) {
   return (
     <article className="recommendation-card">
       <header className="recommendation-card-head">
@@ -46,6 +57,14 @@ export function RecommendationCard({ item }: { item: AdviceItem }) {
       </dl>
 
       <footer className="recommendation-card-actions">
+        {onToggleStar ? (
+          <StarToggle
+            symbol={item.symbol}
+            starred={Boolean(starred)}
+            busy={starBusy}
+            onToggle={onToggleStar}
+          />
+        ) : null}
         <Link className="text-link" to={`/advice?symbol=${item.symbol}`}>
           诊断
         </Link>

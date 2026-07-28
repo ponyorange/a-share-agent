@@ -927,6 +927,68 @@ def portfolio_set(
     return save_portfolio(body, user["id"])
 
 
+@router.get("/watchlist")
+def watchlist_get(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    _bind(user)
+    from .watchlist import load_watchlist
+
+    return load_watchlist(user["id"])
+
+
+@router.get("/watchlist/marks")
+def watchlist_marks_get(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    """收藏列表行情快照（含交易时段信息，供前端轮询）。"""
+    from .watchlist import watchlist_marks
+
+    _bind(user)
+    try:
+        return watchlist_marks(user["id"])
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"收藏行情失败: {type(exc).__name__}"
+        ) from exc
+
+
+@router.get("/watchlist/status")
+def watchlist_status_get(
+    symbols: str = Query(default=""),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    from .watchlist import watchlist_status
+
+    _bind(user)
+    parts = [s.strip() for s in symbols.split(",") if s.strip()]
+    return watchlist_status(user["id"], parts)
+
+
+@router.post("/watchlist/{symbol}")
+def watchlist_add(
+    symbol: str,
+    name: str | None = Query(default=None),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    from .watchlist import add_symbol
+
+    _bind(user)
+    try:
+        return add_symbol(user["id"], symbol, name=name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/watchlist/{symbol}")
+def watchlist_remove(
+    symbol: str, user: dict[str, Any] = Depends(_user)
+) -> dict[str, Any]:
+    from .watchlist import remove_symbol
+
+    _bind(user)
+    try:
+        return remove_symbol(user["id"], symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/portfolio/advice")
 def portfolio_advice(
     as_of: str | None = Query(default=None),

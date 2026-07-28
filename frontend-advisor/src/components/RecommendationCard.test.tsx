@@ -19,10 +19,14 @@ const item: AdviceItem = {
   rationale: '测试推荐理由',
 }
 
-it('展示推荐关键字段并仅提供诊断和 K 线入口', () => {
+it('展示推荐关键字段并提供诊断、K 线与收藏入口', () => {
   render(
     <MemoryRouter>
-      <RecommendationCard item={item} />
+      <RecommendationCard
+        item={item}
+        starred={false}
+        onToggleStar={() => undefined}
+      />
     </MemoryRouter>,
   )
 
@@ -33,6 +37,7 @@ it('展示推荐关键字段并仅提供诊断和 K 线入口', () => {
   expect(screen.getByText('0.88')).toBeInTheDocument()
   expect(screen.getByText('买入关注')).toBeInTheDocument()
   expect(screen.getByText('65.4%')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '收藏 159518' })).toBeInTheDocument()
   expect(screen.getByRole('link', { name: '诊断' })).toHaveAttribute(
     'href',
     '/advice?symbol=159518',

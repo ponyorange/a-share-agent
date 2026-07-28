@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  addWatchlist,
   fetchActiveRecommendationsRefresh,
   fetchRecommendations,
+  fetchWatchlistStatus,
   formatPct,
   formatScore,
+  removeWatchlist,
   streamOneClickBuy,
   streamRecommendationsRefresh,
   streamRecommendationsRefreshJob,
@@ -16,6 +19,7 @@ import { ActionBadge } from '../components/AdviceCard'
 import { MobileDisclosure } from '../components/MobileDisclosure'
 import { RecommendationCard } from '../components/RecommendationCard'
 import { ResponsiveDataView } from '../components/ResponsiveDataView'
+import { StarToggle } from '../components/StarToggle'
 import { explorerKlineUrl } from '../explorerLinks'
 
 type BoardTab = 'etf' | 'hs' | 'star'
@@ -33,7 +37,17 @@ function chgClass(v: number | null | undefined): string {
   return ''
 }
 
-function BoardTable({ items }: { items: AdviceItem[] }) {
+function BoardTable({
+  items,
+  starredMap,
+  busyMap,
+  onToggleStar,
+}: {
+  items: AdviceItem[]
+  starredMap: Record<string, boolean>
+  busyMap: Record<string, boolean>
+  onToggleStar: (symbol: string, next: boolean, name?: string | null) => void
+}) {
   if (!items.length) {
     return <p className="status">本板暂无推荐，可稍后重试或调低买入阈值。</p>
   }
@@ -67,6 +81,12 @@ function BoardTable({ items }: { items: AdviceItem[] }) {
               </td>
               <td>{formatPct(item.hit_rate)}</td>
               <td className="row-actions">
+                <StarToggle
+                  symbol={item.symbol}
+                  starred={Boolean(starredMap[item.symbol])}
+                  busy={Boolean(busyMap[item.symbol])}
+                  onToggle={(next) => onToggleStar(item.symbol, next, item.name)}
+                />
                 <Link className="text-link" to={`/advice?symbol=${item.symbol}`}>
                   诊断
                 </Link>
@@ -134,6 +154,8 @@ export default function RecommendationsPage() {
     phase?: string
   } | null>(null)
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null)
+  const [starredMap, setStarredMap] = useState<Record<string, boolean>>({})
+  const [starBusy, setStarBusy] = useState<Record<string, boolean>>({})
   const refreshAbortRef = useRef<AbortController | null>(null)
   const refreshReqRef = useRef(0)
 
@@ -313,6 +335,56 @@ export default function RecommendationsPage() {
 
   const board = data?.boards?.[tab]
   const items = board?.items ?? []
+
+  useEffect(() => {
+    if (!data?.boards) {
+      setStarredMap({})
+      return
+    }
+    const symbols = Array.from(
+      new Set(
+        Object.values(data.boards).flatMap((b) =>
+          (b.items || []).map((it) => it.symbol).filter(Boolean),
+        ),
+      ),
+    )
+    if (!symbols.length) {
+      setStarredMap({})
+      return
+    }
+    let cancelled = false
+    fetchWatchlistStatus(symbols)
+      .then((res) => {
+        if (!cancelled) setStarredMap(res.starred || {})
+      })
+      .catch(() => {
+        if (!cancelled) setStarredMap({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [data])
+
+  const toggleStar = useCallback(
+    async (symbol: string, next: boolean, name?: string | null) => {
+      setStarBusy((prev) => ({ ...prev, [symbol]: true }))
+      setStarredMap((prev) => ({ ...prev, [symbol]: next }))
+      try {
+        if (next) await addWatchlist(symbol, name || undefined)
+        else await removeWatchlist(symbol)
+      } catch (err) {
+        setStarredMap((prev) => ({ ...prev, [symbol]: !next }))
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setStarBusy((prev) => {
+          const copy = { ...prev }
+          delete copy[symbol]
+          return copy
+        })
+      }
+    },
+    [],
+  )
 
   const needQuotes = useMemo(() => {
     if (!data?.boards) return false
@@ -706,14 +778,29 @@ export default function RecommendationsPage() {
               items.length ? (
                 <div className="recommendation-card-list">
                   {items.map((item) => (
-                    <RecommendationCard key={item.symbol} item={item} />
+                    <RecommendationCard
+                      key={item.symbol}
+                      item={item}
+                      starred={Boolean(starredMap[item.symbol])}
+                      starBusy={Boolean(starBusy[item.symbol])}
+                      onToggleStar={(next) =>
+                        void toggleStar(item.symbol, next, item.name)
+                      }
+                    />
                   ))}
                 </div>
               ) : (
                 <p className="status">本板暂无推荐，可稍后重试或调低买入阈值。</p>
               )
             }
-            table={<BoardTable items={items} />}
+            table={
+              <BoardTable
+                items={items}
+                starredMap={starredMap}
+                busyMap={starBusy}
+                onToggleStar={(symbol, next, name) => void toggleStar(symbol, next, name)}
+              />
+            }
           />
           {!items.length && (data.errors?.length ?? 0) > 0 ? (
             <p className="status error">

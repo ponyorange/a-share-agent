@@ -240,6 +240,107 @@ body:has(.app-shell--agent-chat) {
 
 .topbar-nav-wrap {
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow: visible;
+}
+
+.topbar-nav-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.topbar-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.topbar-nav-fade {
+  flex-shrink: 0;
+  width: 2rem;
+  align-self: stretch;
+  margin-left: -2rem;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    color-mix(in srgb, var(--color-page-bg) 55%, transparent) 45%,
+    var(--color-page-bg) 100%
+  );
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  mask-image: linear-gradient(to right, transparent, #000 70%);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 70%);
+}
+
+.topbar-nav-all {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 2;
+  margin-left: 0.15rem;
+}
+
+.topbar-nav-all-btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--color-surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.topbar-nav-all-btn:hover,
+.topbar-nav-all-btn.is-open {
+  border-color: var(--color-brand);
+  background: var(--color-brand-soft);
+}
+
+.topbar-nav-all-panel {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  left: auto;
+  z-index: 80;
+  width: min(28rem, calc(100vw - 2rem));
+  max-height: min(70vh, 24rem);
+  overflow-y: auto;
+  padding: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--ink) 12%, transparent);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.topbar-nav-all-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  font-size: 0.82rem;
+  text-align: center;
+  text-decoration: none;
+  padding: 0.55rem 0.35rem;
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1.25;
+}
+
+.topbar-nav-all-item:hover,
+.topbar-nav-all-item.active {
+  background: var(--color-brand-soft);
 }
 
 .brand-block {
@@ -268,10 +369,11 @@ body:has(.app-shell--agent-chat) {
 
 .nav {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.3rem;
   min-width: 0;
+  width: max-content;
 }
 
 .nav a {
@@ -1234,21 +1336,42 @@ body:has(.app-shell--agent-chat) {
     grid-column: 1 / -1;
     grid-row: 2;
     width: 100%;
+    overflow: visible;
+  }
+
+  .topbar-nav-scroll {
     overflow-x: auto;
     overscroll-behavior-inline: contain;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
   }
 
-  .topbar-nav-wrap::-webkit-scrollbar {
+  .topbar-nav-scroll::-webkit-scrollbar {
     display: none;
   }
 
   .topbar-nav-wrap .nav {
     flex-wrap: nowrap;
     width: max-content;
-    min-width: 100%;
+    min-width: 0;
     gap: 0.2rem;
+  }
+
+  .topbar-nav-all-btn {
+    font-size: 0.78rem;
+    padding: 0.28rem 0.55rem;
+    min-height: 2rem;
+  }
+
+  .topbar-nav-all-panel {
+    width: min(22rem, calc(100vw - 1.2rem));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.2rem;
+  }
+
+  .topbar-nav-all-item {
+    font-size: 0.72rem;
+    padding: 0.45rem 0.2rem;
   }
 
   .topbar-nav-wrap .nav a {
@@ -2562,6 +2685,31 @@ body:has(.app-shell--agent-chat) {
   padding: 0;
   font: inherit;
   cursor: pointer;
+}
+
+.star-toggle {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: 0.1rem 0.2rem;
+  cursor: pointer;
+}
+
+.star-toggle.is-starred {
+  color: var(--color-brand);
+}
+
+.star-toggle:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.star-toggle:hover:not(:disabled) {
+  color: var(--color-brand);
 }
 
 .text-link:hover {

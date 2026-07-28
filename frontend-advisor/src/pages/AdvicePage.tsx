@@ -1,6 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { fetchAdvice, type AdviceItem } from '../api'
+import {
+  addWatchlist,
+  fetchAdvice,
+  fetchWatchlistStatus,
+  removeWatchlist,
+  type AdviceItem,
+} from '../api'
 import { AdviceCard } from '../components/AdviceCard'
 
 export default function AdvicePage() {
@@ -10,6 +16,8 @@ export default function AdvicePage() {
   const [item, setItem] = useState<AdviceItem | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [starred, setStarred] = useState(false)
+  const [starBusy, setStarBusy] = useState(false)
 
   function run(sym: string) {
     const s = sym.trim()
@@ -18,9 +26,15 @@ export default function AdvicePage() {
     setError(null)
     setParams({ symbol: s })
     fetchAdvice(s)
-      .then(setItem)
+      .then((res) => {
+        setItem(res)
+        return fetchWatchlistStatus([res.symbol]).then((st) => {
+          setStarred(Boolean(st.starred?.[res.symbol]))
+        })
+      })
       .catch((err: Error) => {
         setItem(null)
+        setStarred(false)
         setError(err.message)
       })
       .finally(() => setLoading(false))
@@ -34,6 +48,21 @@ export default function AdvicePage() {
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     run(symbol)
+  }
+
+  async function onToggleStar(next: boolean) {
+    if (!item) return
+    setStarBusy(true)
+    setStarred(next)
+    try {
+      if (next) await addWatchlist(item.symbol, item.name || undefined)
+      else await removeWatchlist(item.symbol)
+    } catch (err) {
+      setStarred(!next)
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setStarBusy(false)
+    }
   }
 
   return (
@@ -56,7 +85,14 @@ export default function AdvicePage() {
       </form>
 
       {error ? <p className="status error">{error}</p> : null}
-      {item && !item.error ? <AdviceCard item={item} /> : null}
+      {item && !item.error ? (
+        <AdviceCard
+          item={item}
+          starred={starred}
+          starBusy={starBusy}
+          onToggleStar={onToggleStar}
+        />
+      ) : null}
       {item?.error ? <p className="status error">{item.error}</p> : null}
     </section>
   )

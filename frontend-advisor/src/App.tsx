@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
   AUTH_CHANGED_EVENT,
   clearSession,
@@ -9,6 +9,7 @@ import {
   type AuthUser,
 } from './auth'
 import MobileAgentMoreMenu from './components/MobileAgentMoreMenu'
+import TopbarNav, { AGENT_NAV_LINKS, BASE_NAV_LINKS } from './components/TopbarNav'
 import AccountPage from './pages/AccountPage'
 import AdvicePage from './pages/AdvicePage'
 import AgentChatPage from './pages/AgentChatPage'
@@ -23,6 +24,7 @@ import PaperPage from './pages/PaperPage'
 import PerformancePage from './pages/PerformancePage'
 import PortfolioPage from './pages/PortfolioPage'
 import RecommendationsPage from './pages/RecommendationsPage'
+import WatchlistPage from './pages/WatchlistPage'
 import SettingsPage from './pages/SettingsPage'
 import StrategyPage from './pages/StrategyPage'
 import { ThemeProvider } from './theme/ThemeProvider'
@@ -151,34 +153,10 @@ export default function App() {
             <p className="brand">次日顾问</p>
             <p className="brand-sub">规则评分 · AKQuant 校验</p>
           </div>
-          <div className="topbar-nav-wrap">
-            <nav className="nav" aria-label={isAgent ? 'Agent 导航' : '基础导航'}>
-              {isAgent ? (
-                <>
-                  <NavLink to="/agent" end>
-                    投研助手
-                  </NavLink>
-                  <NavLink to="/agent/config">Agent 配置</NavLink>
-                  <NavLink to="/agent/strategy">策略副驾</NavLink>
-                  <NavLink to="/agent/settings">DeepSeek 配置</NavLink>
-                </>
-              ) : (
-                <>
-                  <NavLink to="/" end>
-                    今日关注
-                  </NavLink>
-                  <NavLink to="/advice">标的诊断</NavLink>
-                  <NavLink to="/portfolio">我的持仓</NavLink>
-                  <NavLink to="/history">推荐历史</NavLink>
-                  <NavLink to="/paper">模拟盘</NavLink>
-                  <NavLink to="/leaderboard">龙虎榜</NavLink>
-                  <NavLink to="/performance">策略表现</NavLink>
-                  <NavLink to="/strategy">我的策略</NavLink>
-                  <NavLink to="/settings">设置</NavLink>
-                </>
-              )}
-            </nav>
-          </div>
+          <TopbarNav
+            links={isAgent ? AGENT_NAV_LINKS : BASE_NAV_LINKS}
+            ariaLabel={isAgent ? 'Agent 导航' : '基础导航'}
+          />
           <div className="user-bar">
             <Link className="user-name" to="/account">
               {user.username}
@@ -201,6 +179,7 @@ export default function App() {
             <Route path="/" element={<RecommendationsPage />} />
             <Route path="/advice" element={<AdvicePage />} />
             <Route path="/portfolio" element={<PortfolioPage />} />
+            <Route path="/watchlist" element={<WatchlistPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/paper" element={<PaperPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />

@@ -264,6 +264,46 @@ def build_tools(user_id: str) -> list[Any]:
         )
 
     @tool
+    def get_watchlist() -> str:
+        """获取用户股票收藏列表（含现价/涨跌幅，若可得）。收藏 ≠ 真实持仓。"""
+        _bind()
+        from ..watchlist import load_watchlist, watchlist_marks
+
+        try:
+            return json.dumps(
+                watchlist_marks(user_id), ensure_ascii=False, default=str
+            )
+        except Exception:
+            return json.dumps(
+                load_watchlist(user_id), ensure_ascii=False, default=str
+            )
+
+    @tool
+    def add_watchlist_symbol(symbol: str) -> str:
+        """将标的加入用户收藏（无需 confirm；上限 100 只）。"""
+        _bind()
+        from ..watchlist import add_symbol
+
+        try:
+            out = add_symbol(user_id, symbol)
+            return json.dumps(
+                {"ok": True, **out}, ensure_ascii=False, default=str
+            )
+        except ValueError as exc:
+            return json.dumps(
+                {"ok": False, "error": str(exc)}, ensure_ascii=False
+            )
+
+    @tool
+    def remove_watchlist_symbol(symbol: str) -> str:
+        """从用户收藏移除标的（无需 confirm；幂等）。"""
+        _bind()
+        from ..watchlist import remove_symbol
+
+        out = remove_symbol(user_id, symbol)
+        return json.dumps({"ok": True, **out}, ensure_ascii=False, default=str)
+
+    @tool
     def get_paper_pnl_brief() -> str:
         """获取模拟盘现金、市值与收益摘要。"""
         _bind()
@@ -1440,6 +1480,9 @@ def build_tools(user_id: str) -> list[Any]:
     return [
         get_today_recommendations,
         get_portfolio_summary,
+        get_watchlist,
+        add_watchlist_symbol,
+        remove_watchlist_symbol,
         upsert_real_position,
         remove_real_position,
         replace_real_portfolio,
