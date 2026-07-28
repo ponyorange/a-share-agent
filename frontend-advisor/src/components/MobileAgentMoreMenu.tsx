@@ -1,12 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-
-const AGENT_LINKS = [
-  { to: '/agent', end: true, label: '投研助手' },
-  { to: '/agent/config', end: false, label: 'Agent 配置' },
-  { to: '/agent/strategy', end: false, label: '策略副驾' },
-  { to: '/agent/settings', end: false, label: 'DeepSeek 配置' },
-] as const
+import { AGENT_NAV_LINKS } from './TopbarNav'
 
 export default function MobileAgentMoreMenu({
   onSwitchToBase,
@@ -60,7 +54,7 @@ export default function MobileAgentMoreMenu({
             切换到基础
           </button>
           <p className="mobile-agent-more-label">Agent</p>
-          {AGENT_LINKS.map((link) => (
+          {AGENT_NAV_LINKS.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}

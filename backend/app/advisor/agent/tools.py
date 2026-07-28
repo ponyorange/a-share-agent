@@ -303,6 +303,158 @@ def build_tools(user_id: str) -> list[Any]:
         out = remove_symbol(user_id, symbol)
         return json.dumps({"ok": True, **out}, ensure_ascii=False, default=str)
 
+    def _resolve_monitor_job(job_id: str = "", title: str = "") -> dict[str, Any]:
+        from ..monitor.store import find_jobs_by_title, get_job
+
+        jid = (job_id or "").strip()
+        if jid:
+            job = get_job(user_id, jid)
+            if not job:
+                raise ValueError("任务不存在")
+            return job
+        t = (title or "").strip()
+        if not t:
+            raise ValueError("请提供 job_id 或唯一 title")
+        matches = find_jobs_by_title(user_id, t)
+        if not matches:
+            raise ValueError("任务不存在")
+        if len(matches) > 1:
+            raise ValueError(
+                "标题匹配到多条任务，请用 job_id："
+                + ", ".join(str(m.get("id")) for m in matches[:5])
+            )
+        return matches[0]
+
+    @tool
+    def list_monitor_jobs() -> str:
+        """列出用户的盯盘定时任务（标题、状态、范围、规则摘要）。"""
+        _bind()
+        from ..monitor.store import list_jobs
+
+        jobs = list_jobs(user_id)
+        slim = [
+            {
+                "id": j.get("id"),
+                "title": j.get("title"),
+                "status": j.get("status"),
+                "scope": j.get("scope"),
+                "symbols": j.get("symbols"),
+                "rules": j.get("rules"),
+                "last_run_at": j.get("last_run_at"),
+                "last_alert_at": j.get("last_alert_at"),
+            }
+            for j in jobs
+        ]
+        return json.dumps(
+            {"count": len(slim), "jobs": slim},
+            ensure_ascii=False,
+            default=str,
+        )
+
+    @tool
+    def create_monitor_job(
+        title: str,
+        scope: str,
+        rules_json: str,
+        symbols_json: str = "[]",
+        note: str = "",
+    ) -> str:
+        """创建盯盘任务。scope=watchlist|portfolio|symbols。
+        rules_json 为规则数组 JSON。缺邮箱或字段非法返回 ok:false。
+        创建前须已与用户确认规则；本工具本身不再二次 confirm。"""
+        _bind()
+        from ..monitor.store import create_job
+
+        try:
+            rules = json.loads(rules_json or "[]")
+            symbols = json.loads(symbols_json or "[]")
+        except json.JSONDecodeError as exc:
+            return json.dumps(
+                {"ok": False, "error": f"JSON 无效: {exc}"},
+                ensure_ascii=False,
+            )
+        if not isinstance(rules, list) or not rules:
+            return json.dumps(
+                {"ok": False, "error": "rules_json 须为非空数组"},
+                ensure_ascii=False,
+            )
+        if not isinstance(symbols, list):
+            return json.dumps(
+                {"ok": False, "error": "symbols_json 须为数组"},
+                ensure_ascii=False,
+            )
+        try:
+            job = create_job(
+                user_id,
+                {
+                    "title": title,
+                    "scope": scope,
+                    "symbols": symbols,
+                    "rules": rules,
+                    "note": note or None,
+                },
+            )
+            return json.dumps(
+                {"ok": True, "job": job}, ensure_ascii=False, default=str
+            )
+        except ValueError as exc:
+            return json.dumps(
+                {"ok": False, "error": str(exc)}, ensure_ascii=False
+            )
+
+    @tool
+    def pause_monitor_job(job_id: str = "", title: str = "") -> str:
+        """暂停盯盘任务（无需 confirm）。可用 job_id 或唯一 title。"""
+        _bind()
+        from ..monitor.store import pause_job
+
+        try:
+            job = _resolve_monitor_job(job_id, title)
+            out = pause_job(user_id, str(job["id"]))
+            return json.dumps(
+                {"ok": True, "job": out}, ensure_ascii=False, default=str
+            )
+        except ValueError as exc:
+            return json.dumps(
+                {"ok": False, "error": str(exc)}, ensure_ascii=False
+            )
+
+    @tool
+    def resume_monitor_job(job_id: str = "", title: str = "") -> str:
+        """继续（恢复）盯盘任务（无需 confirm）。可用 job_id 或唯一 title。"""
+        _bind()
+        from ..monitor.store import resume_job
+
+        try:
+            job = _resolve_monitor_job(job_id, title)
+            out = resume_job(user_id, str(job["id"]))
+            return json.dumps(
+                {"ok": True, "job": out}, ensure_ascii=False, default=str
+            )
+        except ValueError as exc:
+            return json.dumps(
+                {"ok": False, "error": str(exc)}, ensure_ascii=False
+            )
+
+    @tool
+    def delete_monitor_job(job_id: str = "", title: str = "") -> str:
+        """删除盯盘任务（硬删，无需 confirm）。可用 job_id 或唯一 title。"""
+        _bind()
+        from ..monitor.store import delete_job
+
+        try:
+            job = _resolve_monitor_job(job_id, title)
+            delete_job(user_id, str(job["id"]))
+            return json.dumps(
+                {"ok": True, "deleted_id": job.get("id")},
+                ensure_ascii=False,
+                default=str,
+            )
+        except ValueError as exc:
+            return json.dumps(
+                {"ok": False, "error": str(exc)}, ensure_ascii=False
+            )
+
     @tool
     def get_paper_pnl_brief() -> str:
         """获取模拟盘现金、市值与收益摘要。"""
@@ -1483,6 +1635,11 @@ def build_tools(user_id: str) -> list[Any]:
         get_watchlist,
         add_watchlist_symbol,
         remove_watchlist_symbol,
+        list_monitor_jobs,
+        create_monitor_job,
+        pause_monitor_job,
+        resume_monitor_job,
+        delete_monitor_job,
         upsert_real_position,
         remove_real_position,
         replace_real_portfolio,

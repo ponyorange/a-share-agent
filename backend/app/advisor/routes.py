@@ -989,6 +989,68 @@ def watchlist_remove(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/monitor/jobs")
+def monitor_jobs_list(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    from .monitor.store import list_jobs
+
+    _bind(user)
+    jobs = list_jobs(user["id"])
+    return {"jobs": jobs, "count": len(jobs)}
+
+
+@router.post("/monitor/jobs")
+def monitor_jobs_create(
+    body: dict[str, Any], user: dict[str, Any] = Depends(_user)
+) -> dict[str, Any]:
+    from .monitor.store import create_job
+
+    _bind(user)
+    try:
+        return create_job(user["id"], body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/monitor/jobs/{job_id}/pause")
+def monitor_jobs_pause(
+    job_id: str, user: dict[str, Any] = Depends(_user)
+) -> dict[str, Any]:
+    from .monitor.store import pause_job
+
+    _bind(user)
+    try:
+        return pause_job(user["id"], job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/monitor/jobs/{job_id}/resume")
+def monitor_jobs_resume(
+    job_id: str, user: dict[str, Any] = Depends(_user)
+) -> dict[str, Any]:
+    from .monitor.store import resume_job
+
+    _bind(user)
+    try:
+        return resume_job(user["id"], job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/monitor/jobs/{job_id}")
+def monitor_jobs_delete(
+    job_id: str, user: dict[str, Any] = Depends(_user)
+) -> dict[str, Any]:
+    from .monitor.store import delete_job
+
+    _bind(user)
+    try:
+        delete_job(user["id"], job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True, "id": job_id}
+
+
 @router.get("/portfolio/advice")
 def portfolio_advice(
     as_of: str | None = Query(default=None),

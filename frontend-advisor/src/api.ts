@@ -617,6 +617,57 @@ export function removeWatchlist(symbol: string): Promise<WatchlistResponse> {
   })
 }
 
+export type MonitorRule = {
+  id?: string
+  type: 'price_below' | 'price_above' | 'day_chg_below' | 'day_chg_above' | string
+  value: number
+  hint?: string | null
+}
+
+export type MonitorJob = {
+  id: string
+  title: string
+  status: 'running' | 'paused' | string
+  scope: 'watchlist' | 'portfolio' | 'symbols' | string
+  symbols?: string[]
+  rules: MonitorRule[]
+  note?: string | null
+  notify_email?: string | null
+  cooldown_sec?: number
+  last_run_at?: string | null
+  last_alert_at?: string | null
+  last_error?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type MonitorJobsResponse = {
+  jobs: MonitorJob[]
+  count: number
+}
+
+export function fetchMonitorJobs(): Promise<MonitorJobsResponse> {
+  return authFetch('/api/advisor/monitor/jobs')
+}
+
+export function pauseMonitorJob(jobId: string): Promise<MonitorJob> {
+  return authFetch(`/api/advisor/monitor/jobs/${encodeURIComponent(jobId)}/pause`, {
+    method: 'POST',
+  })
+}
+
+export function resumeMonitorJob(jobId: string): Promise<MonitorJob> {
+  return authFetch(`/api/advisor/monitor/jobs/${encodeURIComponent(jobId)}/resume`, {
+    method: 'POST',
+  })
+}
+
+export function deleteMonitorJob(jobId: string): Promise<{ ok: boolean; id: string }> {
+  return authFetch(`/api/advisor/monitor/jobs/${encodeURIComponent(jobId)}`, {
+    method: 'DELETE',
+  })
+}
+
 export function fetchPortfolioAdvice(): Promise<PortfolioAdviceResponse> {
   return authFetch('/api/advisor/portfolio/advice')
 }

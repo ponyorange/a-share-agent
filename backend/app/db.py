@@ -67,6 +67,12 @@ def ensure_indexes() -> None:
     )
     db.portfolios.create_index("user_id", unique=True)
     db.watchlists.create_index("user_id", unique=True)
+    db.agent_monitor_jobs.create_index(
+        [("user_id", ASCENDING), ("status", ASCENDING)]
+    )
+    db.agent_monitor_jobs.create_index(
+        [("user_id", ASCENDING), ("updated_at", DESCENDING)]
+    )
     db.paper_accounts.create_index("user_id", unique=True)
     db.paper_positions.create_index(
         [("user_id", ASCENDING), ("symbol", ASCENDING)], unique=True

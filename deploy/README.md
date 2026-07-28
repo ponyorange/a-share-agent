@@ -101,10 +101,13 @@ MongoDB 需自行准备；通过 `.env` 中的 `MONGODB_URI` 连接。
 `sandbox-controller` 是持有 Docker socket 的高权限控制面，只能在 Compose
 内部网络暴露给 `share-data`。不要为它配置 `ports`，不要发布到宿主机或公网。
 `share-data` 只通过 `SANDBOX_URL=http://sandbox-controller:8090` 和
-`SANDBOX_TOKEN` 调用 Controller；`share-data`、`committee-worker` 和 Runner
-均不得挂载 `/var/run/docker.sock`。Controller 固定使用
+`SANDBOX_TOKEN` 调用 Controller；`share-data`、`committee-worker`、
+`monitor-worker` 和 Runner 均不得挂载 `/var/run/docker.sock`。Controller 固定使用
 `share-data-python-sandbox:2026-07-24` 作为 Runner 镜像，客户端不能传入镜像、
 挂载、网络或其他容器参数。
+
+`monitor-worker` 与主应用共用镜像，交易时段轮询 `agent_monitor_jobs` 并发邮件告警；
+需在部署机 `.env` 配置 `MONGODB_URI` 与 `MAIL_*`。管理页：顾问前端 `/agent/jobs`。
 
 真实 Docker Engine smoke test：
 

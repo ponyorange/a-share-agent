@@ -25,6 +25,7 @@ import PerformancePage from './pages/PerformancePage'
 import PortfolioPage from './pages/PortfolioPage'
 import RecommendationsPage from './pages/RecommendationsPage'
 import WatchlistPage from './pages/WatchlistPage'
+import MonitorJobsPage from './pages/MonitorJobsPage'
 import SettingsPage from './pages/SettingsPage'
 import StrategyPage from './pages/StrategyPage'
 import { ThemeProvider } from './theme/ThemeProvider'
@@ -188,6 +189,7 @@ export default function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/account" element={<AccountPage />} />
             <Route path="/agent" element={<AgentChatPage />} />
+            <Route path="/agent/jobs" element={<MonitorJobsPage />} />
             <Route path="/agent/committee" element={<CommitteePage />} />
             <Route path="/agent/config" element={<KnowledgePage />} />
             <Route

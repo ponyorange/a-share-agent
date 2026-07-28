@@ -273,6 +273,30 @@ services:
       - -m
       - app.advisor.committee.worker
 
+  monitor-worker:
+    # 与主应用复用同一镜像；交易时段轮询盯盘任务并发邮件。
+    image: ${FULL_TAG}
+    pull_policy: never
+    container_name: share-data-monitor-worker
+    restart: always
+
+    environment:
+      - APP_ENV=\${APP_ENV:-production}
+      - MONGODB_URI=\${MONGODB_URI:-}
+      - JWT_SECRET=\${JWT_SECRET:-}
+      - TUSHARE_TOKEN=\${TUSHARE_TOKEN:-}
+      - MAIL_HOST=\${MAIL_HOST:-}
+      - MAIL_PORT=\${MAIL_PORT:-}
+      - MAIL_USER=\${MAIL_USER:-}
+      - MAIL_PASS=\${MAIL_PASS:-}
+      - MAIL_FROM=\${MAIL_FROM:-}
+      - CORS_ORIGINS=\${CORS_ORIGINS:-*}
+
+    command:
+      - python
+      - -m
+      - app.advisor.monitor.worker
+
   sandbox-controller:
     image: ${CONTROLLER_FULL_TAG}
     pull_policy: never

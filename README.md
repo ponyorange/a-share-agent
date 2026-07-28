@@ -64,9 +64,11 @@ cp .env.example .env
 
 ### 邮件（可选）
 
-配置 `MAIL_*` 后可用于：个人资料页绑定邮箱验证码、登录页忘记密码、Agent 将聊天摘要发到已验证邮箱。  
+配置 `MAIL_*` 后可用于：个人资料页绑定邮箱验证码、登录页忘记密码、Agent 将聊天摘要发到已验证邮箱，以及盯盘定时任务告警。  
 163 授权码：邮箱设置 → POP3/SMTP/IMAP → 开启 SMTP → 新增授权码。真实密钥只放本机/部署机 `.env`，勿提交。  
-前端入口：顶栏用户名 → `/account`；登录页「忘记密码」。
+前端入口：顶栏用户名 → `/account`；登录页「忘记密码」；Agent 面板「定时任务」页 `/agent/jobs`。
+
+盯盘 worker（可选，与主应用同镜像）：本地可 `python -m app.advisor.monitor.worker`；Docker Compose 服务名为 `monitor-worker`，交易时段轮询规则并向已验证邮箱发告警（不下单）。
 
 生产启动必须显式设置 `APP_ENV=production`、`MONGODB_URI` 和至少 32 字节的
 高熵 `JWT_SECRET`。用户 LLM API Key 使用独立的
