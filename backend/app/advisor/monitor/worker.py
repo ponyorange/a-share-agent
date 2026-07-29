@@ -1,6 +1,8 @@
-"""Long-running worker: poll monitor jobs during trading sessions.
+"""Long-running worker: poll monitor schedules and evaluate during trading.
 
 Run: python -m app.advisor.monitor.worker
+
+Must keep running off-hours so scheduled / run_at jobs still activate at next_run_at.
 """
 
 from __future__ import annotations
@@ -29,11 +31,15 @@ def main() -> None:
             is_trading = bool(trading_session().get("is_trading"))
             sleep_sec = SLEEP_TRADING_SEC if is_trading else SLEEP_IDLE_SEC
             logger.info(
-                "tick jobs=%s quotes=%s alerts=%s errors=%s sleep=%ss trading=%s",
+                "tick jobs=%s quotes=%s alerts=%s errors=%s "
+                "activated=%s run_at=%s finalized=%s sleep=%ss trading=%s",
                 stats.get("jobs"),
                 stats.get("quotes"),
                 stats.get("alerts"),
                 stats.get("errors"),
+                stats.get("activated"),
+                stats.get("run_at"),
+                stats.get("finalized"),
                 sleep_sec,
                 is_trading,
             )

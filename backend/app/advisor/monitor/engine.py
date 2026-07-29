@@ -1,4 +1,4 @@
-"""One tick of monitor job evaluation (rules + optional LLM watch)."""
+"""One tick of monitor job evaluation (schedule + rules + optional LLM watch)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Any
 from .alerts import send_monitor_alert
 from .flow import get_flow_snapshot
 from .llm_watch import run_llm_watch, should_run_llm_watch
+from .logs import append_job_log
 from .rules import (
     FLOW_TYPES,
     cooldown_key,
@@ -17,27 +18,168 @@ from .rules import (
     is_cooled_down,
     mark_cooldown,
 )
-from .store import list_running_jobs, resolve_symbols, touch_job_run
+from .run_at import execute_run_at_job
+from .schedule import (
+    DEFAULT_WATCH_END,
+    SH,
+    compute_next_run_at,
+    ensure_utc,
+    shanghai_hhmm_on,
+)
+from ..calendar_util import is_trading_day
+from .store import (
+    list_due_scheduled_jobs,
+    list_running_jobs,
+    resolve_symbols,
+    touch_job_run,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def run_monitor_tick(*, quote_limit: int = 200) -> dict[str, int]:
-    from ...quote import get_last_quote, trading_session
+def _parse_dt(raw: Any) -> datetime | None:
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return ensure_utc(raw)
+    if isinstance(raw, str):
+        try:
+            text = raw.strip().replace("Z", "+00:00")
+            return ensure_utc(datetime.fromisoformat(text))
+        except ValueError:
+            return None
+    return None
 
-    stats = {
-        "jobs": 0,
-        "quotes": 0,
-        "alerts": 0,
-        "errors": 0,
-        "llm_runs": 0,
-        "llm_notified": 0,
-    }
-    session = trading_session()
-    if not session.get("is_trading"):
-        return stats
 
-    now = datetime.now(timezone.utc)
+def activate_due_jobs(*, now: datetime | None = None) -> dict[str, int]:
+    """Activate scheduled jobs whose next_run_at is due."""
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    stats = {"activated": 0, "run_at": 0, "completed_early": 0}
+    for job in list_due_scheduled_jobs(current):
+        job_id = str(job.get("id") or "")
+        user_id = str(job.get("user_id") or "")
+        kind = str(job.get("kind") or "watch")
+        if not job_id:
+            continue
+        if kind == "run_at":
+            execute_run_at_job(job, now=current)
+            stats["run_at"] += 1
+            continue
+        # watch
+        end_at = _parse_dt(job.get("end_at"))
+        if end_at is not None and current >= end_at:
+            touch_job_run(
+                job_id,
+                status="completed",
+                completed_at=current,
+                next_run_at=None,
+            )
+            append_job_log(
+                user_id,
+                job_id,
+                level="info",
+                event="completed",
+                message="已过结束时间，未进入盯盘窗口",
+            )
+            stats["completed_early"] += 1
+            continue
+        touch_job_run(
+            job_id,
+            status="running",
+            started_at=current,
+            next_run_at=None,
+            last_error=None,
+        )
+        append_job_log(
+            user_id,
+            job_id,
+            level="info",
+            event="activated",
+            message="盯盘窗口已激活",
+        )
+        stats["activated"] += 1
+    return stats
+
+
+def finalize_watch_windows(*, now: datetime | None = None) -> dict[str, int]:
+    """Close watch windows that have ended (once→completed, recurring→scheduled)."""
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    sh_now = current.astimezone(SH)
+    stats = {"finalized": 0}
+    for job in list_running_jobs():
+        job_id = str(job.get("id") or "")
+        user_id = str(job.get("user_id") or "")
+        if not job_id:
+            continue
+        kind = str(job.get("kind") or "watch")
+        if kind != "watch":
+            continue
+        repeat = str(job.get("repeat") or "recurring")
+        end_hhmm = str(job.get("end_time") or DEFAULT_WATCH_END)
+        done = False
+        if repeat == "once":
+            end_at = _parse_dt(job.get("end_at"))
+            if end_at is None:
+                anchor = str(job.get("anchor_date") or "")[:10]
+                if anchor:
+                    end_at = ensure_utc(shanghai_hhmm_on(anchor, end_hhmm))
+            if end_at is not None and current >= end_at:
+                done = True
+                touch_job_run(
+                    job_id,
+                    status="completed",
+                    completed_at=current,
+                    next_run_at=None,
+                    started_at=None,
+                )
+                append_job_log(
+                    user_id,
+                    job_id,
+                    level="info",
+                    event="completed",
+                    message="一次性盯盘已结束",
+                )
+        else:
+            cal = str(job.get("calendar") or "trading_days")
+            day_ok = cal == "everyday" or bool(is_trading_day(sh_now.date()))
+            if day_ok:
+                today_end = shanghai_hhmm_on(sh_now.date().isoformat(), end_hhmm)
+                if sh_now >= today_end:
+                    done = True
+            elif sh_now.hour >= 15:
+                done = True
+            if done:
+                nxt = compute_next_run_at(job, now=current)
+                touch_job_run(
+                    job_id,
+                    status="scheduled",
+                    next_run_at=ensure_utc(nxt),
+                    started_at=None,
+                )
+                append_job_log(
+                    user_id,
+                    job_id,
+                    level="info",
+                    event="completed",
+                    message=f"今日盯盘结束，下次 {ensure_utc(nxt)}",
+                )
+        if done:
+            stats["finalized"] += 1
+    return stats
+
+
+def _evaluate_running_watches(
+    *,
+    now: datetime,
+    quote_limit: int,
+    stats: dict[str, int],
+) -> None:
+    from ...quote import get_last_quote
+
     quotes_used = 0
     llm_users_done: set[str] = set()
 
@@ -126,7 +268,6 @@ def run_monitor_tick(*, quote_limit: int = 200) -> dict[str, int]:
                     stats["alerts"] += 1
                     last_alert_at = now
 
-            # Channel B: LLM watch (at most once per user per tick)
             if (
                 job.get("llm_enabled")
                 and user_id
@@ -183,5 +324,33 @@ def run_monitor_tick(*, quote_limit: int = 200) -> dict[str, int]:
                 last_run_at=now,
                 last_error=f"{type(exc).__name__}: {exc}",
             )
+
+
+def run_monitor_tick(*, quote_limit: int = 200) -> dict[str, int]:
+    from ...quote import trading_session
+
+    stats = {
+        "jobs": 0,
+        "quotes": 0,
+        "alerts": 0,
+        "errors": 0,
+        "llm_runs": 0,
+        "llm_notified": 0,
+        "activated": 0,
+        "run_at": 0,
+        "finalized": 0,
+    }
+    now = datetime.now(timezone.utc)
+
+    act = activate_due_jobs(now=now)
+    stats["activated"] = act.get("activated", 0)
+    stats["run_at"] = act.get("run_at", 0)
+
+    fin = finalize_watch_windows(now=now)
+    stats["finalized"] = fin.get("finalized", 0)
+
+    session = trading_session()
+    if session.get("is_trading"):
+        _evaluate_running_watches(now=now, quote_limit=quote_limit, stats=stats)
 
     return stats

@@ -38,6 +38,12 @@ def test_tick_sends_once_then_cooldown(monkeypatch):
 
     monkeypatch.setattr(engine_mod, "touch_job_run", touch)
     monkeypatch.setattr(
+        engine_mod, "activate_due_jobs", lambda now=None: {"activated": 0, "run_at": 0}
+    )
+    monkeypatch.setattr(
+        engine_mod, "finalize_watch_windows", lambda now=None: {"finalized": 0}
+    )
+    monkeypatch.setattr(
         "app.quote.trading_session",
         lambda: {"is_trading": True},
     )
@@ -66,10 +72,16 @@ def test_tick_sends_once_then_cooldown(monkeypatch):
     assert len(sent) == 1
 
 
-def test_tick_skips_when_not_trading(monkeypatch):
+def test_tick_skips_eval_when_not_trading(monkeypatch):
     monkeypatch.setattr(
         "app.quote.trading_session",
         lambda: {"is_trading": False},
+    )
+    monkeypatch.setattr(
+        engine_mod, "activate_due_jobs", lambda now=None: {"activated": 0, "run_at": 0}
+    )
+    monkeypatch.setattr(
+        engine_mod, "finalize_watch_windows", lambda now=None: {"finalized": 0}
     )
     called = []
     monkeypatch.setattr(
@@ -102,6 +114,12 @@ def test_tick_flow_rule_sends(monkeypatch):
         engine_mod, "resolve_symbols", lambda j: list(j.get("symbols") or [])
     )
     monkeypatch.setattr(engine_mod, "touch_job_run", lambda *a, **k: None)
+    monkeypatch.setattr(
+        engine_mod, "activate_due_jobs", lambda now=None: {"activated": 0, "run_at": 0}
+    )
+    monkeypatch.setattr(
+        engine_mod, "finalize_watch_windows", lambda now=None: {"finalized": 0}
+    )
     monkeypatch.setattr(
         "app.quote.trading_session", lambda: {"is_trading": True}
     )
@@ -158,6 +176,12 @@ def test_tick_llm_channel(monkeypatch):
         engine_mod,
         "touch_job_run",
         lambda job_id, **fields: touches.append(fields),
+    )
+    monkeypatch.setattr(
+        engine_mod, "activate_due_jobs", lambda now=None: {"activated": 0, "run_at": 0}
+    )
+    monkeypatch.setattr(
+        engine_mod, "finalize_watch_windows", lambda now=None: {"finalized": 0}
     )
     monkeypatch.setattr(
         "app.quote.trading_session", lambda: {"is_trading": True}
