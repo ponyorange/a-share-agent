@@ -648,7 +648,7 @@ export type MonitorRule = {
 export type MonitorJob = {
   id: string
   title: string
-  status: 'running' | 'paused' | string
+  status: 'scheduled' | 'running' | 'paused' | 'completed' | 'failed' | string
   scope: 'watchlist' | 'portfolio' | 'symbols' | string
   symbols?: string[]
   rules: MonitorRule[]
@@ -659,6 +659,17 @@ export type MonitorJob = {
   llm_interval_sec?: number
   llm_anomaly_abs_chg?: number
   knowledge_ids?: string[]
+  kind?: 'watch' | 'run_at' | string
+  repeat?: 'once' | 'recurring' | string
+  calendar?: 'trading_days' | 'everyday' | string
+  anchor_date?: string | null
+  run_time?: string | null
+  end_time?: string | null
+  prompt?: string | null
+  next_run_at?: string | null
+  end_at?: string | null
+  started_at?: string | null
+  completed_at?: string | null
   last_run_at?: string | null
   last_alert_at?: string | null
   last_llm_at?: string | null
@@ -668,13 +679,41 @@ export type MonitorJob = {
   updated_at?: string | null
 }
 
+export type MonitorJobLog = {
+  id: string
+  job_id?: string
+  ts: string
+  level: string
+  event: string
+  message: string
+  detail?: Record<string, unknown> | null
+}
+
 export type MonitorJobsResponse = {
   jobs: MonitorJob[]
   count: number
 }
 
+export type MonitorJobLogsResponse = {
+  logs: MonitorJobLog[]
+  count: number
+}
+
 export function fetchMonitorJobs(): Promise<MonitorJobsResponse> {
   return authFetch('/api/advisor/monitor/jobs')
+}
+
+export function fetchMonitorJobLogs(
+  jobId: string,
+  opts?: { after_ts?: string; limit?: number },
+): Promise<MonitorJobLogsResponse> {
+  const q = new URLSearchParams()
+  if (opts?.after_ts) q.set('after_ts', opts.after_ts)
+  if (opts?.limit != null) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return authFetch(
+    `/api/advisor/monitor/jobs/${encodeURIComponent(jobId)}/logs${qs ? `?${qs}` : ''}`,
+  )
 }
 
 export function pauseMonitorJob(jobId: string): Promise<MonitorJob> {
