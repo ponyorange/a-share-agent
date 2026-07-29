@@ -77,6 +77,47 @@ class _FakeJobs:
         return _DeleteResult(0)
 
 
+class _FakeLogs:
+    def __init__(self):
+        self.docs: list[dict] = []
+
+    def insert_one(self, doc):
+        body = dict(doc)
+        body["_id"] = ObjectId()
+        self.docs.append(body)
+        return _InsertResult(body["_id"])
+
+    def find(self, q):
+        matched = [
+            d
+            for d in self.docs
+            if all(d.get(k) == v for k, v in q.items() if not isinstance(v, dict))
+        ]
+
+        class _Cur:
+            def __init__(self, items):
+                self._items = items
+
+            def sort(self, *_a, **_k):
+                return self
+
+            def limit(self, n):
+                self._items = self._items[:n]
+                return self
+
+            def __iter__(self):
+                return iter(self._items)
+
+        return _Cur(matched)
+
+    def delete_many(self, q):
+        self.docs = [
+            d
+            for d in self.docs
+            if not all(d.get(k) == v for k, v in q.items())
+        ]
+
+
 class _FakeUsers:
     def __init__(self, doc=None):
         self.doc = doc
@@ -90,6 +131,7 @@ class _FakeUsers:
 class _FakeDB:
     def __init__(self, user_doc=None):
         self.agent_monitor_jobs = _FakeJobs()
+        self.agent_monitor_job_logs = _FakeLogs()
         self.users = _FakeUsers(user_doc)
 
 
@@ -101,6 +143,9 @@ def test_create_requires_verified_email(monkeypatch):
     uid = _uid()
     db = _FakeDB({"_id": uid, "email": "a@x.com"})
     monkeypatch.setattr(store_mod, "get_db", lambda: db)
+    from app.advisor.monitor import logs as logs_mod
+
+    monkeypatch.setattr(logs_mod, "get_db", lambda: db)
     with pytest.raises(ValueError, match="邮箱"):
         store_mod.create_job(
             str(uid),
@@ -123,6 +168,9 @@ def test_create_pause_resume_delete(monkeypatch):
         }
     )
     monkeypatch.setattr(store_mod, "get_db", lambda: db)
+    from app.advisor.monitor import logs as logs_mod
+
+    monkeypatch.setattr(logs_mod, "get_db", lambda: db)
     job = store_mod.create_job(
         str(uid),
         CreateJobBody(
@@ -132,16 +180,17 @@ def test_create_pause_resume_delete(monkeypatch):
             rules=[{"type": "price_below", "value": 4.0}],
         ),
     )
-    assert job["status"] == "running"
+    assert job["status"] == "scheduled"
     assert job["notify_email"] == "a@example.com"
     assert job["llm_enabled"] is False
     assert len(job["rules"]) == 1
     assert job["rules"][0]["id"]
+    assert job.get("next_run_at")
 
     paused = store_mod.pause_job(str(uid), job["id"])
     assert paused["status"] == "paused"
     resumed = store_mod.resume_job(str(uid), job["id"])
-    assert resumed["status"] == "running"
+    assert resumed["status"] in ("scheduled", "running")
     store_mod.delete_job(str(uid), job["id"])
     assert store_mod.get_job(str(uid), job["id"]) is None
 
@@ -156,6 +205,9 @@ def test_max_jobs(monkeypatch):
         }
     )
     monkeypatch.setattr(store_mod, "get_db", lambda: db)
+    from app.advisor.monitor import logs as logs_mod
+
+    monkeypatch.setattr(logs_mod, "get_db", lambda: db)
     for i in range(store_mod.JOBS_MAX_PER_USER):
         store_mod.create_job(
             str(uid),
@@ -199,6 +251,9 @@ def test_create_llm_requires_key(monkeypatch):
         }
     )
     monkeypatch.setattr(store_mod, "get_db", lambda: db)
+    from app.advisor.monitor import logs as logs_mod
+
+    monkeypatch.setattr(logs_mod, "get_db", lambda: db)
     monkeypatch.setattr(
         "app.advisor.llm_settings.resolve_llm_credentials",
         lambda _uid: (_ for _ in ()).throw(ValueError("no key")),
@@ -226,6 +281,9 @@ def test_create_with_flow_and_knowledge(monkeypatch):
         }
     )
     monkeypatch.setattr(store_mod, "get_db", lambda: db)
+    from app.advisor.monitor import logs as logs_mod
+
+    monkeypatch.setattr(logs_mod, "get_db", lambda: db)
     monkeypatch.setattr(
         "app.advisor.llm_settings.resolve_llm_credentials",
         lambda _uid: {"api_key": "k", "model": "m", "base_url": "http://x"},
@@ -245,3 +303,4 @@ def test_create_with_flow_and_knowledge(monkeypatch):
     assert job["knowledge_ids"] == ["k1", "k2"]
     assert job["rules"][0]["type"] == "flow_spike_in"
     assert job["rules"][0].get("mult") == 3.0
+    assert job["status"] == "scheduled"

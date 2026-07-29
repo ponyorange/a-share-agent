@@ -12,7 +12,15 @@ from pydantic import ValidationError
 
 from ...db import get_db
 from ...kline import normalize_symbol
+from .logs import append_job_log, delete_job_logs
 from .models import CreateJobBody, rule_to_dict
+from .schedule import (
+    DEFAULT_WATCH_END,
+    DEFAULT_WATCH_START,
+    compute_next_run_at,
+    compute_watch_end_at,
+    ensure_utc,
+)
 
 JOBS_MAX_PER_USER = 20
 SYMBOLS_MAX = 50
@@ -36,7 +44,7 @@ def require_verified_email(user_id: str) -> str:
 def _serialize(doc: dict[str, Any] | None) -> dict[str, Any] | None:
     if not doc:
         return None
-    out = dict(doc)
+    out = normalize_legacy_job(dict(doc))
     oid = out.pop("_id", None)
     if oid is not None:
         out["id"] = str(oid)
@@ -46,10 +54,37 @@ def _serialize(doc: dict[str, Any] | None) -> dict[str, Any] | None:
         "last_run_at",
         "last_alert_at",
         "last_llm_at",
+        "next_run_at",
+        "end_at",
+        "started_at",
+        "completed_at",
     ):
         val = out.get(key)
         if isinstance(val, datetime):
             out[key] = val.isoformat()
+    return out
+
+
+def normalize_legacy_job(doc: dict[str, Any]) -> dict[str, Any]:
+    """Fill schedule defaults for jobs created before schedule enhancement."""
+    out = dict(doc)
+    legacy = "kind" not in doc
+    out.setdefault("kind", "watch")
+    out.setdefault("repeat", "recurring")
+    out.setdefault("calendar", "trading_days")
+    out.setdefault("tz", "Asia/Shanghai")
+    out.setdefault("end_time", DEFAULT_WATCH_END)
+    if "run_time" not in out:
+        out["run_time"] = DEFAULT_WATCH_START if legacy else None
+    out.setdefault("anchor_date", None)
+    out.setdefault("prompt", None)
+    status = out.get("status")
+    if legacy:
+        # Pre-schedule jobs were always treated as active watch.
+        if status is None:
+            out["status"] = "running"
+    elif status is None:
+        out["status"] = "scheduled"
     return out
 
 
@@ -120,7 +155,7 @@ def create_job(user_id: str, body: CreateJobBody | dict[str, Any]) -> dict[str, 
         rules.append(rule_to_dict(r, rid))
 
     llm_enabled = bool(body.llm_enabled)
-    if llm_enabled:
+    if llm_enabled or body.kind == "run_at":
         from ..llm_settings import resolve_llm_credentials
 
         try:
@@ -155,10 +190,41 @@ def create_job(user_id: str, body: CreateJobBody | dict[str, Any]) -> dict[str, 
     if llm_anom <= 0:
         llm_anom = 0.03
 
+    kind = body.kind
+    repeat = body.repeat
+    calendar = body.calendar
+    end_time = body.end_time or DEFAULT_WATCH_END
+    run_time = body.run_time
+    if kind == "watch" and not run_time:
+        run_time = DEFAULT_WATCH_START
+
+    schedule_doc = {
+        "kind": kind,
+        "repeat": repeat,
+        "calendar": calendar,
+        "tz": "Asia/Shanghai",
+        "anchor_date": body.anchor_date,
+        "run_time": run_time,
+        "end_time": end_time,
+        "prompt": (body.prompt or None),
+        "status": "scheduled",
+        "next_run_at": None,
+        "end_at": None,
+        "started_at": None,
+        "completed_at": None,
+    }
+    nxt = compute_next_run_at(schedule_doc, now=now)
+    schedule_doc["next_run_at"] = ensure_utc(nxt)
+    if kind == "watch" and repeat == "once" and body.anchor_date:
+        schedule_doc["end_at"] = ensure_utc(
+            compute_watch_end_at(body.anchor_date, end_time)
+        )
+    if nxt is None and kind == "run_at" and repeat == "once":
+        raise ValueError("定点时间已过，请换用未来时间或改成重复任务")
+
     doc = {
         "user_id": user_id,
         "title": body.title,
-        "status": "running",
         "scope": body.scope,
         "symbols": symbols,
         "rules": rules,
@@ -178,18 +244,72 @@ def create_job(user_id: str, body: CreateJobBody | dict[str, Any]) -> dict[str, 
         "alert_cooldowns": {},
         "last_error": None,
         "last_llm_error": None,
+        **schedule_doc,
     }
     res = db.agent_monitor_jobs.insert_one(doc)
     doc["_id"] = res.inserted_id
+    append_job_log(
+        user_id,
+        str(res.inserted_id),
+        level="info",
+        event="created",
+        message=f"已创建（{kind}/{repeat}），下次 {doc.get('next_run_at')}",
+    )
     return _serialize(doc)  # type: ignore[return-value]
 
 
 def pause_job(user_id: str, job_id: str) -> dict[str, Any]:
-    return _set_status(user_id, job_id, "paused")
+    out = _set_status(user_id, job_id, "paused")
+    append_job_log(user_id, job_id, level="info", event="paused", message="已暂停")
+    return out
 
 
 def resume_job(user_id: str, job_id: str) -> dict[str, Any]:
-    return _set_status(user_id, job_id, "running")
+    try:
+        oid = ObjectId(job_id)
+    except Exception as exc:
+        raise ValueError("任务不存在") from exc
+    now = datetime.now(timezone.utc)
+    doc = get_db().agent_monitor_jobs.find_one({"_id": oid, "user_id": user_id})
+    if not doc:
+        raise ValueError("任务不存在")
+    from .schedule import SH, _day_allowed, shanghai_hhmm_on
+
+    norm = normalize_legacy_job(doc)
+    nxt = compute_next_run_at(norm, now=now)
+    status = "scheduled"
+    started = None
+    next_run = ensure_utc(nxt)
+    if norm.get("kind") == "watch":
+        sh_now = now.astimezone(SH)
+        d0 = sh_now.date().isoformat()
+        start_hhmm = str(norm.get("run_time") or DEFAULT_WATCH_START)
+        end_hhmm = str(norm.get("end_time") or DEFAULT_WATCH_END)
+        open_at = shanghai_hhmm_on(d0, start_hhmm)
+        end_at = shanghai_hhmm_on(d0, end_hhmm)
+        cal = str(norm.get("calendar") or "trading_days")
+        in_window = _day_allowed(sh_now.date(), cal) and open_at <= sh_now <= end_at
+        if norm.get("repeat") == "once":
+            anchor = str(norm.get("anchor_date") or "")[:10]
+            in_window = in_window and (not anchor or anchor == d0)
+        if in_window or (next_run is not None and next_run <= now):
+            status = "running"
+            started = now
+            next_run = None
+    res = get_db().agent_monitor_jobs.find_one_and_update(
+        {"_id": oid, "user_id": user_id},
+        {
+            "$set": {
+                "status": status,
+                "next_run_at": next_run,
+                "started_at": started,
+                "updated_at": now,
+            }
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    append_job_log(user_id, job_id, level="info", event="resumed", message=f"已恢复 → {status}")
+    return _serialize(res)  # type: ignore[return-value]
 
 
 def _set_status(user_id: str, job_id: str, status: str) -> dict[str, Any]:
@@ -216,6 +336,7 @@ def delete_job(user_id: str, job_id: str) -> None:
     res = get_db().agent_monitor_jobs.delete_one({"_id": oid, "user_id": user_id})
     if res.deleted_count == 0:
         raise ValueError("任务不存在")
+    delete_job_logs(user_id, job_id)
 
 
 def resolve_symbols(job: dict[str, Any]) -> list[str]:
@@ -234,13 +355,41 @@ def resolve_symbols(job: dict[str, Any]) -> list[str]:
 
 
 def list_running_jobs() -> list[dict[str, Any]]:
+    """Watch jobs currently in running status (for intraday evaluation)."""
     cur = get_db().agent_monitor_jobs.find({"status": "running"})
     out = []
     for doc in cur:
+        kind = doc.get("kind") or "watch"
+        if kind != "watch":
+            continue
         s = _serialize(doc)
         if s:
-            # keep user_id for resolve
             s["user_id"] = doc.get("user_id")
+            out.append(s)
+    return out
+
+
+def list_due_scheduled_jobs(now: datetime | None = None) -> list[dict[str, Any]]:
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    # Fake/simple find only supports equality; filter next_run_at in Python.
+    cur = get_db().agent_monitor_jobs.find({"status": "scheduled"})
+    out = []
+    for doc in cur:
+        nxt = doc.get("next_run_at")
+        if nxt is None:
+            continue
+        if isinstance(nxt, datetime):
+            nxt_utc = ensure_utc(nxt)
+        else:
+            continue
+        if nxt_utc is None or nxt_utc > current:
+            continue
+        s = _serialize(doc)
+        if s:
+            s["user_id"] = doc.get("user_id")
+            s["_raw"] = doc
             out.append(s)
     return out
 

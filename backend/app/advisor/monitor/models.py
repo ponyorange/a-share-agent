@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .rules import RULE_TYPES
 
 Scope = Literal["watchlist", "portfolio", "symbols"]
+JobKind = Literal["watch", "run_at"]
+JobRepeat = Literal["once", "recurring"]
+JobCalendar = Literal["trading_days", "everyday"]
 RuleType = Literal[
     "price_below",
     "price_above",
@@ -30,15 +33,22 @@ class MonitorRuleIn(BaseModel):
 
 class CreateJobBody(BaseModel):
     title: str = Field(min_length=1, max_length=80)
-    scope: Scope
+    scope: Scope = "watchlist"
     symbols: list[str] = Field(default_factory=list)
-    rules: list[MonitorRuleIn] = Field(min_length=1)
+    rules: list[MonitorRuleIn] = Field(default_factory=list)
     note: str | None = None
     cooldown_sec: int | None = None
     llm_enabled: bool = False
     llm_interval_sec: int | None = None
     llm_anomaly_abs_chg: float | None = None
     knowledge_ids: list[str] = Field(default_factory=list)
+    kind: JobKind = "watch"
+    repeat: JobRepeat = "recurring"
+    calendar: JobCalendar = "trading_days"
+    anchor_date: str | None = None
+    run_time: str | None = None
+    end_time: str | None = "15:05"
+    prompt: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -47,6 +57,32 @@ class CreateJobBody(BaseModel):
         if not s:
             raise ValueError("标题不能为空")
         return s
+
+    @field_validator("anchor_date")
+    @classmethod
+    def _anchor(cls, v: str | None) -> str | None:
+        if v is None or not str(v).strip():
+            return None
+        text = str(v).strip()[:10]
+        # validate format
+        from datetime import date
+
+        date.fromisoformat(text)
+        return text
+
+    @field_validator("run_time", "end_time")
+    @classmethod
+    def _hhmm(cls, v: str | None) -> str | None:
+        if v is None or not str(v).strip():
+            return None
+        text = str(v).strip()
+        parts = text.split(":")
+        if len(parts) < 2:
+            raise ValueError("时间格式应为 HH:MM")
+        h, m = int(parts[0]), int(parts[1])
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError("时间格式应为 HH:MM")
+        return f"{h:02d}:{m:02d}"
 
     @field_validator("rules")
     @classmethod
@@ -68,6 +104,22 @@ class CreateJobBody(BaseModel):
             if len(seen) >= 8:
                 break
         return seen
+
+    @model_validator(mode="after")
+    def _check_kind(self) -> Self:
+        if self.kind == "run_at":
+            if not (self.prompt or "").strip():
+                raise ValueError("定点任务需要 prompt")
+            if not self.run_time:
+                raise ValueError("定点任务需要 run_time（如 09:00）")
+            if self.repeat == "once" and not self.anchor_date:
+                raise ValueError("一次性定点任务需要 anchor_date")
+        else:
+            if not self.rules and not self.llm_enabled:
+                raise ValueError("盯盘任务需要至少一条规则，或开启 LLM 看盘")
+            if self.repeat == "once" and not self.anchor_date:
+                raise ValueError("一次性盯盘需要 anchor_date（目标交易日）")
+        return self
 
 
 def rule_to_dict(rule: MonitorRuleIn, rule_id: str) -> dict[str, Any]:
