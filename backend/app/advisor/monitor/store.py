@@ -20,6 +20,7 @@ from .schedule import (
     compute_next_run_at,
     compute_watch_end_at,
     ensure_utc,
+    format_shanghai,
 )
 
 JOBS_MAX_PER_USER = 20
@@ -39,6 +40,15 @@ def require_verified_email(user_id: str) -> str:
     if not isinstance(email, str) or not user.get("email_verified_at"):
         raise ValueError("请先在个人资料绑定并验证邮箱")
     return email.strip().lower()
+
+
+def _iso_utc(val: datetime) -> str:
+    """Mongo returns naive UTC; always emit an offset so browsers don't treat as local."""
+    if val.tzinfo is None:
+        aware = val.replace(tzinfo=timezone.utc)
+    else:
+        aware = val.astimezone(timezone.utc)
+    return aware.isoformat().replace("+00:00", "Z")
 
 
 def _serialize(doc: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -61,7 +71,7 @@ def _serialize(doc: dict[str, Any] | None) -> dict[str, Any] | None:
     ):
         val = out.get(key)
         if isinstance(val, datetime):
-            out[key] = val.isoformat()
+            out[key] = _iso_utc(val)
     return out
 
 
@@ -253,7 +263,7 @@ def create_job(user_id: str, body: CreateJobBody | dict[str, Any]) -> dict[str, 
         str(res.inserted_id),
         level="info",
         event="created",
-        message=f"已创建（{kind}/{repeat}），下次 {doc.get('next_run_at')}",
+        message=f"已创建（{kind}/{repeat}），下次 {format_shanghai(doc.get('next_run_at'))}",
     )
     return _serialize(doc)  # type: ignore[return-value]
 

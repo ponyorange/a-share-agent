@@ -64,11 +64,19 @@ def list_job_logs(
     out: list[dict[str, Any]] = []
     for doc in cur:
         ts = doc.get("ts")
+        if isinstance(ts, datetime):
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            else:
+                ts = ts.astimezone(timezone.utc)
+            ts_out = ts.isoformat().replace("+00:00", "Z")
+        else:
+            ts_out = ts
         out.append(
             {
                 "id": str(doc.get("_id")),
                 "job_id": doc.get("job_id"),
-                "ts": ts.isoformat() if hasattr(ts, "isoformat") else ts,
+                "ts": ts_out,
                 "level": doc.get("level"),
                 "event": doc.get("event"),
                 "message": doc.get("message"),

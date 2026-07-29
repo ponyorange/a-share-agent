@@ -118,3 +118,14 @@ def ensure_utc(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def format_shanghai(dt: datetime | None) -> str:
+    """Human-readable Asia/Shanghai time for logs / UI copy."""
+    if dt is None:
+        return "—"
+    if dt.tzinfo is None:
+        aware = dt.replace(tzinfo=timezone.utc)
+    else:
+        aware = dt
+    return aware.astimezone(SH).strftime("%Y-%m-%d %H:%M:%S")

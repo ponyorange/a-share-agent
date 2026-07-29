@@ -24,6 +24,7 @@ from .schedule import (
     SH,
     compute_next_run_at,
     ensure_utc,
+    format_shanghai,
     shanghai_hhmm_on,
 )
 from ..calendar_util import is_trading_day
@@ -165,7 +166,7 @@ def finalize_watch_windows(*, now: datetime | None = None) -> dict[str, int]:
                     job_id,
                     level="info",
                     event="completed",
-                    message=f"今日盯盘结束，下次 {ensure_utc(nxt)}",
+                    message=f"今日盯盘结束，下次 {format_shanghai(nxt)}",
                 )
         if done:
             stats["finalized"] += 1

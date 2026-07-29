@@ -176,7 +176,14 @@ def _runtime_config_section(user_id: str) -> str:
     )
 
 
-def build_system_prompt(user_id: str) -> str:
+_RUN_AT_SYSTEM_EXTRA = """## 定点定时任务模式（覆盖聊天发信规则）
+本轮由系统自动执行并直接把你的回复作为邮件正文发出。
+禁止调用 send_chat_summary_email；禁止写「邮件预览」「等您确认/点头」「要发出去吗」等对话确认话术；
+禁止征求是否发送。只输出完整研判/报告正文（可用 Markdown），不要寒暄收尾问句。
+"""
+
+
+def build_system_prompt(user_id: str, *, run_at_mode: bool = False) -> str:
     from ..agent_config import get_system_prompt
     from ..knowledge import build_knowledge_prompt_section
 
@@ -185,6 +192,8 @@ def build_system_prompt(user_id: str) -> str:
         _current_time_section(),
         _runtime_config_section(user_id),
     ]
+    if run_at_mode:
+        parts.append(_RUN_AT_SYSTEM_EXTRA.rstrip())
     user_prompt = (get_system_prompt(user_id) or "").strip()
     if user_prompt:
         parts.append(_USER_SYSTEM_PROMPT_HEADER.rstrip() + "\n" + user_prompt)
@@ -236,22 +245,26 @@ def _iter_agent_chat_events_sync(
     *,
     session_id: str | None,
     progress_trace: list[dict[str, str]],
+    run_at_mode: bool = False,
+    persist: bool = True,
 ) -> Iterator[dict[str, Any]]:
     """Yield SSE-ready events: meta → tool* → token* → done | error.
 
-    Persists user/assistant messages; loads sliding-window history as context.
+    When persist=True, stores user/assistant messages in chat sessions.
+    When persist=False (e.g. monitor run_at), runs ephemerally with no chat history.
     """
-    sid = ensure_session(user_id, session_id)
     msg = (message or "").strip()
     if not msg:
         yield {"event": "error", "data": {"detail": "消息不能为空"}}
         return
 
-    append_message(user_id, sid, role="user", content=msg)
-    history = build_context_history(user_id, sid)
-    # history already includes the user message we just appended
-    # Rebuild: all but last as prior, last is current — actually build_context
-    # includes current user msg; create_react_agent needs full list ending with it.
+    sid: str | None = None
+    if persist:
+        sid = ensure_session(user_id, session_id)
+        append_message(user_id, sid, role="user", content=msg)
+        history = build_context_history(user_id, sid)
+    else:
+        history = [{"role": "user", "content": msg}]
 
     yield {
         "event": "meta",
@@ -263,9 +276,15 @@ def _iter_agent_chat_events_sync(
 
         reset_web_turn_counters()
         model = build_chat_model(user_id)
-        tools = build_tools(user_id)
-        agent = create_react_agent(model, tools, prompt=build_system_prompt(user_id))
-
+        exclude = (
+            frozenset({"send_chat_summary_email"}) if run_at_mode else None
+        )
+        tools = build_tools(user_id, exclude=exclude)
+        agent = create_react_agent(
+            model,
+            tools,
+            prompt=build_system_prompt(user_id, run_at_mode=run_at_mode),
+        )
         from ..knowledge import build_always_knowledge_text
 
         lc_messages: list[Any] = []
@@ -401,19 +420,21 @@ def _iter_agent_chat_events_sync(
 
         persisted_trace = [*progress_trace, *tool_trace][-20:]
         done_trace = persisted_trace[-12:]
-        if not session_exists(user_id, sid):
-            yield {
-                "event": "error",
-                "data": {"detail": "session_not_found", "session_id": sid},
-            }
-            return
-        append_message(
-            user_id,
-            sid,
-            role="assistant",
-            content=reply,
-            tool_trace=persisted_trace,
-        )
+        if persist:
+            assert sid is not None
+            if not session_exists(user_id, sid):
+                yield {
+                    "event": "error",
+                    "data": {"detail": "session_not_found", "session_id": sid},
+                }
+                return
+            append_message(
+                user_id,
+                sid,
+                role="assistant",
+                content=reply,
+                tool_trace=persisted_trace,
+            )
         yield {
             "event": "done",
             "data": {
@@ -440,6 +461,8 @@ def iter_agent_chat_events(
     message: str,
     *,
     session_id: str | None = None,
+    run_at_mode: bool = False,
+    persist: bool = True,
 ) -> Iterator[dict[str, Any]]:
     """Yield SSE-ready events with async progress bridged from sub-agents."""
     output: queue.Queue[object] = queue.Queue(maxsize=_EVENT_QUEUE_SIZE)
@@ -483,6 +506,8 @@ def iter_agent_chat_events(
                     message,
                     session_id=session_id,
                     progress_trace=progress_trace,
+                    run_at_mode=run_at_mode,
+                    persist=persist,
                 ):
                     if stopped.is_set() or not put_required(event):
                         break
@@ -529,13 +554,21 @@ def run_agent_chat(
     *,
     session_id: str | None = None,
     history: list[dict[str, str]] | None = None,
+    run_at_mode: bool = False,
+    persist: bool = True,
 ) -> dict[str, Any]:
     """Non-streaming wrapper (ignores client history; uses persisted session)."""
     del history  # persisted context is source of truth
     reply = ""
     tool_trace: list[dict[str, Any]] = []
     sid = None
-    for ev in iter_agent_chat_events(user_id, message, session_id=session_id):
+    for ev in iter_agent_chat_events(
+        user_id,
+        message,
+        session_id=session_id,
+        run_at_mode=run_at_mode,
+        persist=persist,
+    ):
         if ev["event"] == "meta":
             sid = ev["data"].get("session_id")
         elif ev["event"] == "done":

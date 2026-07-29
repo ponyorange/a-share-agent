@@ -127,7 +127,11 @@ def _verified_email_for_user(user_id: str) -> str | None:
     return email.strip().lower()
 
 
-def build_tools(user_id: str) -> list[Any]:
+def build_tools(
+    user_id: str,
+    *,
+    exclude: frozenset[str] | set[str] | None = None,
+) -> list[Any]:
     """Create tools closed over user_id (and re-bind context on each call)."""
 
     def _bind() -> None:
@@ -1743,7 +1747,7 @@ def build_tools(user_id: str) -> list[Any]:
             ensure_ascii=False,
         )
 
-    return [
+    tools = [
         get_stock_quotes,
         get_today_recommendations,
         get_portfolio_summary,
@@ -1800,3 +1804,7 @@ def build_tools(user_id: str) -> list[Any]:
         *build_agent_python_tools(user_id),
         build_delegate_data_tool(user_id),
     ]
+    if exclude:
+        blocked = set(exclude)
+        tools = [t for t in tools if getattr(t, "name", None) not in blocked]
+    return tools
