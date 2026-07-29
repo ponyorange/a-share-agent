@@ -116,7 +116,7 @@ export default function WatchlistPage() {
     <section className="page">
       <div className="page-hero">
         <p>
-          收藏标的盘中约 3 秒刷新行情；非交易时段进入页面刷新一次。可从今日关注或标的诊断加星。
+          收藏标的盘中约 3 秒刷新行情；非交易时段进入页面刷新一次。可从今日关注或股票诊断加星。
         </p>
       </div>
 
@@ -143,7 +143,7 @@ export default function WatchlistPage() {
           <p className="status">正在拉取收藏…</p>
         ) : null}
         {marks && marks.items.length === 0 ? (
-          <p className="muted">暂无收藏。可在「今日关注」或「标的诊断」点星加入。</p>
+          <p className="muted">暂无收藏。可在「今日关注」或「股票诊断」点星加入。</p>
         ) : null}
         {marks && marks.items.length > 0 ? (
           <div className="table-wrap">

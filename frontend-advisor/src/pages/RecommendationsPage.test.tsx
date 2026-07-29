@@ -51,6 +51,45 @@ beforeEach(() => {
   streamRecommendationsRefresh.mockReset()
   streamRecommendationsRefreshJob.mockReset()
   streamRecQuotes.mockReset()
+  streamRecQuotes.mockImplementation(
+    async (
+      _tradeDate: string | undefined,
+      _board: string,
+      handlers: {
+        onMeta?: (meta: {
+          trade_date: string
+          total: number
+          is_trading?: boolean
+        }) => void
+        onQuote?: (q: {
+          symbol: string
+          close: number | null
+          prev_close: number | null
+          day_chg_pct: number | null
+          as_of: string
+          done: number
+          total: number
+        }) => void
+        onDone?: () => void
+      },
+    ) => {
+      handlers.onMeta?.({
+        trade_date: '2026-07-24',
+        total: 1,
+        is_trading: false,
+      })
+      handlers.onQuote?.({
+        symbol: '159518',
+        close: 1.25,
+        prev_close: 1.234,
+        day_chg_pct: 0.013,
+        as_of: '2026-07-24 15:00:00',
+        done: 1,
+        total: 1,
+      })
+      handlers.onDone?.()
+    },
+  )
   fetchActiveRecommendationsRefresh.mockResolvedValue({ job: null })
   fetchWatchlistStatus.mockResolvedValue({ starred: {} })
   fetchRecommendations.mockResolvedValue({

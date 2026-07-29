@@ -133,7 +133,9 @@ def iter_rec_quote_events(
     *,
     user_id: str | None = None,
 ):
-    """SSE: load close + day change for archived recommendation symbols."""
+    """SSE: live last price + day change for archived recommendation symbols."""
+    from ..quote import get_last_quote, trading_session
+
     td = effective_rec_date(trade_date)
     snap = get_snapshot(td, user_id=user_id)
     if not snap:
@@ -161,29 +163,26 @@ def iter_rec_quote_events(
         seen.add(sym)
         uniq.append(it)
 
+    session = trading_session()
     yield {
         "event": "meta",
-        "data": {"trade_date": td, "total": len(uniq)},
+        "data": {
+            "trade_date": td,
+            "total": len(uniq),
+            "is_trading": bool(session.get("is_trading")),
+            "live": True,
+        },
     }
 
     for i, it in enumerate(uniq):
         sym = str(it["symbol"])
         try:
-            name, df = fetch_daily_df(sym)
-            if df is None or df.empty:
-                raise ValueError("无日线")
-            # 相对归档交易日：取 <= trade_date 的最后一根
-            sub = df[df["time"] <= td]
-            if sub.empty:
-                sub = df
-            close = float(sub.iloc[-1]["close"])
-            as_of = str(sub.iloc[-1]["time"])[:10]
-            prev_close = None
-            day_chg = None
-            if len(sub) >= 2:
-                prev_close = float(sub.iloc[-2]["close"])
-                if prev_close > 0:
-                    day_chg = round(close / prev_close - 1.0, 6)
+            quote = get_last_quote(sym)
+            price = quote.get("price")
+            pre = quote.get("pre_close")
+            day_chg = quote.get("day_chg_pct")
+            if price is None and quote.get("error"):
+                raise RuntimeError(str(quote.get("error")))
             yield {
                 "event": "quote",
                 "data": {
@@ -191,12 +190,15 @@ def iter_rec_quote_events(
                     "done": i + 1,
                     "total": len(uniq),
                     "symbol": sym,
-                    "name": name or it.get("name"),
-                    "close": close,
-                    "prev_close": prev_close,
-                    "day_chg_pct": day_chg,
-                    "as_of": as_of,
+                    "name": quote.get("name") or it.get("name"),
+                    "close": price,
+                    "prev_close": pre,
+                    "day_chg_pct": (
+                        None if day_chg is None else round(float(day_chg), 6)
+                    ),
+                    "as_of": session.get("now"),
                     "board": it.get("board"),
+                    "live": True,
                 },
             }
         except Exception as exc:
@@ -208,15 +210,24 @@ def iter_rec_quote_events(
                     "total": len(uniq),
                     "symbol": sym,
                     "name": it.get("name"),
-                    "close": it.get("close"),
+                    "close": None,
                     "prev_close": None,
                     "day_chg_pct": None,
                     "error": str(exc),
                     "board": it.get("board"),
+                    "live": True,
                 },
             }
 
-    yield {"event": "done", "data": {"trade_date": td, "total": len(uniq)}}
+    yield {
+        "event": "done",
+        "data": {
+            "trade_date": td,
+            "total": len(uniq),
+            "is_trading": bool(session.get("is_trading")),
+            "live": True,
+        },
+    }
 
 
 def list_snapshot_dates(

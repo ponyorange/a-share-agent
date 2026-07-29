@@ -788,7 +788,7 @@ def recommendation_quotes_stream(
     board: str = Query(default="all"),
     user: dict[str, Any] = Depends(_user),
 ):
-    """SSE：为今日关注逐只加载收盘价与当日/最近交易日涨幅。"""
+    """SSE：为今日关注逐只加载实时现价与今日涨跌幅（非归档快照）。"""
     uid = user["id"]
 
     def gen():

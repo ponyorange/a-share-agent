@@ -9,7 +9,7 @@ export type TopbarNavLink = {
 
 export const BASE_NAV_LINKS: TopbarNavLink[] = [
   { to: '/', end: true, label: '今日关注' },
-  { to: '/advice', label: '标的诊断' },
+  { to: '/advice', label: '股票诊断' },
   { to: '/portfolio', label: '我的持仓' },
   { to: '/watchlist', label: '我的收藏' },
   { to: '/history', label: '推荐历史' },

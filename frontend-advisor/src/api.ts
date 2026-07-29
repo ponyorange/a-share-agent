@@ -12,7 +12,7 @@ export type AdviceItem = {
   symbol: string
   name: string
   as_of?: string
-  close?: number
+  close?: number | null
   prev_close?: number | null
   day_chg_pct?: number | null
   score: number
@@ -489,7 +489,12 @@ export async function streamRecQuotes(
   tradeDate: string | undefined,
   board: string,
   handlers: {
-    onMeta?: (meta: { trade_date: string; total: number }) => void
+    onMeta?: (meta: {
+      trade_date: string
+      total: number
+      is_trading?: boolean
+      live?: boolean
+    }) => void
     onQuote?: (item: RecQuoteItem) => void
     onDone?: (done: { trade_date: string; total: number }) => void
     onError?: (detail: string) => void
@@ -535,7 +540,14 @@ export async function streamRecQuotes(
         continue
       }
       if (eventName === 'meta') {
-        handlers.onMeta?.(data as { trade_date: string; total: number })
+        handlers.onMeta?.(
+          data as {
+            trade_date: string
+            total: number
+            is_trading?: boolean
+            live?: boolean
+          },
+        )
       } else if (eventName === 'quote') {
         handlers.onQuote?.(data as RecQuoteItem)
       } else if (eventName === 'done') {

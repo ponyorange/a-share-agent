@@ -37,6 +37,23 @@ function chgClass(v: number | null | undefined): string {
   return ''
 }
 
+/** 归档里的 close/day_chg 是刷新时快照，列表展示前先清掉，改用实时行情。 */
+function stripArchiveQuotes(payload: RecommendationsResponse): RecommendationsResponse {
+  const boards = { ...(payload.boards || {}) }
+  for (const [bid, block] of Object.entries(boards)) {
+    boards[bid] = {
+      ...block,
+      items: (block.items || []).map((it) => ({
+        ...it,
+        close: null,
+        prev_close: null,
+        day_chg_pct: null,
+      })),
+    }
+  }
+  return { ...payload, boards }
+}
+
 function BoardTable({
   items,
   starredMap,
@@ -156,8 +173,15 @@ export default function RecommendationsPage() {
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null)
   const [starredMap, setStarredMap] = useState<Record<string, boolean>>({})
   const [starBusy, setStarBusy] = useState<Record<string, boolean>>({})
+  const [quotesLive, setQuotesLive] = useState(false)
+  const [quotesTrading, setQuotesTrading] = useState(false)
   const refreshAbortRef = useRef<AbortController | null>(null)
   const refreshReqRef = useRef(0)
+  const quoteAbortRef = useRef<AbortController | null>(null)
+  const dataRef = useRef(data)
+  dataRef.current = data
+  const quotesLiveRef = useRef(quotesLive)
+  quotesLiveRef.current = quotesLive
 
   const applyProgress = useCallback(
     (row: {
@@ -255,7 +279,9 @@ export default function RecommendationsPage() {
       try {
         const payload = await fetchRecommendations(10, 'all', false)
         if (reqId !== refreshReqRef.current) return
-        setData(payload)
+        setQuotesLive(false)
+        setQuotesTrading(false)
+        setData(stripArchiveQuotes(payload))
         setRefreshStatus('刷新完成')
       } catch (err) {
         if (reqId !== refreshReqRef.current) return
@@ -296,7 +322,9 @@ export default function RecommendationsPage() {
         return
       }
       const payload = await fetchRecommendations(10, 'all', false)
-      setData(payload)
+      setQuotesLive(false)
+      setQuotesTrading(false)
+      setData(stripArchiveQuotes(payload))
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') return
       setError(err instanceof Error ? err.message : String(err))
@@ -335,6 +363,81 @@ export default function RecommendationsPage() {
 
   const board = data?.boards?.[tab]
   const items = board?.items ?? []
+
+  const loadQuotes = useCallback(async (opts?: { silent?: boolean }) => {
+    const cur = dataRef.current
+    if (!cur) return
+    if (!opts?.silent) setQuoteLoading(true)
+    if (!opts?.silent) setError(null)
+    setQuoteProgress({ done: 0, total: 0 })
+    const tradeDate = cur.trade_date || cur.snapshot?.trade_date
+    quoteAbortRef.current?.abort()
+    const ac = new AbortController()
+    quoteAbortRef.current = ac
+    try {
+      await streamRecQuotes(
+        tradeDate,
+        'all',
+        {
+          onMeta: (meta) => {
+            setQuoteProgress({ done: 0, total: meta.total })
+            if (typeof meta.is_trading === 'boolean') {
+              setQuotesTrading(meta.is_trading)
+            }
+          },
+          onQuote: (q) => {
+            setQuoteProgress({ done: q.done, total: q.total })
+            setData((prev) =>
+              prev
+                ? patchQuote(prev, q.symbol, {
+                    close: q.close ?? undefined,
+                    prev_close: q.prev_close,
+                    day_chg_pct: q.day_chg_pct,
+                    as_of: q.as_of || prev.as_of || undefined,
+                  })
+                : prev,
+            )
+          },
+          onDone: () => setQuotesLive(true),
+          onError: (detail) => {
+            if (!opts?.silent) setError(detail)
+          },
+        },
+        ac.signal,
+      )
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') return
+      if (!opts?.silent) {
+        setError(err instanceof Error ? err.message : String(err))
+      }
+    } finally {
+      if (!opts?.silent) setQuoteLoading(false)
+      setQuoteProgress(null)
+    }
+  }, [])
+
+  // 有归档名单后自动拉实时涨跌（不展示库内归档涨跌）
+  useEffect(() => {
+    if (!data?.boards || loading) return
+    const hasItems = Object.values(data.boards).some((b) => (b.items || []).length > 0)
+    if (!hasItems) return
+    void loadQuotes({ silent: quotesLiveRef.current })
+    return () => {
+      quoteAbortRef.current?.abort()
+    }
+  }, [data?.trade_date, data?.snapshot?.trade_date, loading, loadQuotes])
+
+  // 交易时段约 3 秒轮询现价/日涨幅
+  useEffect(() => {
+    if (!quotesLive || !quotesTrading || loading) return
+    const timer = window.setInterval(() => {
+      void loadQuotes({ silent: true })
+    }, 3000)
+    return () => {
+      window.clearInterval(timer)
+      quoteAbortRef.current?.abort()
+    }
+  }, [quotesLive, quotesTrading, loading, loadQuotes])
 
   useEffect(() => {
     if (!data?.boards) {
@@ -385,45 +488,6 @@ export default function RecommendationsPage() {
     },
     [],
   )
-
-  const needQuotes = useMemo(() => {
-    if (!data?.boards) return false
-    return Object.values(data.boards).some((b) =>
-      (b.items || []).some((it) => it.close == null || it.day_chg_pct == null),
-    )
-  }, [data])
-
-  async function loadQuotes() {
-    if (!data || quoteLoading) return
-    setQuoteLoading(true)
-    setError(null)
-    setQuoteProgress({ done: 0, total: 0 })
-    const tradeDate = data.trade_date || data.snapshot?.trade_date
-    try {
-      await streamRecQuotes(tradeDate, 'all', {
-        onMeta: (meta) => setQuoteProgress({ done: 0, total: meta.total }),
-        onQuote: (q) => {
-          setQuoteProgress({ done: q.done, total: q.total })
-          setData((prev) =>
-            prev
-              ? patchQuote(prev, q.symbol, {
-                  close: q.close ?? undefined,
-                  prev_close: q.prev_close,
-                  day_chg_pct: q.day_chg_pct,
-                  as_of: q.as_of || prev.as_of || undefined,
-                })
-              : prev,
-          )
-        },
-        onError: (detail) => setError(detail),
-      })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setQuoteLoading(false)
-      setQuoteProgress(null)
-    }
-  }
 
   async function handleOneClick(mode: 'balanced' | 'full' = 'balanced') {
     const maxCount =
@@ -544,7 +608,11 @@ export default function RecommendationsPage() {
           : data?.snapshot?.reason
             ? ` · 未归档：${data.snapshot.reason}`
             : ''}
-      {needQuotes ? ' · 缺日涨幅时可点「加载价格/日涨幅」' : ''}
+      {quotesLive
+        ? quotesTrading
+          ? ' · 行情自动刷新中（约 3 秒）'
+          : ' · 已显示现价/日涨幅（非交易时段）'
+        : ' · 正在拉取现价/日涨幅'}
       {(data?.errors?.length ?? 0) > 0
         ? ` · 精算失败 ${data!.errors!.length}（已尽量用粗分兜底）`
         : ''}
@@ -614,20 +682,18 @@ export default function RecommendationsPage() {
               ? '加载中…'
               : '刷新候选池'}
         </button>
-        {needQuotes ? (
-          <button
-            type="button"
-            className="btn ghost"
-            disabled={loading || quoteLoading || !items.length}
-            onClick={loadQuotes}
-          >
-            {quoteLoading && quoteProgress?.total
-              ? `行情 ${quoteProgress.done}/${quoteProgress.total}`
-              : quoteLoading
-                ? '加载行情…'
-                : '加载价格/日涨幅'}
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={loading || quoteLoading || !data}
+          onClick={() => void loadQuotes()}
+        >
+          {quoteLoading && quoteProgress?.total
+            ? `行情 ${quoteProgress.done}/${quoteProgress.total}`
+            : quoteLoading
+              ? '刷新行情…'
+              : '刷新行情'}
+        </button>
         <button
           type="button"
           className="btn"

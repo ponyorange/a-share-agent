@@ -88,9 +88,11 @@ def _slim_rec_items(items: list[dict[str, Any]], limit: int = 12) -> list[dict[s
             "action_label": it.get("action_label"),
             "board": it.get("board"),
             "industry": it.get("industry"),
-            "day_chg_pct": day_chg,
-            "day_chg": _fmt_ratio_pct(day_chg),
-            "close": it.get("close"),
+            # 归档快照涨跌，非盘中实时；展示实时涨跌请改用 get_stock_quotes
+            "archive_day_chg_pct": day_chg,
+            "archive_day_chg": _fmt_ratio_pct(day_chg),
+            "day_chg_is_live": False,
+            "close_at_archive": it.get("close"),
             "rationale": (it.get("rationale") or "")[:200],
         }
         if layers:
@@ -208,9 +210,60 @@ def build_tools(user_id: str) -> list[Any]:
         )
 
     @tool
+    def get_stock_quotes(symbols: str) -> str:
+        """批量获取 A 股/ETF 实时现价与今日涨跌幅。symbols 为逗号分隔 6 位代码，最多 20 只。
+        回答「今日涨了多少 / 现价」必须用本工具；展示涨跌用 day_chg 字段。
+        day_chg_pct 为小数比例（0.01=1%）。"""
+        _bind()
+        from ...quote import get_last_quote
+
+        parts = [p.strip() for p in (symbols or "").replace("，", ",").split(",") if p.strip()]
+        parts = parts[:20]
+        if not parts:
+            return json.dumps(
+                {"ok": False, "error": "请提供至少一个股票代码"},
+                ensure_ascii=False,
+            )
+        items: list[dict[str, Any]] = []
+        for raw in parts:
+            try:
+                q = get_last_quote(raw)
+            except Exception as exc:
+                items.append(
+                    {
+                        "symbol": raw,
+                        "ok": False,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                continue
+            day_chg = q.get("day_chg_pct")
+            items.append(
+                {
+                    "symbol": q.get("symbol") or raw,
+                    "name": q.get("name"),
+                    "price": q.get("price"),
+                    "pre_close": q.get("pre_close"),
+                    "day_chg_pct": day_chg,
+                    "day_chg": _fmt_ratio_pct(day_chg),
+                    "day_chg_is_live": True,
+                    "ok": q.get("price") is not None,
+                    "error": q.get("error"),
+                    "pct_unit": "day_chg_pct 是小数比例(0.01=1%)，展示用 day_chg",
+                }
+            )
+        return json.dumps(
+            {"ok": True, "count": len(items), "quotes": items},
+            ensure_ascii=False,
+            default=str,
+        )
+
+    @tool
     def get_today_recommendations(board: str = "all") -> str:
         """获取当前用户「今日关注」多因子推荐列表摘要（综合分 + tech/flow/sector/value/market 子分）。
         用户问今日关注/今日推荐时优先调用。board 可选 etf/hs/star/all。
+        返回的 archive_day_chg_* 是刷新归档时的涨跌快照，不是实时行情；
+        若要报盘中今日涨跌，必须再调用 get_stock_quotes。
         无归档时提示去基础面板刷新候选池；可再配合联播/宏观工具补充叙事。
         """
         _bind()
@@ -231,6 +284,10 @@ def build_tools(user_id: str) -> list[Any]:
         summary = {
             "trade_date": td,
             "buy_threshold": recs.get("buy_threshold"),
+            "quote_note": (
+                "items 中 archive_day_chg_* 为归档快照，非实时；"
+                "盘中涨跌请调用 get_stock_quotes"
+            ),
             "boards": {
                 bid: {
                     "count": block.get("count"),
@@ -1651,6 +1708,7 @@ def build_tools(user_id: str) -> list[Any]:
         )
 
     return [
+        get_stock_quotes,
         get_today_recommendations,
         get_portfolio_summary,
         get_watchlist,
