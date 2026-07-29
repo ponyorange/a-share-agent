@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import {
   createKnowledge,
   deleteKnowledge,
@@ -29,6 +29,110 @@ function itemToInput(item: KnowledgeItem): KnowledgeInput {
     description: item.description,
     body: item.body,
   }
+}
+
+function KnowledgeFormFields({
+  form,
+  setForm,
+  title,
+  kbSaving,
+  onSave,
+  onCancel,
+}: {
+  form: KnowledgeInput
+  setForm: Dispatch<SetStateAction<KnowledgeInput>>
+  title: string
+  kbSaving: boolean
+  onSave: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="knowledge-drawer">
+      <div className="knowledge-panel-head">
+        <h4>{title}</h4>
+        <button type="button" className="btn ghost" disabled={kbSaving} onClick={onCancel}>
+          取消
+        </button>
+      </div>
+      <div className="strategy-grid knowledge-form">
+        <label className="strategy-field">
+          <span>标题（≤ 80 字）</span>
+          <input
+            className="input"
+            maxLength={80}
+            value={form.title}
+            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+          />
+        </label>
+        <label className="strategy-field">
+          <span>模式</span>
+          <select
+            className="input"
+            value={form.mode}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, mode: e.target.value as KnowledgeMode }))
+            }
+          >
+            <option value="always">必选（注入消息上下文）</option>
+            <option value="on_demand">可选（按需加载）</option>
+          </select>
+        </label>
+        <label className="strategy-field knowledge-field-check">
+          <span>启用</span>
+          <input
+            type="checkbox"
+            checked={form.enabled}
+            onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+          />
+        </label>
+        <label className="strategy-field" style={{ gridColumn: '1 / -1' }}>
+          <span>
+            描述{form.mode === 'on_demand' ? '（必填，≤ 200 字）' : '（可选，≤ 200 字）'}
+          </span>
+          <input
+            className="input"
+            maxLength={200}
+            required={form.mode === 'on_demand'}
+            placeholder="例：用户询问仓位管理或止损规则时使用"
+            value={form.description}
+            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+          />
+          <span className="meta-line knowledge-hint">
+            {form.mode === 'on_demand'
+              ? '写清触发场景与适用问题，Agent 靠描述判断何时加载正文。避免空泛词（如「笔记」），写具体条件。'
+              : '建议写清主题与适用场景；可选知识时描述会进入目录供 Agent 检索。'}
+          </span>
+        </label>
+        <label className="strategy-field" style={{ gridColumn: '1 / -1' }}>
+          <span>正文（≤ 8000 字）</span>
+          <textarea
+            className="input knowledge-textarea"
+            maxLength={8000}
+            rows={10}
+            value={form.body}
+            onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+          />
+        </label>
+      </div>
+      <div className="form-actions">
+        <button
+          type="button"
+          className="btn"
+          disabled={
+            kbSaving ||
+            !form.title.trim() ||
+            (form.mode === 'on_demand' && !form.description.trim())
+          }
+          onClick={onSave}
+        >
+          {kbSaving ? '保存中…' : '保存'}
+        </button>
+        <button type="button" className="btn ghost" disabled={kbSaving} onClick={onCancel}>
+          取消
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export default function KnowledgePage() {
@@ -99,7 +203,21 @@ export default function KnowledgePage() {
     setKbError(null)
   }
 
-  function startEdit(item: KnowledgeItem) {
+  function toggleView(item: KnowledgeItem) {
+    if (viewing?.id === item.id) {
+      setViewing(null)
+      return
+    }
+    setEditing(null)
+    setViewing(item)
+    setKbError(null)
+  }
+
+  function toggleEdit(item: KnowledgeItem) {
+    if (editing && editing !== 'create' && editing.id === item.id) {
+      setEditing(null)
+      return
+    }
     setViewing(null)
     setEditing(item)
     setForm(itemToInput(item))
@@ -121,6 +239,7 @@ export default function KnowledgePage() {
         await updateKnowledge(editing.id, form)
       }
       setEditing(null)
+      setViewing(null)
       await loadKnowledge()
     } catch (err) {
       setKbError(err instanceof Error ? err.message : String(err))
@@ -151,6 +270,9 @@ export default function KnowledgePage() {
       setKbError(err instanceof Error ? err.message : String(err))
     }
   }
+
+  const isCreating = editing === 'create'
+  const editingId = editing && editing !== 'create' ? editing.id : null
 
   return (
     <section className="page">
@@ -217,156 +339,113 @@ export default function KnowledgePage() {
         </button>
       </div>
 
-      {!kbLoading && items.length === 0 && !editing ? (
+      {isCreating ? (
+        <div className="knowledge-create-drawer">
+          <KnowledgeFormFields
+            form={form}
+            setForm={setForm}
+            title="新建知识条目"
+            kbSaving={kbSaving}
+            onSave={handleSaveKnowledge}
+            onCancel={cancelKnowledgeForm}
+          />
+        </div>
+      ) : null}
+
+      {!kbLoading && items.length === 0 && !isCreating ? (
         <p className="meta-line">暂无知识条目，点击「新建条目」添加。</p>
       ) : null}
 
       {items.length > 0 ? (
         <ul className="knowledge-list">
-          {items.map((item) => (
-            <li key={item.id} className="knowledge-row">
-              <div className="knowledge-row-main">
-                <span className="knowledge-title">{item.title}</span>
-                <span
-                  className={`knowledge-badge knowledge-badge--${item.mode}`}
-                  title={
-                    item.mode === 'always' ? '必选：注入消息上下文' : '可选：按需加载'
-                  }
-                >
-                  {item.mode === 'always' ? '必选' : '可选'}
-                </span>
-                <label className="knowledge-enabled">
-                  <input
-                    type="checkbox"
-                    checked={item.enabled}
-                    onChange={() => handleToggleEnabled(item)}
+          {items.map((item) => {
+            const isViewing = viewing?.id === item.id && !editing
+            const isEditing = editingId === item.id
+            return (
+              <li key={item.id} className="knowledge-item">
+                <div className={`knowledge-row${isViewing || isEditing ? ' is-open' : ''}`}>
+                  <div className="knowledge-row-main">
+                    <span className="knowledge-title">{item.title}</span>
+                    <span
+                      className={`knowledge-badge knowledge-badge--${item.mode}`}
+                      title={
+                        item.mode === 'always' ? '必选：注入消息上下文' : '可选：按需加载'
+                      }
+                    >
+                      {item.mode === 'always' ? '必选' : '可选'}
+                    </span>
+                    <label className="knowledge-enabled">
+                      <input
+                        type="checkbox"
+                        checked={item.enabled}
+                        onChange={() => handleToggleEnabled(item)}
+                      />
+                      启用
+                    </label>
+                  </div>
+                  <div className="knowledge-row-actions">
+                    <button
+                      type="button"
+                      className={`btn ghost${isViewing ? ' active' : ''}`}
+                      disabled={kbSaving}
+                      onClick={() => toggleView(item)}
+                    >
+                      {isViewing ? '收起' : '查看'}
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn ghost${isEditing ? ' active' : ''}`}
+                      disabled={kbSaving}
+                      onClick={() => toggleEdit(item)}
+                    >
+                      {isEditing ? '收起' : '编辑'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      disabled={kbSaving}
+                      onClick={() => handleDeleteKnowledge(item)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+
+                {isViewing ? (
+                  <div className="knowledge-drawer" aria-label={`查看 ${item.title}`}>
+                    <div className="knowledge-panel-head">
+                      <h4>{item.title}</h4>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() => setViewing(null)}
+                      >
+                        关闭
+                      </button>
+                    </div>
+                    {item.description ? (
+                      <p className="meta-line">{item.description}</p>
+                    ) : (
+                      <p className="meta-line">（无描述）</p>
+                    )}
+                    <pre className="knowledge-body">{item.body || '（空正文）'}</pre>
+                  </div>
+                ) : null}
+
+                {isEditing ? (
+                  <KnowledgeFormFields
+                    form={form}
+                    setForm={setForm}
+                    title="编辑知识条目"
+                    kbSaving={kbSaving}
+                    onSave={handleSaveKnowledge}
+                    onCancel={cancelKnowledgeForm}
                   />
-                  启用
-                </label>
-              </div>
-              <div className="knowledge-row-actions">
-                <button type="button" className="btn ghost" onClick={() => setViewing(item)}>
-                  查看
-                </button>
-                <button type="button" className="btn ghost" onClick={() => startEdit(item)}>
-                  编辑
-                </button>
-                <button
-                  type="button"
-                  className="btn ghost"
-                  onClick={() => handleDeleteKnowledge(item)}
-                >
-                  删除
-                </button>
-              </div>
-            </li>
-          ))}
+                ) : null}
+              </li>
+            )
+          })}
         </ul>
-      ) : null}
-
-      {viewing && !editing ? (
-        <div className="knowledge-panel">
-          <div className="knowledge-panel-head">
-            <h3>{viewing.title}</h3>
-            <button type="button" className="btn ghost" onClick={() => setViewing(null)}>
-              关闭
-            </button>
-          </div>
-          {viewing.description ? (
-            <p className="meta-line">{viewing.description}</p>
-          ) : (
-            <p className="meta-line">（无描述）</p>
-          )}
-          <pre className="knowledge-body">{viewing.body || '（空正文）'}</pre>
-        </div>
-      ) : null}
-
-      {editing ? (
-        <div className="knowledge-panel">
-          <h3>{editing === 'create' ? '新建知识条目' : '编辑知识条目'}</h3>
-          <div className="strategy-grid knowledge-form">
-            <label className="strategy-field">
-              <span>标题（≤ 80 字）</span>
-              <input
-                className="input"
-                maxLength={80}
-                value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              />
-            </label>
-            <label className="strategy-field">
-              <span>模式</span>
-              <select
-                className="input"
-                value={form.mode}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, mode: e.target.value as KnowledgeMode }))
-                }
-              >
-                <option value="always">必选（注入消息上下文）</option>
-                <option value="on_demand">可选（按需加载）</option>
-              </select>
-            </label>
-            <label className="strategy-field knowledge-field-check">
-              <span>启用</span>
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
-              />
-            </label>
-            <label className="strategy-field" style={{ gridColumn: '1 / -1' }}>
-              <span>
-                描述{form.mode === 'on_demand' ? '（必填，≤ 200 字）' : '（可选，≤ 200 字）'}
-              </span>
-              <input
-                className="input"
-                maxLength={200}
-                required={form.mode === 'on_demand'}
-                placeholder="例：用户询问仓位管理或止损规则时使用"
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              />
-              <span className="meta-line knowledge-hint">
-                {form.mode === 'on_demand'
-                  ? '写清触发场景与适用问题，Agent 靠描述判断何时加载正文。避免空泛词（如「笔记」），写具体条件。'
-                  : '建议写清主题与适用场景；可选知识时描述会进入目录供 Agent 检索。'}
-              </span>
-            </label>
-            <label className="strategy-field" style={{ gridColumn: '1 / -1' }}>
-              <span>正文（≤ 8000 字）</span>
-              <textarea
-                className="input knowledge-textarea"
-                maxLength={8000}
-                rows={10}
-                value={form.body}
-                onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-              />
-            </label>
-          </div>
-          <div className="form-actions">
-            <button
-              type="button"
-              className="btn"
-              disabled={
-                kbSaving ||
-                !form.title.trim() ||
-                (form.mode === 'on_demand' && !form.description.trim())
-              }
-              onClick={handleSaveKnowledge}
-            >
-              {kbSaving ? '保存中…' : '保存'}
-            </button>
-            <button
-              type="button"
-              className="btn ghost"
-              disabled={kbSaving}
-              onClick={cancelKnowledgeForm}
-            >
-              取消
-            </button>
-          </div>
-        </div>
       ) : null}
     </section>
   )

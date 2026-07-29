@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it, vi } from 'vitest'
 import KnowledgePage from './KnowledgePage'
@@ -78,4 +78,23 @@ it('新建表单在描述字段展示写作提示', async () => {
 
   await user.selectOptions(screen.getByRole('combobox'), 'on_demand')
   expect(screen.getByText(/Agent 靠描述判断何时加载正文/)).toBeInTheDocument()
+})
+
+it('查看与编辑在当前条目下方展开抽屉', async () => {
+  const user = userEvent.setup()
+  render(<KnowledgePage />)
+  const title = await screen.findByText('交易纪律')
+  const row = title.closest('.knowledge-item')
+  expect(row).not.toBeNull()
+
+  await user.click(screen.getByRole('button', { name: '查看' }))
+  const viewDrawer = screen.getByLabelText('查看 交易纪律')
+  expect(row).toContainElement(viewDrawer)
+  expect(viewDrawer).toHaveTextContent('单笔风险不超过总资金的 2%。')
+  expect(screen.getByRole('button', { name: '收起' })).toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: '编辑' }))
+  expect(screen.queryByLabelText('查看 交易纪律')).not.toBeInTheDocument()
+  expect(within(row as HTMLElement).getByRole('heading', { name: '编辑知识条目' })).toBeInTheDocument()
+  expect(within(row as HTMLElement).getByDisplayValue('交易纪律')).toBeInTheDocument()
 })

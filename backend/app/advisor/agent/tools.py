@@ -1332,7 +1332,9 @@ def build_tools(user_id: str) -> list[Any]:
     @tool
     def fetch_symbol_daily_ma(symbol: str, recent: int = 30) -> str:
         """获取个股日 K 与 MA5/MA10/MA20。返回最新收盘、三条均线及相对位置，并附最近若干根日 K（含当日均线）。
-        问某票日线走势、站上/跌破均线、均线多头空头时必须调用；勿编造均线数值。"""
+        问某票日线走势、站上/跌破均线、均线多头空头时必须调用；勿编造均线数值。
+        注意：这是日线收盘序列，不是盘中实时行情；向用户展示时必须标注数据截至日，
+        盘中问现价/今日涨跌应改用 get_stock_quotes。"""
         from app.kline import fetch_symbol_daily_ma as _fetch
 
         try:

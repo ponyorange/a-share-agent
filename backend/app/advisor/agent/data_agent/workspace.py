@@ -147,6 +147,15 @@ class DatasetWorkspace:
         return bool(self._sandbox_results)
 
     @property
+    def sandbox_results(self) -> list[SandboxResultEvidence]:
+        return list(self._sandbox_results)
+
+    def latest_sandbox_result(self) -> SandboxResultEvidence | None:
+        if not self._sandbox_results:
+            return None
+        return self._sandbox_results[-1]
+
+    @property
     def max_python_attempts(self) -> int:
         """首次尝试 + 修正重试；与设计「最多重试 N 次」对齐。"""
         return self.limits.max_python_retries + 1
@@ -199,19 +208,58 @@ class DatasetWorkspace:
             return False
         if any(item.canonical_json == canonical for item in self._sandbox_results):
             return True
-        if type(data) is not dict or set(data) != {"result_id", "payload"}:
+        if type(data) is not dict:
             return False
         result_id = data.get("result_id")
         if type(result_id) is not str:
+            return False
+        evidence = self.sandbox_result_by_id(result_id)
+        if evidence is None:
+            return False
+        # 允许仅传 result_id；若带 payload 则必须与证据一致
+        if set(data) == {"result_id"}:
+            return True
+        if set(data) != {"result_id", "payload"}:
             return False
         try:
             _, payload_canonical = _canonical_json(data.get("payload"))
         except (TypeError, ValueError):
             return False
-        return any(
-            item.result_id == result_id and item.canonical_json == payload_canonical
-            for item in self._sandbox_results
-        )
+        return evidence.canonical_json == payload_canonical
+
+    def bind_sandbox_data(self, data: JsonValue) -> JsonValue:
+        """将提交 data 规范为可验证的沙箱证据引用。
+
+        - 已是某次沙箱原样结果：保持不变
+        - 含合法 result_id：补全/纠正为 {result_id, payload}
+        - 非空但被改写：回退为最近一次沙箱成功结果（防 data_not_in_sandbox_evidence 死循环）
+        """
+        if not self.has_sandbox_result:
+            return data
+        if self.matches_sandbox_result(data):
+            if type(data) is dict and set(data) == {"result_id"}:
+                evidence = self.sandbox_result_by_id(str(data["result_id"]))
+                if evidence is not None:
+                    return {
+                        "result_id": evidence.result_id,
+                        "payload": evidence.result,
+                    }
+            return data
+        if type(data) is dict and type(data.get("result_id")) is str:
+            evidence = self.sandbox_result_by_id(str(data["result_id"]))
+            if evidence is not None:
+                return {
+                    "result_id": evidence.result_id,
+                    "payload": evidence.result,
+                }
+        if data not in (None, {}, []):
+            latest = self.latest_sandbox_result()
+            if latest is not None:
+                return {
+                    "result_id": latest.result_id,
+                    "payload": latest.result,
+                }
+        return data
 
     def create_dataset(
         self, source: str, interface: str, params: dict[str, Any], payload: dict[str, Any]

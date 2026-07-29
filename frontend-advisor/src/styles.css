@@ -3385,6 +3385,23 @@ body:has(.app-shell--agent-chat) {
   gap: 0.55rem;
 }
 
+.knowledge-item {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.knowledge-create-drawer {
+  margin: 0.5rem 0 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
 .knowledge-row {
   display: flex;
   flex-wrap: wrap;
@@ -3392,9 +3409,14 @@ body:has(.app-shell--agent-chat) {
   justify-content: space-between;
   gap: 0.65rem 1rem;
   padding: 0.65rem 0.85rem;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--color-surface);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.knowledge-row.is-open {
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--color-brand-soft) 35%, transparent);
 }
 
 .knowledge-row-main {
@@ -3450,6 +3472,26 @@ body:has(.app-shell--agent-chat) {
   background: var(--color-surface);
 }
 
+.knowledge-drawer {
+  margin: 0;
+  padding: 0.85rem 1rem 1rem;
+  border: none;
+  border-radius: 0;
+  background: var(--bg0);
+  animation: knowledge-drawer-in 160ms ease-out;
+}
+
+@keyframes knowledge-drawer-in {
+  from {
+    opacity: 0.35;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .knowledge-panel-head {
   display: flex;
   flex-wrap: wrap;
@@ -3459,7 +3501,8 @@ body:has(.app-shell--agent-chat) {
   margin-bottom: 0.75rem;
 }
 
-.knowledge-panel h3 {
+.knowledge-panel h3,
+.knowledge-drawer h4 {
   margin: 0;
   font-size: 1rem;
 }
@@ -3468,7 +3511,7 @@ body:has(.app-shell--agent-chat) {
   margin: 0.75rem 0 0;
   padding: 0.85rem;
   border-radius: 10px;
-  background: var(--bg0);
+  background: var(--color-surface);
   border: 1px solid var(--line);
   font-family: var(--mono);
   font-size: 0.85rem;

@@ -234,8 +234,32 @@ def test_parse_data_agent_result_rejects_forged_data_after_any_sandbox_success(t
             workspace=workspace,
         )
 
-    assert result.failures[0].code == "data_not_in_sandbox_evidence"
-    assert result.data == {}
+    # 改写后的 data 会被回绑到最近一次沙箱成功结果，避免 submit 死循环
+    assert result.failures == []
+    assert result.data["payload"] == {"mean": 2.0}
+    assert "result_id" in result.data
+
+
+def test_parse_data_agent_result_accepts_result_id_only(tmp_path):
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "w") as workspace:
+        evidence = workspace.record_sandbox_result({"price": 871.0, "symbol": "Au99.99"})
+        result = parse_data_agent_result(
+            _result_json(data={"result_id": evidence.result_id}, sources=[]),
+            workspace=workspace,
+        )
+
+    assert result.failures == []
+    assert result.data == {
+        "result_id": evidence.result_id,
+        "payload": {"price": 871.0, "symbol": "Au99.99"},
+    }
+
+
+def test_data_agent_prompt_mentions_sge_gold_symbol():
+    from app.advisor.agent.data_agent.graph import DATA_AGENT_PROMPT
+
+    assert "spot_quotations_sge" in DATA_AGENT_PROMPT
+    assert "Au99.99" in DATA_AGENT_PROMPT
 
 
 def test_parse_data_agent_result_accepts_exact_sandbox_data_and_result_reference(tmp_path):

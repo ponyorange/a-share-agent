@@ -41,4 +41,24 @@ def test_system_prompt_requires_live_quotes():
     from app.advisor.agent.graph import SYSTEM_PROMPT
 
     assert "get_stock_quotes" in SYSTEM_PROMPT
-    assert "day_chg_is_live" in SYSTEM_PROMPT or "实时" in SYSTEM_PROMPT
+    assert "数据时效校验" in SYSTEM_PROMPT
+    assert "盘中先拉实时" in SYSTEM_PROMPT
+    assert "标注截止日期" in SYSTEM_PROMPT or "截至" in SYSTEM_PROMPT
+    assert "多源交叉验证" in SYSTEM_PROMPT
+    assert "暂缺实时数据" in SYSTEM_PROMPT
+    assert "立即纠正" in SYSTEM_PROMPT
+
+
+def test_current_time_section_includes_trading_hint():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.advisor.agent import graph as agent_graph
+
+    tz = ZoneInfo("Asia/Shanghai")
+    # 周一上午盘中
+    text = agent_graph._current_time_section(
+        now=datetime(2026, 7, 27, 10, 30, tzinfo=tz),
+    )
+    assert "交易时段" in text
+    assert "盘中" in text or "实时" in text
