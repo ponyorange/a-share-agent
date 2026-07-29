@@ -1,0 +1,20 @@
+---
+description: Docker 镜像必须使用 name:arch 标签（如 share-data:amd64）
+alwaysApply: true
+---
+
+# Docker 镜像命名
+
+本仓库镜像标签格式固定为 **`名称:架构`**，例如：
+
+- `share-data:amd64`
+- `share-data-python-sandbox:amd64`
+- `share-data-sandbox-controller:amd64`
+
+**禁止**使用：
+
+- `share-data-amd64:latest`（架构写进名字、标签用 latest）
+- `share-data:latest`（部署/打包默认也不要用 latest）
+
+打包入口：`./scripts/package-docker.sh`（`PLATFORM=linux/amd64` 时产出 `share-data:amd64`）。  
+导出包文件名可以是 `share-data-amd64.tar.gz`，但 `docker load` 后的镜像标签必须是 `share-data:amd64`。

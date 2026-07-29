@@ -41,9 +41,9 @@ Compose 的 `--env-file deploy/.env` 选项。Runner 只作为一次性执行镜
 不作为常驻 Compose service 启动：
 
 ```bash
-docker build -f sandbox/runner/Dockerfile -t share-data-python-sandbox:2026-07-24 .
-docker build -f sandbox/controller/Dockerfile -t share-data-sandbox-controller:2026-07-24 .
-docker build -f deploy/Dockerfile -t share-data:latest .
+docker build -f sandbox/runner/Dockerfile -t share-data-python-sandbox:amd64 .
+docker build -f sandbox/controller/Dockerfile -t share-data-sandbox-controller:amd64 .
+docker build -f deploy/Dockerfile -t share-data:amd64 .
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
@@ -103,7 +103,7 @@ MongoDB 需自行准备；通过 `.env` 中的 `MONGODB_URI` 连接。
 `share-data` 只通过 `SANDBOX_URL=http://sandbox-controller:8090` 和
 `SANDBOX_TOKEN` 调用 Controller；`share-data`、`committee-worker`、
 `monitor-worker` 和 Runner 均不得挂载 `/var/run/docker.sock`。Controller 固定使用
-`share-data-python-sandbox:2026-07-24` 作为 Runner 镜像，客户端不能传入镜像、
+`share-data-python-sandbox:amd64` 作为 Runner 镜像，客户端不能传入镜像、
 挂载、网络或其他容器参数。
 
 `monitor-worker` 与主应用共用镜像，交易时段轮询 `agent_monitor_jobs` 并发邮件告警；

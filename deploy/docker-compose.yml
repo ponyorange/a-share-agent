@@ -1,7 +1,7 @@
 services:
   share-data:
     # 直接使用本地已 load 的镜像（打包脚本会写入实际标签）
-    image: share-data:latest
+    image: share-data:amd64
     pull_policy: never
     container_name: share-data-app
     restart: always
@@ -25,7 +25,7 @@ services:
 
   committee-worker:
     # 与主应用复用同一镜像；只从部署机 .env 显式读取 worker 所需变量。
-    image: share-data:latest
+    image: share-data:amd64
     pull_policy: never
     container_name: share-data-committee-worker
     restart: on-failure
@@ -61,7 +61,7 @@ services:
 
   monitor-worker:
     # 与主应用复用同一镜像；交易时段轮询盯盘任务并发邮件。
-    image: share-data:latest
+    image: share-data:amd64
     pull_policy: never
     container_name: share-data-monitor-worker
     restart: always
@@ -84,14 +84,14 @@ services:
       - app.advisor.monitor.worker
 
   sandbox-controller:
-    image: share-data-sandbox-controller:2026-07-24
+    image: share-data-sandbox-controller:amd64
     pull_policy: never
     container_name: share-data-sandbox-controller
     restart: always
 
     environment:
       - SANDBOX_TOKEN=${SANDBOX_TOKEN:?SANDBOX_TOKEN must be set to at least 32 bytes}
-      - SANDBOX_RUNNER_IMAGE=share-data-python-sandbox:2026-07-24
+      - SANDBOX_RUNNER_IMAGE=share-data-python-sandbox:amd64
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

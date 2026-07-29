@@ -8,7 +8,9 @@
 #   ./scripts/package-docker.sh --skip-build   # 仅导出已有镜像与部署文件
 #
 # 默认 PLATFORM=linux/amd64（绿联 NAS / 常见 x86 服务器）。
-# 产物固定为 *-${ARCH}.tar.gz（不带日期）；镜像名以架构后缀结尾，标签默认 latest。
+# 产物固定为 *-${ARCH}.tar.gz（不带日期）。
+# 镜像标签约定（必须遵守）：name:arch，例如 share-data:amd64
+#   禁止 share-data-amd64:latest 这种「架构进名字、标签用 latest」的格式。
 # 若在 arm64 Mac 上打出 arm 镜像再拿到 Intel NAS，会报：exec format error
 #
 set -euo pipefail
@@ -23,16 +25,14 @@ CONTROLLER_DOCKERFILE="${ROOT}/sandbox/controller/Dockerfile"
 # 绿联 NAS（Intel）等 x86 机器请用 amd64；本机 Apple Silicon 调试可改 arm64
 PLATFORM="${PLATFORM:-linux/amd64}"
 ARCH_NAME="${PLATFORM##*/}"
-IMAGE_NAME="${IMAGE_NAME:-share-data-${ARCH_NAME}}"
-RUNNER_IMAGE_NAME="${RUNNER_IMAGE_NAME:-share-data-python-sandbox-${ARCH_NAME}}"
-CONTROLLER_IMAGE_NAME="${CONTROLLER_IMAGE_NAME:-share-data-sandbox-controller-${ARCH_NAME}}"
-IMAGE_TAG="${IMAGE_TAG:-latest}"
+# 镜像：share-data:amd64 / share-data-python-sandbox:amd64 / share-data-sandbox-controller:amd64
+IMAGE_NAME="${IMAGE_NAME:-share-data}"
+RUNNER_IMAGE_NAME="${RUNNER_IMAGE_NAME:-share-data-python-sandbox}"
+CONTROLLER_IMAGE_NAME="${CONTROLLER_IMAGE_NAME:-share-data-sandbox-controller}"
+IMAGE_TAG="${IMAGE_TAG:-${ARCH_NAME}}"
 FULL_TAG="${IMAGE_NAME}:${IMAGE_TAG}"
-LATEST_TAG="${IMAGE_NAME}:latest"
 RUNNER_FULL_TAG="${RUNNER_IMAGE_NAME}:${IMAGE_TAG}"
-RUNNER_LATEST_TAG="${RUNNER_IMAGE_NAME}:latest"
 CONTROLLER_FULL_TAG="${CONTROLLER_IMAGE_NAME}:${IMAGE_TAG}"
-CONTROLLER_LATEST_TAG="${CONTROLLER_IMAGE_NAME}:latest"
 
 SKIP_BUILD=0
 for arg in "$@"; do
@@ -120,7 +120,6 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
       --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
       --build-arg "PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}" \
       -t "$FULL_TAG" \
-      -t "$LATEST_TAG" \
       "$ROOT"
     echo "==> 构建沙箱 Runner 镜像…"
     docker buildx build \
@@ -132,7 +131,6 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
       --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
       --build-arg "PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}" \
       -t "$RUNNER_FULL_TAG" \
-      -t "$RUNNER_LATEST_TAG" \
       "$ROOT"
     echo "==> 构建沙箱 Controller 镜像…"
     docker buildx build \
@@ -144,7 +142,6 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
       --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
       --build-arg "PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}" \
       -t "$CONTROLLER_FULL_TAG" \
-      -t "$CONTROLLER_LATEST_TAG" \
       "$ROOT"
   else
     echo "==> 构建应用镜像…"
@@ -157,7 +154,6 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
       --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
       --build-arg "PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}" \
       -t "$FULL_TAG" \
-      -t "$LATEST_TAG" \
       "$ROOT"
     echo "==> 构建沙箱 Runner 镜像…"
     docker build \
@@ -168,7 +164,6 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
       --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
       --build-arg "PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}" \
       -t "$RUNNER_FULL_TAG" \
-      -t "$RUNNER_LATEST_TAG" \
       "$ROOT"
     echo "==> 构建沙箱 Controller 镜像…"
     docker build \
@@ -179,7 +174,6 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
       --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
       --build-arg "PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}" \
       -t "$CONTROLLER_FULL_TAG" \
-      -t "$CONTROLLER_LATEST_TAG" \
       "$ROOT"
   fi
 else
@@ -192,11 +186,12 @@ else
   echo "==> 跳过构建，使用已有镜像 ${FULL_TAG} / ${CONTROLLER_FULL_TAG} / ${RUNNER_FULL_TAG}"
 fi
 
-TAR_NAME="${IMAGE_NAME}.tar.gz"
+# 导出包文件名带架构，便于区分；镜像标签仍是 name:arch
+TAR_NAME="${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
 TAR_PATH="${DIST}/${TAR_NAME}"
-RUNNER_TAR_NAME="${RUNNER_IMAGE_NAME}.tar.gz"
+RUNNER_TAR_NAME="${RUNNER_IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
 RUNNER_TAR_PATH="${DIST}/${RUNNER_TAR_NAME}"
-CONTROLLER_TAR_NAME="${CONTROLLER_IMAGE_NAME}.tar.gz"
+CONTROLLER_TAR_NAME="${CONTROLLER_IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
 CONTROLLER_TAR_PATH="${DIST}/${CONTROLLER_TAR_NAME}"
 
 echo "==> 导出镜像 → dist/${TAR_NAME}"
