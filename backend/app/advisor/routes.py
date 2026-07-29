@@ -1053,6 +1053,23 @@ def monitor_jobs_delete(
     return {"ok": True, "id": job_id}
 
 
+@router.get("/monitor/jobs/{job_id}/logs")
+def monitor_jobs_logs(
+    job_id: str,
+    after_ts: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=200),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    from .monitor.logs import list_job_logs
+    from .monitor.store import get_job
+
+    _bind(user)
+    if not get_job(user["id"], job_id):
+        raise HTTPException(status_code=404, detail="任务不存在")
+    logs = list_job_logs(user["id"], job_id, after_ts=after_ts, limit=limit)
+    return {"logs": logs, "count": len(logs)}
+
+
 @router.get("/portfolio/advice")
 def portfolio_advice(
     as_of: str | None = Query(default=None),

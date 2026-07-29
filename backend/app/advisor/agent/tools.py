@@ -399,6 +399,14 @@ def build_tools(user_id: str) -> list[Any]:
                 "rules": j.get("rules"),
                 "llm_enabled": j.get("llm_enabled"),
                 "knowledge_ids": j.get("knowledge_ids"),
+                "kind": j.get("kind"),
+                "repeat": j.get("repeat"),
+                "calendar": j.get("calendar"),
+                "anchor_date": j.get("anchor_date"),
+                "run_time": j.get("run_time"),
+                "end_time": j.get("end_time"),
+                "next_run_at": j.get("next_run_at"),
+                "end_at": j.get("end_at"),
                 "last_run_at": j.get("last_run_at"),
                 "last_alert_at": j.get("last_alert_at"),
                 "last_llm_at": j.get("last_llm_at"),
@@ -416,20 +424,26 @@ def build_tools(user_id: str) -> list[Any]:
     def create_monitor_job(
         title: str,
         scope: str,
-        rules_json: str,
+        rules_json: str = "[]",
         symbols_json: str = "[]",
         note: str = "",
         llm_enabled: bool = False,
         knowledge_ids_json: str = "[]",
         llm_interval_sec: int = 900,
         llm_anomaly_abs_chg: float = 0.03,
+        kind: str = "watch",
+        repeat: str = "recurring",
+        calendar: str = "trading_days",
+        anchor_date: str = "",
+        run_time: str = "",
+        end_time: str = "15:05",
+        prompt: str = "",
     ) -> str:
-        """创建盯盘任务。scope=watchlist|portfolio|symbols。
-        rules_json 为规则数组 JSON（可含 flow_spike_in/out）。
-        llm_enabled 开启 Agent 看盘（需已配置 DeepSeek）。
-        knowledge_ids_json 为额外知识 ID 数组。
-        缺邮箱或字段非法返回 ok:false。
-        创建前须已与用户确认规则；本工具本身不再二次 confirm。"""
+        """创建盯盘/定点任务。scope=watchlist|portfolio|symbols。
+        kind=watch|run_at；repeat=once|recurring；calendar=trading_days|everyday。
+        once 须 anchor_date（YYYY-MM-DD）；watch 默认 run_time=09:15、end_time=15:05。
+        run_at 须 run_time（HH:MM）与 prompt；rules_json 可为空（仅 llm 或 run_at）。
+        创建前须与用户确认调度与规则；返回含 next_run_at。本工具不再二次 confirm。"""
         _bind()
         from ..monitor.store import create_job
 
@@ -442,9 +456,9 @@ def build_tools(user_id: str) -> list[Any]:
                 {"ok": False, "error": f"JSON 无效: {exc}"},
                 ensure_ascii=False,
             )
-        if not isinstance(rules, list) or not rules:
+        if not isinstance(rules, list):
             return json.dumps(
-                {"ok": False, "error": "rules_json 须为非空数组"},
+                {"ok": False, "error": "rules_json 须为数组"},
                 ensure_ascii=False,
             )
         if not isinstance(symbols, list):
@@ -457,23 +471,43 @@ def build_tools(user_id: str) -> list[Any]:
                 {"ok": False, "error": "knowledge_ids_json 须为数组"},
                 ensure_ascii=False,
             )
+        body: dict[str, Any] = {
+            "title": title,
+            "scope": scope,
+            "symbols": symbols,
+            "rules": rules,
+            "note": note or None,
+            "llm_enabled": bool(llm_enabled),
+            "knowledge_ids": knowledge_ids,
+            "llm_interval_sec": llm_interval_sec,
+            "llm_anomaly_abs_chg": llm_anomaly_abs_chg,
+            "kind": (kind or "watch").strip() or "watch",
+            "repeat": (repeat or "recurring").strip() or "recurring",
+            "calendar": (calendar or "trading_days").strip() or "trading_days",
+            "end_time": (end_time or "15:05").strip() or "15:05",
+        }
+        if (anchor_date or "").strip():
+            body["anchor_date"] = anchor_date.strip()[:10]
+        if (run_time or "").strip():
+            body["run_time"] = run_time.strip()
+        if (prompt or "").strip():
+            body["prompt"] = prompt.strip()
         try:
-            job = create_job(
-                user_id,
-                {
-                    "title": title,
-                    "scope": scope,
-                    "symbols": symbols,
-                    "rules": rules,
-                    "note": note or None,
-                    "llm_enabled": bool(llm_enabled),
-                    "knowledge_ids": knowledge_ids,
-                    "llm_interval_sec": llm_interval_sec,
-                    "llm_anomaly_abs_chg": llm_anomaly_abs_chg,
-                },
-            )
+            job = create_job(user_id, body)
+            preview = {
+                "id": job.get("id"),
+                "title": job.get("title"),
+                "status": job.get("status"),
+                "kind": job.get("kind"),
+                "repeat": job.get("repeat"),
+                "calendar": job.get("calendar"),
+                "next_run_at": job.get("next_run_at"),
+                "end_at": job.get("end_at"),
+            }
             return json.dumps(
-                {"ok": True, "job": job}, ensure_ascii=False, default=str
+                {"ok": True, "job": job, "preview": preview},
+                ensure_ascii=False,
+                default=str,
             )
         except ValueError as exc:
             return json.dumps(
