@@ -28,6 +28,7 @@ function renderDrawer(props?: Partial<Parameters<typeof AgentConversationDrawer>
         sessions={sessions}
         activeSessionId="s-1"
         disabled={false}
+        hasMore={false}
         triggerRef={triggerRef}
         onClose={onClose}
         onNew={onNew}
@@ -68,6 +69,7 @@ it('关闭卸载后把焦点还原到 triggerRef', async () => {
         sessions={sessions}
         activeSessionId="s-1"
         disabled={false}
+        hasMore={false}
         triggerRef={triggerRef}
         onClose={onClose}
         onNew={vi.fn()}
@@ -89,6 +91,7 @@ it('关闭卸载后把焦点还原到 triggerRef', async () => {
         sessions={sessions}
         activeSessionId="s-1"
         disabled={false}
+        hasMore={false}
         triggerRef={triggerRef}
         onClose={onClose}
         onNew={vi.fn()}
@@ -130,6 +133,7 @@ it('展示会话并把打开、删除和新对话动作交给回调', async () =
   expect(screen.getByText('旧会话')).toBeInTheDocument()
   expect(screen.getByText('3 条')).toBeInTheDocument()
   expect(screen.getByText('对话')).toBeInTheDocument()
+  expect(screen.getByText('没有更早对话')).toBeInTheDocument()
 
   await user.click(screen.getByRole('button', { name: '新对话' }))
   expect(onNew).toHaveBeenCalledTimes(1)
@@ -139,4 +143,17 @@ it('展示会话并把打开、删除和新对话动作交给回调', async () =
 
   await user.click(screen.getByRole('button', { name: '删除 旧会话' }))
   expect(onDelete).toHaveBeenCalledWith('s-1')
+})
+
+it('滚近底部时请求加载更早会话', async () => {
+  const onLoadMore = vi.fn()
+  renderDrawer({ hasMore: true, onLoadMore })
+
+  const scroller = document.querySelector('.agent-session-scroll') as HTMLElement
+  expect(scroller).toBeTruthy()
+  Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 400 })
+  Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 100 })
+  Object.defineProperty(scroller, 'scrollTop', { configurable: true, value: 360 })
+  scroller.dispatchEvent(new Event('scroll', { bubbles: true }))
+  expect(onLoadMore).toHaveBeenCalled()
 })

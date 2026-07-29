@@ -5,6 +5,7 @@ import { Navigate } from 'react-router-dom'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { AgentComposer, AGENT_CHAT_MESSAGE_LIMIT } from '../components/AgentComposer'
 import { AgentConversationDrawer } from '../components/AgentConversationDrawer'
+import { AgentSessionList } from '../components/AgentSessionList'
 import { useMediaQuery } from '../components/ResponsiveDataView'
 import {
   createAgentSession,
@@ -251,6 +252,9 @@ export default function AgentChatPage() {
   const isMobile = useMediaQuery('(max-width: 768px)')
   const [ready, setReady] = useState<boolean | null>(null)
   const [sessions, setSessions] = useState<AgentSession[]>([])
+  const [sessionsHasMore, setSessionsHasMore] = useState(false)
+  const [sessionsLoadingMore, setSessionsLoadingMore] = useState(false)
+  const sessionsLoadingRef = useRef(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
@@ -284,10 +288,37 @@ export default function AgentChatPage() {
   }, [])
 
   const refreshSessions = useCallback(async () => {
-    const res = await listAgentSessions()
+    const res = await listAgentSessions({ limit: 20 })
     setSessions(res.sessions || [])
+    setSessionsHasMore(Boolean(res.has_more))
     return res.sessions || []
   }, [])
+
+  const loadMoreSessions = useCallback(async () => {
+    if (sessionsLoadingRef.current || !sessionsHasMore) return
+    const oldest = sessions[sessions.length - 1]
+    if (!oldest?.updated_at || !oldest.session_id) return
+    sessionsLoadingRef.current = true
+    setSessionsLoadingMore(true)
+    try {
+      const res = await listAgentSessions({
+        limit: 20,
+        before: oldest.updated_at,
+        beforeId: oldest.session_id,
+      })
+      const incoming = res.sessions || []
+      setSessions((prev) => {
+        const seen = new Set(prev.map((row) => row.session_id))
+        return [...prev, ...incoming.filter((row) => !seen.has(row.session_id))]
+      })
+      setSessionsHasMore(Boolean(res.has_more))
+    } catch {
+      /* keep list; footer can retry on next scroll */
+    } finally {
+      sessionsLoadingRef.current = false
+      setSessionsLoadingMore(false)
+    }
+  }, [sessions, sessionsHasMore])
 
   useEffect(() => {
     fetchLlmSettings()
@@ -594,30 +625,16 @@ export default function AgentChatPage() {
         >
           新对话
         </button>
-        <ul className="agent-session-list">
-          {sessions.map((s) => (
-            <li key={s.session_id}>
-              <button
-                type="button"
-                className={`agent-session-item${sessionId === s.session_id ? ' active' : ''}`}
-                disabled={sessionTransitioning}
-                onClick={() => void openSession(s.session_id)}
-              >
-                <span className="agent-session-title">{s.title || '对话'}</span>
-                <span className="agent-session-meta">{s.message_count ?? 0} 条</span>
-              </button>
-              <button
-                type="button"
-                className="agent-session-del"
-                title="删除"
-                disabled={sessionTransitioning}
-                onClick={() => void handleDelete(s.session_id)}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
+        <AgentSessionList
+          sessions={sessions}
+          activeSessionId={sessionId}
+          disabled={sessionTransitioning}
+          hasMore={sessionsHasMore}
+          loadingMore={sessionsLoadingMore}
+          onLoadMore={() => void loadMoreSessions()}
+          onOpen={(id) => void openSession(id)}
+          onDelete={(id) => void handleDelete(id)}
+        />
       </aside>
 
       <div className="agent-main">
@@ -653,6 +670,8 @@ export default function AgentChatPage() {
           sessions={sessions}
           activeSessionId={sessionId}
           disabled={sessionTransitioning}
+          hasMore={sessionsHasMore}
+          loadingMore={sessionsLoadingMore}
           triggerRef={drawerTriggerRef}
           onClose={closeDrawer}
           onNew={() => {
@@ -670,6 +689,7 @@ export default function AgentChatPage() {
               if (succeeded) closeDrawer()
             })
           }}
+          onLoadMore={() => void loadMoreSessions()}
         />
 
         {messages.length === 0 ? (

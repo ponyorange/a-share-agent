@@ -106,3 +106,86 @@ def test_append_message_persists_when_session_remains(monkeypatch):
     assert len(database.agent_chat_messages.documents) == 1
     assert database.agent_chat_messages.documents[0]["content"] == "reply"
     assert database.agent_chat_sessions.documents[0]["message_count"] == 2
+
+
+class _ListCursor:
+    def __init__(self, docs):
+        self._docs = docs
+        self._sort_keys = []
+        self._limit = None
+
+    def sort(self, keys):
+        self._sort_keys = list(keys)
+        return self
+
+    def limit(self, n):
+        self._limit = n
+        return self
+
+    def __iter__(self):
+        rows = list(self._docs)
+        for key, direction in reversed(self._sort_keys):
+            rows.sort(key=lambda doc: doc.get(key), reverse=direction < 0)
+        if self._limit is not None:
+            rows = rows[: self._limit]
+        return iter(deepcopy(doc) for doc in rows)
+
+
+class _ListSessionsColl:
+    def __init__(self, docs):
+        self.documents = docs
+
+    def find(self, query, *_args, **_kwargs):
+        matched = [doc for doc in self.documents if _match_session_query(doc, query)]
+        return _ListCursor(matched)
+
+
+class _ListDB:
+    def __init__(self, docs):
+        self.agent_chat_sessions = _ListSessionsColl(docs)
+        self.agent_chat_messages = FakeCollection()
+
+
+def _match_session_query(document, query):
+    for key, expected in query.items():
+        if key == "$or":
+            if not any(_match_session_query(document, clause) for clause in expected):
+                return False
+            continue
+        actual = document.get(key)
+        if isinstance(expected, dict):
+            if "$lt" in expected and not (actual is not None and actual < expected["$lt"]):
+                return False
+            continue
+        if actual != expected:
+            return False
+    return True
+
+
+def test_list_sessions_paginates_with_cursor(monkeypatch):
+    from datetime import datetime, timezone
+
+    t1 = datetime(2026, 7, 29, 10, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 7, 29, 11, 0, tzinfo=timezone.utc)
+    t3 = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
+    docs = [
+        {"user_id": "u", "session_id": "a", "title": "A", "updated_at": t1, "message_count": 1},
+        {"user_id": "u", "session_id": "b", "title": "B", "updated_at": t2, "message_count": 2},
+        {"user_id": "u", "session_id": "c", "title": "C", "updated_at": t3, "message_count": 3},
+        {"user_id": "other", "session_id": "x", "title": "X", "updated_at": t3, "message_count": 9},
+    ]
+    monkeypatch.setattr(chat_store, "get_db", lambda: _ListDB(docs))
+
+    first = chat_store.list_sessions("u", limit=2)
+    assert [row["session_id"] for row in first["sessions"]] == ["c", "b"]
+    assert first["has_more"] is True
+
+    oldest = first["sessions"][-1]
+    second = chat_store.list_sessions(
+        "u",
+        limit=2,
+        before=oldest["updated_at"],
+        before_id=oldest["session_id"],
+    )
+    assert [row["session_id"] for row in second["sessions"]] == ["a"]
+    assert second["has_more"] is False

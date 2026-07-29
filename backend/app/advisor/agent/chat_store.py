@@ -12,8 +12,8 @@ from ...db import get_db
 MAX_CONTEXT_MESSAGES = 16
 # 单条消息送入模型时的最大字符
 MAX_CONTEXT_CHARS = 3500
-# 会话列表条数
-MAX_SESSIONS = 40
+# 单次会话列表请求上限（不再做全局条数硬顶）
+MAX_SESSIONS_PAGE = 50
 
 
 def _now() -> datetime:
@@ -24,28 +24,69 @@ def new_session_id() -> str:
     return uuid.uuid4().hex[:16]
 
 
-def list_sessions(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+def _parse_cursor_time(value: str | datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        current = value
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            current = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    if current.tzinfo is None:
+        return current.replace(tzinfo=timezone.utc)
+    return current.astimezone(timezone.utc)
+
+
+def _session_row(doc: dict[str, Any]) -> dict[str, Any]:
+    updated = doc.get("updated_at")
+    return {
+        "session_id": doc.get("session_id"),
+        "title": doc.get("title") or "新对话",
+        "updated_at": (
+            updated.isoformat() if hasattr(updated, "isoformat") else updated
+        ),
+        "message_count": int(doc.get("message_count") or 0),
+    }
+
+
+def list_sessions(
+    user_id: str,
+    limit: int = 20,
+    *,
+    before: str | datetime | None = None,
+    before_id: str | None = None,
+) -> dict[str, Any]:
+    """按 updated_at desc, session_id desc 分页；返回 sessions + has_more。"""
     db = get_db()
+    page = max(1, min(int(limit), MAX_SESSIONS_PAGE))
+    query: dict[str, Any] = {"user_id": user_id}
+    before_dt = _parse_cursor_time(before)
+    before_sid = (before_id or "").strip() or None
+    if before_dt is not None:
+        if before_sid:
+            query["$or"] = [
+                {"updated_at": {"$lt": before_dt}},
+                {"updated_at": before_dt, "session_id": {"$lt": before_sid}},
+            ]
+        else:
+            query["updated_at"] = {"$lt": before_dt}
+
     cur = (
-        db.agent_chat_sessions.find({"user_id": user_id}, {"_id": 0})
-        .sort("updated_at", -1)
-        .limit(min(limit, MAX_SESSIONS))
+        db.agent_chat_sessions.find(query, {"_id": 0})
+        .sort([("updated_at", -1), ("session_id", -1)])
+        .limit(page + 1)
     )
-    out = []
-    for doc in cur:
-        out.append(
-            {
-                "session_id": doc.get("session_id"),
-                "title": doc.get("title") or "新对话",
-                "updated_at": (
-                    doc["updated_at"].isoformat()
-                    if hasattr(doc.get("updated_at"), "isoformat")
-                    else doc.get("updated_at")
-                ),
-                "message_count": int(doc.get("message_count") or 0),
-            }
-        )
-    return out
+    docs = list(cur)
+    has_more = len(docs) > page
+    sessions = [_session_row(doc) for doc in docs[:page]]
+    return {"sessions": sessions, "has_more": has_more}
 
 
 def ensure_session(user_id: str, session_id: str | None = None) -> str:

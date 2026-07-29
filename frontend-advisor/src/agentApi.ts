@@ -84,8 +84,16 @@ export type AgentStoredMessage = {
   created_at?: string
 }
 
-export function listAgentSessions(limit = 20): Promise<{ sessions: AgentSession[] }> {
-  return authFetch(`/api/advisor/agent/sessions?limit=${limit}`)
+export function listAgentSessions(opts?: {
+  limit?: number
+  before?: string
+  beforeId?: string
+}): Promise<{ sessions: AgentSession[]; has_more: boolean }> {
+  const q = new URLSearchParams()
+  q.set('limit', String(opts?.limit ?? 20))
+  if (opts?.before) q.set('before', opts.before)
+  if (opts?.beforeId) q.set('before_id', opts.beforeId)
+  return authFetch(`/api/advisor/agent/sessions?${q}`)
 }
 
 export function createAgentSession(): Promise<{ session_id: string }> {

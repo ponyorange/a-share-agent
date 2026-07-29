@@ -352,10 +352,12 @@ class AgentStrategyApplyBody(BaseModel):
 @router.get("/agent/sessions")
 def agent_sessions_list(
     limit: int = Query(default=20, ge=1, le=50),
+    before: str | None = Query(default=None),
+    before_id: str | None = Query(default=None),
     user: dict[str, Any] = Depends(_user),
 ) -> dict[str, Any]:
     uid = _bind(user)
-    return {"sessions": list_sessions(uid, limit=limit)}
+    return list_sessions(uid, limit=limit, before=before, before_id=before_id)
 
 
 @router.get("/agent/sessions/{session_id}/messages")

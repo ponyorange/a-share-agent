@@ -1,20 +1,20 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type { AgentSession } from '../agentApi'
+import { AgentSessionList } from './AgentSessionList'
 
 export type AgentConversationDrawerProps = {
   open: boolean
   sessions: AgentSession[]
   activeSessionId: string | null
   disabled: boolean
+  hasMore: boolean
+  loadingMore?: boolean
   triggerRef: RefObject<HTMLElement | null>
   onClose: () => void
   onNew: () => void
   onOpen: (sessionId: string) => void
   onDelete: (sessionId: string) => void
-}
-
-function sessionTitle(session: AgentSession) {
-  return session.title || '对话'
+  onLoadMore?: () => void
 }
 
 export function AgentConversationDrawer({
@@ -22,11 +22,14 @@ export function AgentConversationDrawer({
   sessions,
   activeSessionId,
   disabled,
+  hasMore,
+  loadingMore = false,
   triggerRef,
   onClose,
   onNew,
   onOpen,
   onDelete,
+  onLoadMore,
 }: AgentConversationDrawerProps) {
   const closeRef = useRef<HTMLButtonElement | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
@@ -98,37 +101,16 @@ export function AgentConversationDrawer({
           新对话
         </button>
 
-        <ul className="agent-session-list">
-          {sessions.map((session) => {
-            const title = sessionTitle(session)
-            return (
-              <li key={session.session_id}>
-                <button
-                  type="button"
-                  className={`agent-session-item${
-                    activeSessionId === session.session_id ? ' active' : ''
-                  }`}
-                  aria-current={activeSessionId === session.session_id ? 'true' : undefined}
-                  aria-label={`打开 ${title}`}
-                  disabled={disabled}
-                  onClick={() => onOpen(session.session_id)}
-                >
-                  <span className="agent-session-title">{title}</span>
-                  <span className="agent-session-meta">{session.message_count ?? 0} 条</span>
-                </button>
-                <button
-                  type="button"
-                  className="agent-session-del"
-                  aria-label={`删除 ${title}`}
-                  disabled={disabled}
-                  onClick={() => onDelete(session.session_id)}
-                >
-                  ×
-                </button>
-              </li>
-            )
-          })}
-        </ul>
+        <AgentSessionList
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          disabled={disabled}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          onLoadMore={onLoadMore}
+          onOpen={onOpen}
+          onDelete={onDelete}
+        />
       </aside>
     </div>
   )

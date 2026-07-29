@@ -79,7 +79,7 @@ const completedFetchProgress: SubagentProgress = {
 beforeEach(() => {
   Object.values(api).forEach((mock) => mock.mockReset())
   api.fetchLlmSettings.mockResolvedValue({ configured: true })
-  api.listAgentSessions.mockResolvedValue({ sessions: [] })
+  api.listAgentSessions.mockResolvedValue({ sessions: [], has_more: false })
   api.createAgentSession.mockResolvedValue({ session_id: 's-new' })
   api.fetchAgentMessages.mockResolvedValue({ session_id: 's-new', messages: [] })
   api.deleteAgentSession.mockResolvedValue({ ok: true })
@@ -369,6 +369,7 @@ it('新建会话失败时保留旧会话并可继续发送', async () => {
   const user = userEvent.setup()
   api.listAgentSessions.mockResolvedValue({
     sessions: [{ session_id: 's-old', title: '旧会话', message_count: 1 }],
+    has_more: false
   })
   api.fetchAgentMessages.mockResolvedValue({
     session_id: 's-old',
@@ -407,6 +408,7 @@ it('打开会话失败时保留旧会话并显示安全错误', async () => {
       { session_id: 's-old', title: '旧会话', message_count: 1 },
       { session_id: 's-bad', title: '坏会话', message_count: 1 },
     ],
+    has_more: false
   })
   api.fetchAgentMessages.mockImplementation((id) => {
     if (id === 's-old') {
@@ -425,7 +427,7 @@ it('打开会话失败时保留旧会话并显示安全错误', async () => {
   )
 
   expect(await screen.findByText('旧会话消息')).toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: /坏会话/ }))
+  await user.click(screen.getByRole('button', { name: '打开 坏会话' }))
 
   expect(await screen.findByText('会话操作失败，请稍后重试')).toBeInTheDocument()
   expect(screen.queryByText(/secret load failure/)).not.toBeInTheDocument()
@@ -450,9 +452,11 @@ it('删除当前会话后后继加载失败时保持无会话且禁止发送', a
         { session_id: 's-current', title: '当前会话', message_count: 1 },
         { session_id: 's-next', title: '后继会话', message_count: 1 },
       ],
+      has_more: false,
     })
     .mockResolvedValueOnce({
       sessions: [{ session_id: 's-next', title: '后继会话', message_count: 1 }],
+      has_more: false,
     })
   api.fetchAgentMessages.mockImplementation((id) => {
     if (id === 's-current') {
@@ -526,6 +530,7 @@ it('打开会话失败时结束已有内容的 streaming 助手尾泡', async ()
       { session_id: 's-old', title: '旧会话', message_count: 0 },
       { session_id: 's-bad', title: '坏会话', message_count: 1 },
     ],
+    has_more: false
   })
   api.fetchAgentMessages.mockImplementation((id) => {
     if (id === 's-old') {
@@ -551,7 +556,7 @@ it('打开会话失败时结束已有内容的 streaming 助手尾泡', async ()
   act(() => streams[0].handlers.onToken?.('半截回复'))
   expect(screen.getByText('半截回复')).toBeInTheDocument()
 
-  await user.click(screen.getByRole('button', { name: /坏会话/ }))
+  await user.click(screen.getByRole('button', { name: '打开 坏会话' }))
 
   expect(await screen.findByText('会话操作失败，请稍后重试')).toBeInTheDocument()
   expect(screen.getByText('半截回复')).toBeInTheDocument()
@@ -570,6 +575,7 @@ it('移动顶栏打开对话记录并在成功选择会话后关闭抽屉', asyn
       { session_id: 's-old', title: '旧会话', message_count: 1 },
       { session_id: 's-next', title: '下一会话', message_count: 2 },
     ],
+    has_more: false
   })
   api.fetchAgentMessages.mockImplementation((id) =>
     Promise.resolve({
@@ -597,6 +603,7 @@ it('抽屉中新建会话成功后关闭，失败则保留抽屉和安全错误'
   const user = userEvent.setup()
   api.listAgentSessions.mockResolvedValue({
     sessions: [{ session_id: 's-old', title: '旧会话', message_count: 1 }],
+    has_more: false
   })
   api.fetchAgentMessages.mockResolvedValue({
     session_id: 's-old',

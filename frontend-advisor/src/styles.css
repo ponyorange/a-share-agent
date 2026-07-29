@@ -1453,7 +1453,7 @@ body:has(.app-shell--agent-chat) {
   background: var(--color-surface);
   min-height: 0;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
 }
 
 @media (max-width: 800px) {
@@ -1463,6 +1463,12 @@ body:has(.app-shell--agent-chat) {
   }
 }
 
+.agent-session-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
 .agent-session-list {
   list-style: none;
   margin: 0;
@@ -1470,6 +1476,12 @@ body:has(.app-shell--agent-chat) {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+.agent-session-foot {
+  margin: 0.55rem 0 0;
+  font-size: 0.78rem;
+  text-align: center;
 }
 
 .agent-session-list li {
@@ -2149,8 +2161,9 @@ body:has(.app-shell--agent-chat) {
   font-size: 1rem;
 }
 
-.app-shell--agent-chat .agent-drawer-panel > .agent-session-list {
+.app-shell--agent-chat .agent-drawer-panel > .agent-session-scroll {
   margin-top: 0.75rem;
+  max-height: calc(100% - 6rem);
 }
 
 .app-shell--agent-chat .agent-quick-scroll {
