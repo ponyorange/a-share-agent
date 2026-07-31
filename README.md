@@ -2,11 +2,11 @@
 
 多数据源行情 / 接口浏览 Web 应用，外加独立的**短期交易顾问**前端。
 
-| 数据源 | 接口浏览器 | 大盘行情 | K 线图 |
-|--------|:----------:|:--------:|:------:|
-| [AKShare](https://akshare.akfamily.xyz/) | ✓ | ✓ | ✓（含盘口） |
-| [Tushare](https://tushare.pro/document/2) | ✓ | — | — |
-| [BaoStock](http://baostock.com) | ✓ | — | ✓ |
+| 数据源 | 接口浏览器 | 大盘行情 | K 线图 | 打板 |
+|--------|:----------:|:--------:|:------:|:----:|
+| [AKShare](https://akshare.akfamily.xyz/) | ✓ | ✓ | ✓（含盘口） | ✓ |
+| [Tushare](https://tushare.pro/document/2) | ✓ | — | — | — |
+| [BaoStock](http://baostock.com) | ✓ | — | ✓ | — |
 
 - **后端**：FastAPI + 可插拔 Provider + 顾问（规则评分 / AKQuant 校验）
 - **前端（数据后台）**：`frontend/` · Vite + React · 端口 5173
@@ -141,8 +141,9 @@ npm run dev
 - 大盘：<http://127.0.0.1:5173/akshare/market>
 - K 线：<http://127.0.0.1:5173/akshare/kline?symbol=000001&range=daily>
 - 基金详情：<http://127.0.0.1:5173/akshare/fund?symbol=025857>
+- 打板：<http://127.0.0.1:5173/akshare/limitup>
 
-旧路径 `/`、`/market`、`/kline`、`/fund` 会重定向到 AKShare。
+旧路径 `/`、`/market`、`/kline`、`/fund`、`/limitup` 会重定向到 AKShare。
 
 ## 启动短期交易顾问
 
