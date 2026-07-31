@@ -64,6 +64,14 @@ export function PageNav({ sources, activeFeature }: Props) {
             基金详情
           </Link>
         ) : null}
+        {hasFeature(current, 'limitup') ? (
+          <Link
+            to={sourcePath(sourceId, 'limitup')}
+            className={activeFeature === 'limitup' ? 'active' : ''}
+          >
+            打板
+          </Link>
+        ) : null}
       </nav>
     </div>
   )
