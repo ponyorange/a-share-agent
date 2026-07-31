@@ -199,6 +199,27 @@ def market(source: str) -> dict[str, Any]:
         ) from exc
 
 
+@app.get("/api/{source}/limit-up")
+def limit_up(source: str) -> dict[str, Any]:
+    provider = _provider_or_404(source)
+    if "limitup" not in provider.features:
+        raise HTTPException(
+            status_code=404,
+            detail=f"数据源 {source} 暂不支持打板（features={list(provider.features)}）",
+        )
+    get_limit_up = getattr(provider, "get_limit_up", None)
+    if get_limit_up is None:
+        raise HTTPException(status_code=404, detail="打板接口未实现")
+    try:
+        return get_limit_up()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"打板数据获取失败: {type(exc).__name__}"
+        ) from exc
+
+
 @app.get("/api/{source}/fund/search")
 def fund_search(
     source: str,

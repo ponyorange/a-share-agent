@@ -1,4 +1,4 @@
-"""AKShare data source: explorer + market + kline + quote + fund."""
+"""AKShare data source: explorer + market + kline + quote + fund + limitup."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import akshare as ak
 from .. import catalog
 from .. import fund as fund_service
 from .. import kline as kline_service
+from .. import limitup as limitup_service
 from .. import market as market_service
 from .. import quote as quote_service
 from ..serialize import normalize_result
@@ -17,7 +18,7 @@ from ..serialize import normalize_result
 class AkshareProvider:
     id = "akshare"
     label = "AKShare"
-    features = ("explorer", "market", "kline", "quote", "fund")
+    features = ("explorer", "market", "kline", "quote", "fund", "limitup")
     docs_url = "https://akshare.akfamily.xyz/"
     def describe(self) -> dict[str, Any]:
         return {
@@ -105,3 +106,7 @@ class AkshareProvider:
     def get_fund_detail(self, symbol: str) -> dict[str, Any]:
         detail = fund_service.get_fund_detail(symbol)
         return {"source": self.id, **detail}
+
+    def get_limit_up(self) -> dict[str, Any]:
+        payload = limitup_service.get_limit_up()
+        return {"source": self.id, **payload}
