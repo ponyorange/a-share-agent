@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from app.limitup import build_ladder, merge_today_rows, normalize_pool_row
+from app import limitup as lim
+from app.limitup import (
+    apply_fund_flow,
+    build_ladder,
+    enrich_fund_flow,
+    merge_today_rows,
+    normalize_pool_row,
+    parse_flow_num,
+)
 
 
 def test_normalize_converts_percent_to_ratio():
@@ -78,3 +86,84 @@ def test_ladder_groups_descending():
     assert [x["board_count"] for x in ladder] == [3, 1]
     assert {i["symbol"] for i in ladder[0]["items"]} == {"a", "c"}
     assert ladder[1]["items"][0]["symbol"] == "b"
+
+
+def test_parse_flow_num():
+    assert parse_flow_num(30412008.0) == 30412008.0
+    assert parse_flow_num("-") is None
+    assert parse_flow_num(None) is None
+    assert parse_flow_num("") is None
+
+
+def test_apply_fund_flow_merges_into_today_and_ladder():
+    today = [
+        {
+            "symbol": "000593",
+            "name": "德龙汇能",
+            "day_chg_pct": 0.1,
+            "board_count": 1,
+            "status": "sealed",
+            "limit_up_price": None,
+        }
+    ]
+    flow = {
+        "000593": {
+            "main_inflow": 58_759_776.0,
+            "main_outflow": 28_347_768.0,
+            "main_net_inflow": 30_412_008.0,
+        }
+    }
+    apply_fund_flow(today, flow)
+    assert today[0]["main_inflow"] == 58_759_776.0
+    assert today[0]["main_outflow"] == 28_347_768.0
+    assert today[0]["main_net_inflow"] == 30_412_008.0
+    ladder = build_ladder(today)
+    assert ladder[0]["items"][0]["main_net_inflow"] == 30_412_008.0
+
+
+def test_enrich_fund_flow_maps_ulist_and_stock_get(monkeypatch):
+    lim._flow_cache["ts"] = 0.0
+    lim._flow_cache["by_symbol"] = {}
+
+    def fake_ulist(symbols):
+        return {"000593": {"main_net_inflow": 30_412_008.0}}
+
+    def fake_stock(symbol):
+        if symbol == "000593":
+            return {
+                "main_inflow": 58_759_776.0,
+                "main_outflow": 28_347_768.0,
+                "main_net_inflow": 30_412_008.0,
+            }
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(lim, "_fetch_ulist_net", fake_ulist)
+    monkeypatch.setattr(lim, "_fetch_stock_flow", fake_stock)
+
+    out = enrich_fund_flow(["000593", "999999"], force=True)
+    assert out["000593"]["main_inflow"] == 58_759_776.0
+    assert out["000593"]["main_outflow"] == 28_347_768.0
+    assert out["000593"]["main_net_inflow"] == 30_412_008.0
+    # stock/get 失败时仍保留 ulist 净流入
+    assert out["999999"]["main_net_inflow"] is None
+    assert out["999999"]["main_inflow"] is None
+
+
+def test_enrich_fund_flow_keeps_net_when_stock_fails(monkeypatch):
+    lim._flow_cache["ts"] = 0.0
+    lim._flow_cache["by_symbol"] = {}
+
+    monkeypatch.setattr(
+        lim,
+        "_fetch_ulist_net",
+        lambda symbols: {"000001": {"main_net_inflow": 1e6}},
+    )
+    monkeypatch.setattr(
+        lim,
+        "_fetch_stock_flow",
+        lambda symbol: (_ for _ in ()).throw(RuntimeError("x")),
+    )
+    out = enrich_fund_flow(["000001"], force=True)
+    assert out["000001"]["main_net_inflow"] == 1e6
+    assert out["000001"]["main_inflow"] is None
+    assert out["000001"]["main_outflow"] is None

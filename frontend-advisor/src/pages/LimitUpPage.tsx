@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   fetchLimitUp,
   formatLimitUpChg,
+  formatLimitUpMoney,
   shouldShowTodayTable,
   statusLabel,
   type LimitUpLadderTier,
@@ -35,6 +36,9 @@ function TodayTable({ today }: { today: LimitUpTodayItem[] }) {
             <th>代码</th>
             <th>当日涨幅</th>
             <th>连板</th>
+            <th>主力流入</th>
+            <th>主力流出</th>
+            <th>净流入</th>
             <th></th>
           </tr>
         </thead>
@@ -58,6 +62,11 @@ function TodayTable({ today }: { today: LimitUpTodayItem[] }) {
                 {formatLimitUpChg(row.day_chg_pct)}
               </td>
               <td>{row.board_count}</td>
+              <td>{formatLimitUpMoney(row.main_inflow)}</td>
+              <td>{formatLimitUpMoney(row.main_outflow)}</td>
+              <td className={chgClass(row.main_net_inflow)}>
+                {formatLimitUpMoney(row.main_net_inflow)}
+              </td>
               <td>
                 <a
                   className="text-link"
@@ -96,6 +105,9 @@ function TierTable({
             <th>名称</th>
             <th>代码</th>
             <th>当日涨幅</th>
+            <th>主力流入</th>
+            <th>主力流出</th>
+            <th>净流入</th>
             <th></th>
           </tr>
         </thead>
@@ -106,6 +118,11 @@ function TierTable({
               <td className="mono">{item.symbol}</td>
               <td className={chgClass(item.day_chg_pct)}>
                 {formatLimitUpChg(item.day_chg_pct)}
+              </td>
+              <td>{formatLimitUpMoney(item.main_inflow)}</td>
+              <td>{formatLimitUpMoney(item.main_outflow)}</td>
+              <td className={chgClass(item.main_net_inflow)}>
+                {formatLimitUpMoney(item.main_net_inflow)}
               </td>
               <td>
                 <a

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -12,8 +13,13 @@ logger = logging.getLogger(__name__)
 
 SH = ZoneInfo("Asia/Shanghai")
 CACHE_TTL_SEC = 6.0
+FLOW_CACHE_TTL_SEC = 20.0
+ULIST_BATCH = 80
+STOCK_FLOW_WORKERS = 8
+STOCK_FLOW_TIMEOUT = 5.0
 
 _cache: dict[str, Any] = {"ts": 0.0, "payload": None}
+_flow_cache: dict[str, Any] = {"ts": 0.0, "by_symbol": {}}
 
 
 def _as_symbol(raw: Any) -> str:
@@ -35,6 +41,15 @@ def _as_chg_ratio(raw: Any) -> float | None:
     if abs(value) > 1.0:
         return value / 100.0
     return value
+
+
+def parse_flow_num(raw: Any) -> float | None:
+    if raw is None or raw == "" or raw == "-":
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def _as_board_count(row: dict[str, Any]) -> int:
@@ -83,6 +98,9 @@ def normalize_pool_row(row: dict[str, Any], *, status: str) -> dict[str, Any] | 
         "board_count": _as_board_count(row),
         "status": status,
         "limit_up_price": _as_limit_price(row),
+        "main_inflow": None,
+        "main_outflow": None,
+        "main_net_inflow": None,
     }
 
 
@@ -123,6 +141,9 @@ def build_ladder(today: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "symbol": row["symbol"],
                 "name": row["name"],
                 "day_chg_pct": row.get("day_chg_pct"),
+                "main_inflow": row.get("main_inflow"),
+                "main_outflow": row.get("main_outflow"),
+                "main_net_inflow": row.get("main_net_inflow"),
             }
         )
     ladder: list[dict[str, Any]] = []
@@ -133,6 +154,137 @@ def build_ladder(today: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
         ladder.append({"board_count": n, "items": items})
     return ladder
+
+
+def apply_fund_flow(
+    today: list[dict[str, Any]],
+    flow_by_symbol: dict[str, dict[str, Any]],
+) -> None:
+    """Mutate today rows in place with fund-flow fields."""
+    for row in today:
+        flow = flow_by_symbol.get(str(row.get("symbol") or "")) or {}
+        row["main_inflow"] = flow.get("main_inflow")
+        row["main_outflow"] = flow.get("main_outflow")
+        row["main_net_inflow"] = flow.get("main_net_inflow")
+
+
+def _fetch_ulist_net(symbols: list[str]) -> dict[str, dict[str, Any]]:
+    from .kline import _session, secid
+
+    out: dict[str, dict[str, Any]] = {}
+    if not symbols:
+        return out
+    sess = _session()
+    for i in range(0, len(symbols), ULIST_BATCH):
+        chunk = symbols[i : i + ULIST_BATCH]
+        secids = ",".join(secid(s) for s in chunk)
+        try:
+            r = sess.get(
+                "https://push2delay.eastmoney.com/api/qt/ulist.np/get",
+                params={
+                    "fltt": "2",
+                    "invt": "2",
+                    "fields": "f12,f62",
+                    "secids": secids,
+                },
+                timeout=12,
+            )
+            r.raise_for_status()
+            diff = (r.json().get("data") or {}).get("diff") or []
+        except Exception as exc:
+            logger.warning("limitup ulist fund net failed: %s", exc)
+            continue
+        for row in diff:
+            if not isinstance(row, dict):
+                continue
+            sym = _as_symbol(row.get("f12"))
+            if not sym:
+                continue
+            out[sym] = {"main_net_inflow": parse_flow_num(row.get("f62"))}
+    return out
+
+
+def _fetch_stock_flow(symbol: str) -> dict[str, Any]:
+    from .kline import _session, secid
+
+    r = _session().get(
+        "https://push2delay.eastmoney.com/api/qt/stock/get",
+        params={
+            "fltt": "2",
+            "invt": "2",
+            "secid": secid(symbol),
+            "fields": "f12,f135,f136,f137",
+        },
+        timeout=STOCK_FLOW_TIMEOUT,
+    )
+    r.raise_for_status()
+    data = r.json().get("data") or {}
+    if not isinstance(data, dict):
+        raise RuntimeError("empty stock flow")
+    return {
+        "main_inflow": parse_flow_num(data.get("f135")),
+        "main_outflow": parse_flow_num(data.get("f136")),
+        "main_net_inflow": parse_flow_num(data.get("f137")),
+    }
+
+
+def enrich_fund_flow(
+    symbols: list[str],
+    *,
+    force: bool = False,
+) -> dict[str, dict[str, Any]]:
+    """Return per-symbol main_inflow / main_outflow / main_net_inflow (yuan)."""
+    uniq = sorted({_as_symbol(s) for s in symbols if _as_symbol(s)})
+    now_mono = time.monotonic()
+    cached: dict[str, dict[str, Any]] = dict(_flow_cache.get("by_symbol") or {})
+    if (
+        not force
+        and cached
+        and (now_mono - float(_flow_cache.get("ts") or 0.0)) < FLOW_CACHE_TTL_SEC
+        and all(s in cached for s in uniq)
+    ):
+        return {s: dict(cached[s]) for s in uniq}
+
+    out: dict[str, dict[str, Any]] = {
+        s: {
+            "main_inflow": None,
+            "main_outflow": None,
+            "main_net_inflow": None,
+        }
+        for s in uniq
+    }
+    try:
+        nets = _fetch_ulist_net(uniq)
+        for sym, payload in nets.items():
+            if sym in out:
+                out[sym]["main_net_inflow"] = payload.get("main_net_inflow")
+    except Exception as exc:
+        logger.warning("limitup ulist enrichment failed: %s", exc)
+
+    if uniq:
+        with ThreadPoolExecutor(max_workers=STOCK_FLOW_WORKERS) as pool:
+            futs = {pool.submit(_fetch_stock_flow, s): s for s in uniq}
+            for fut in as_completed(futs):
+                sym = futs[fut]
+                try:
+                    payload = fut.result()
+                except Exception as exc:
+                    logger.debug("limitup stock flow %s failed: %s", sym, exc)
+                    continue
+                row = out[sym]
+                if payload.get("main_inflow") is not None:
+                    row["main_inflow"] = payload["main_inflow"]
+                if payload.get("main_outflow") is not None:
+                    row["main_outflow"] = payload["main_outflow"]
+                # Prefer stock/get net when present; else keep ulist
+                if payload.get("main_net_inflow") is not None:
+                    row["main_net_inflow"] = payload["main_net_inflow"]
+
+    _flow_cache["ts"] = now_mono
+    merged = dict(cached)
+    merged.update(out)
+    _flow_cache["by_symbol"] = merged
+    return out
 
 
 def _pool_date_yyyymmdd() -> str:
@@ -202,6 +354,12 @@ def get_limit_up(*, force: bool = False) -> dict[str, Any]:
             broken.append(item)
 
     today = merge_today_rows(sealed, broken)
+    try:
+        flow = enrich_fund_flow([r["symbol"] for r in today], force=force)
+        apply_fund_flow(today, flow)
+    except Exception as exc:
+        logger.warning("limitup fund enrich skipped: %s", exc)
+
     ladder = build_ladder(today)
     as_of = datetime.now(SH).isoformat(timespec="seconds")
     payload = {

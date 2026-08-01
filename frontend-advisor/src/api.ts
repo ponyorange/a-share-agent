@@ -1577,12 +1577,18 @@ export type LimitUpTodayItem = {
   board_count: number
   status: LimitUpStatus
   limit_up_price: number | null
+  main_inflow?: number | null
+  main_outflow?: number | null
+  main_net_inflow?: number | null
 }
 
 export type LimitUpLadderItem = {
   symbol: string
   name: string
   day_chg_pct: number | null
+  main_inflow?: number | null
+  main_outflow?: number | null
+  main_net_inflow?: number | null
 }
 
 export type LimitUpLadderTier = {
@@ -1612,6 +1618,16 @@ export function formatLimitUpChg(value: number | null | undefined): string {
   const pct = value * 100
   const sign = pct > 0 ? '+' : ''
   return `${sign}${pct.toFixed(2)}%`
+}
+
+/** 主力资金金额（元）→ 万/亿。 */
+export function formatLimitUpMoney(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return '—'
+  const abs = Math.abs(value)
+  const sign = value > 0 ? '+' : value < 0 ? '' : ''
+  if (abs >= 1e8) return `${sign}${(value / 1e8).toFixed(2)}亿`
+  if (abs >= 1e4) return `${sign}${(value / 1e4).toFixed(2)}万`
+  return `${sign}${value.toFixed(0)}`
 }
 
 export function shouldShowTodayTable(session: {

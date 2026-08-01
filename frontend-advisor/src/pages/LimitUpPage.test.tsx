@@ -27,6 +27,9 @@ const sample: api.LimitUpResponse = {
       board_count: 1,
       status: 'sealed',
       limit_up_price: 12.5,
+      main_inflow: 58_759_776,
+      main_outflow: 28_347_768,
+      main_net_inflow: 30_412_008,
     },
     {
       symbol: '000002',
@@ -35,17 +38,34 @@ const sample: api.LimitUpResponse = {
       board_count: 1,
       status: 'broken',
       limit_up_price: null,
+      main_inflow: null,
+      main_outflow: null,
+      main_net_inflow: -1_200_000,
     },
   ],
   ladder: [
     {
       board_count: 2,
-      items: [{ symbol: '600000', name: '浦发银行', day_chg_pct: 0.1 }],
+      items: [
+        {
+          symbol: '600000',
+          name: '浦发银行',
+          day_chg_pct: 0.1,
+          main_inflow: 100_000_000,
+          main_outflow: 55_000_000,
+          main_net_inflow: 45_000_000,
+        },
+      ],
     },
     {
       board_count: 1,
       items: [
-        { symbol: '000001', name: '平安银行', day_chg_pct: 0.1 },
+        {
+          symbol: '000001',
+          name: '平安银行',
+          day_chg_pct: 0.1,
+          main_net_inflow: 30_412_008,
+        },
         { symbol: '000002', name: '万科A', day_chg_pct: 0.05 },
       ],
     },
@@ -86,6 +106,9 @@ describe('LimitUpPage', () => {
     const ladder = screen.getByTestId('ladder-section')
     expect(within(today).getByText('平安银行')).toBeInTheDocument()
     expect(today.compareDocumentPosition(ladder) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(today).getByText('+3041.20万')).toBeInTheDocument()
+    expect(within(ladder).getByText('+4500.00万')).toBeInTheDocument()
+    expect(screen.getAllByRole('columnheader', { name: '主力流入' }).length).toBeGreaterThan(0)
   })
 
   it('非交易时段隐藏当天涨停明细', async () => {
@@ -152,5 +175,12 @@ describe('limitUp helpers', () => {
     expect(defaultTierExpanded(1)).toBe(false)
     expect(defaultTierExpanded(2)).toBe(true)
     expect(defaultTierExpanded(5)).toBe(true)
+  })
+
+  it('formats fund money as wan/yi', () => {
+    expect(api.formatLimitUpMoney(30_412_008)).toBe('+3041.20万')
+    expect(api.formatLimitUpMoney(1.2e8)).toBe('+1.20亿')
+    expect(api.formatLimitUpMoney(-1_200_000)).toBe('-120.00万')
+    expect(api.formatLimitUpMoney(null)).toBe('—')
   })
 })
