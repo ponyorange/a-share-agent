@@ -185,6 +185,7 @@ def test_create_once_watch_sets_schedule(monkeypatch):
             calendar="trading_days",
             anchor_date="2026-07-30",
         ),
+        now=datetime(2026, 7, 28, 12, 0, tzinfo=timezone.utc),
     )
     assert job["status"] == "scheduled"
     assert job["kind"] == "watch"
@@ -243,6 +244,33 @@ def test_list_due_scheduled_jobs(monkeypatch):
     due = store_mod.list_due_scheduled_jobs(now)
     assert len(due) == 1
     assert due[0]["title"] == "due"
+
+
+def test_create_recurring_watch_during_session_starts_running(monkeypatch):
+    uid, db = _verified_db()
+    monkeypatch.setattr(store_mod, "get_db", lambda: db)
+    monkeypatch.setattr(logs_mod, "get_db", lambda: db)
+    monkeypatch.setattr(
+        "app.advisor.monitor.schedule.is_trading_day",
+        lambda d: True,
+    )
+    job = store_mod.create_job(
+        str(uid),
+        CreateJobBody(
+            title="盘中创建",
+            scope="symbols",
+            symbols=["510300"],
+            rules=[{"type": "price_below", "value": 4.0}],
+            kind="watch",
+            repeat="recurring",
+            calendar="trading_days",
+        ),
+        now=datetime(2026, 7, 31, 2, 30, tzinfo=timezone.utc),  # 10:30 SH
+    )
+    assert job["status"] == "running"
+    assert job["next_run_at"] is None
+    logs = logs_mod.list_job_logs(str(uid), job["id"])
+    assert logs and "盘中已激活" in (logs[0]["message"] or "")
 
 
 def test_create_pause_resume_scheduled(monkeypatch):

@@ -56,6 +56,26 @@ def _next_allowed_date(start: date, calendar: str, *, inclusive: bool) -> date |
     return None
 
 
+def in_watch_window(job: dict[str, Any], *, now: datetime | None = None) -> bool:
+    """True if now is inside today's watch window for this job."""
+    sh_now = _as_sh(now)
+    calendar = str(job.get("calendar") or "trading_days")
+    if not _day_allowed(sh_now.date(), calendar):
+        return False
+    start_hhmm = _watch_start_hhmm(job)
+    end_hhmm = _watch_end_hhmm(job)
+    d0 = sh_now.date().isoformat()
+    open_at = shanghai_hhmm_on(d0, start_hhmm)
+    end_at = shanghai_hhmm_on(d0, end_hhmm)
+    if not (open_at <= sh_now <= end_at):
+        return False
+    if str(job.get("repeat") or "recurring") == "once":
+        anchor = str(job.get("anchor_date") or "")[:10]
+        if anchor and anchor != d0:
+            return False
+    return True
+
+
 def compute_next_run_at(job: dict[str, Any], *, now: datetime | None = None) -> datetime | None:
     """Next activation/fire time in Shanghai tz (stored as aware datetime)."""
     kind = str(job.get("kind") or "watch")

@@ -21,6 +21,7 @@ from .schedule import (
     compute_watch_end_at,
     ensure_utc,
     format_shanghai,
+    in_watch_window,
 )
 
 JOBS_MAX_PER_USER = 20
@@ -124,7 +125,12 @@ def find_jobs_by_title(user_id: str, title: str) -> list[dict[str, Any]]:
     return [_serialize(d) for d in cur if d]  # type: ignore[misc]
 
 
-def create_job(user_id: str, body: CreateJobBody | dict[str, Any]) -> dict[str, Any]:
+def create_job(
+    user_id: str,
+    body: CreateJobBody | dict[str, Any],
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
     if isinstance(body, dict):
         try:
             body = CreateJobBody.model_validate(body)
@@ -175,7 +181,11 @@ def create_job(user_id: str, body: CreateJobBody | dict[str, Any]) -> dict[str, 
                 "请先在 Agent 设置中配置 DeepSeek API Key"
             ) from exc
 
-    now = datetime.now(timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    else:
+        now = now.astimezone(timezone.utc)
     cooldown = (
         int(body.cooldown_sec)
         if body.cooldown_sec is not None and body.cooldown_sec > 0
@@ -231,6 +241,11 @@ def create_job(user_id: str, body: CreateJobBody | dict[str, Any]) -> dict[str, 
         )
     if nxt is None and kind == "run_at" and repeat == "once":
         raise ValueError("定点时间已过，请换用未来时间或改成重复任务")
+    # 盘中创建盯盘：立即进入 running（与 resume 一致），避免 next_run 被算到下一交易日
+    if kind == "watch" and in_watch_window(schedule_doc, now=now):
+        schedule_doc["status"] = "running"
+        schedule_doc["started_at"] = now
+        schedule_doc["next_run_at"] = None
 
     doc = {
         "user_id": user_id,
@@ -258,12 +273,16 @@ def create_job(user_id: str, body: CreateJobBody | dict[str, Any]) -> dict[str, 
     }
     res = db.agent_monitor_jobs.insert_one(doc)
     doc["_id"] = res.inserted_id
+    if doc.get("status") == "running":
+        create_msg = f"已创建（{kind}/{repeat}），盘中已激活盯盘"
+    else:
+        create_msg = f"已创建（{kind}/{repeat}），下次 {format_shanghai(doc.get('next_run_at'))}"
     append_job_log(
         user_id,
         str(res.inserted_id),
         level="info",
         event="created",
-        message=f"已创建（{kind}/{repeat}），下次 {format_shanghai(doc.get('next_run_at'))}",
+        message=create_msg,
     )
     return _serialize(doc)  # type: ignore[return-value]
 
@@ -283,26 +302,14 @@ def resume_job(user_id: str, job_id: str) -> dict[str, Any]:
     doc = get_db().agent_monitor_jobs.find_one({"_id": oid, "user_id": user_id})
     if not doc:
         raise ValueError("任务不存在")
-    from .schedule import SH, _day_allowed, shanghai_hhmm_on
-
     norm = normalize_legacy_job(doc)
     nxt = compute_next_run_at(norm, now=now)
     status = "scheduled"
     started = None
     next_run = ensure_utc(nxt)
     if norm.get("kind") == "watch":
-        sh_now = now.astimezone(SH)
-        d0 = sh_now.date().isoformat()
-        start_hhmm = str(norm.get("run_time") or DEFAULT_WATCH_START)
-        end_hhmm = str(norm.get("end_time") or DEFAULT_WATCH_END)
-        open_at = shanghai_hhmm_on(d0, start_hhmm)
-        end_at = shanghai_hhmm_on(d0, end_hhmm)
-        cal = str(norm.get("calendar") or "trading_days")
-        in_window = _day_allowed(sh_now.date(), cal) and open_at <= sh_now <= end_at
-        if norm.get("repeat") == "once":
-            anchor = str(norm.get("anchor_date") or "")[:10]
-            in_window = in_window and (not anchor or anchor == d0)
-        if in_window or (next_run is not None and next_run <= now):
+        # 仅窗口内立即 running；过期 due 不在盘后误激活（交给 activate 的 missed 逻辑）
+        if in_watch_window(norm, now=now):
             status = "running"
             started = now
             next_run = None

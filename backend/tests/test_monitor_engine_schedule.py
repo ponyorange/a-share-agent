@@ -73,6 +73,80 @@ def test_finalize_once_watch_after_end(monkeypatch):
     assert ("u1", "w2", "completed") in logs
 
 
+def test_activate_recurring_after_close_reschedules_not_running(monkeypatch):
+    """周五盘后补跑时，不应先 activate 再 finalize 把整天跳过。"""
+    touches: list[dict] = []
+    logs: list[dict] = []
+    now = datetime(2026, 7, 31, 22, 4, tzinfo=SH).astimezone(timezone.utc)
+    job = {
+        "id": "w-fri",
+        "user_id": "u1",
+        "kind": "watch",
+        "repeat": "recurring",
+        "calendar": "trading_days",
+        "run_time": "09:15",
+        "end_time": "15:05",
+        "title": "收藏盯盘",
+        "status": "scheduled",
+        "next_run_at": datetime(2026, 7, 31, 9, 15, tzinfo=SH).astimezone(
+            timezone.utc
+        ),
+    }
+
+    monkeypatch.setattr(engine_mod, "list_due_scheduled_jobs", lambda _n: [job])
+    monkeypatch.setattr(
+        engine_mod,
+        "touch_job_run",
+        lambda jid, **fields: touches.append({"id": jid, **fields}),
+    )
+    monkeypatch.setattr(
+        engine_mod,
+        "append_job_log",
+        lambda uid, jid, **kw: logs.append(kw),
+    )
+    monkeypatch.setattr(engine_mod, "is_trading_day", lambda d: d.weekday() < 5)
+
+    stats = engine_mod.activate_due_jobs(now=now)
+    assert stats.get("activated", 0) == 0
+    assert stats.get("missed", 0) == 1
+    assert touches[0]["status"] == "scheduled"
+    assert touches[0]["next_run_at"] is not None
+    nxt = touches[0]["next_run_at"]
+    assert nxt.astimezone(SH).strftime("%Y-%m-%d %H:%M") == "2026-08-03 09:15"
+    assert logs[0]["event"] == "missed"
+    assert "错过" in (logs[0].get("message") or "")
+
+
+def test_activate_recurring_in_session_still_runs(monkeypatch):
+    touches: list[dict] = []
+    now = datetime(2026, 7, 31, 10, 30, tzinfo=SH).astimezone(timezone.utc)
+    job = {
+        "id": "w-mid",
+        "user_id": "u1",
+        "kind": "watch",
+        "repeat": "recurring",
+        "calendar": "trading_days",
+        "run_time": "09:15",
+        "end_time": "15:05",
+        "status": "scheduled",
+        "next_run_at": datetime(2026, 7, 31, 9, 15, tzinfo=SH).astimezone(
+            timezone.utc
+        ),
+    }
+    monkeypatch.setattr(engine_mod, "list_due_scheduled_jobs", lambda _n: [job])
+    monkeypatch.setattr(
+        engine_mod,
+        "touch_job_run",
+        lambda jid, **fields: touches.append({"id": jid, **fields}),
+    )
+    monkeypatch.setattr(engine_mod, "append_job_log", lambda *a, **k: None)
+    monkeypatch.setattr(engine_mod, "is_trading_day", lambda d: True)
+
+    stats = engine_mod.activate_due_jobs(now=now)
+    assert stats["activated"] == 1
+    assert touches[0]["status"] == "running"
+
+
 def test_tick_activates_when_not_trading(monkeypatch):
     called = {"activate": 0, "finalize": 0, "eval": 0}
     monkeypatch.setattr(

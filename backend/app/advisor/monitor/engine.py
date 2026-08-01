@@ -25,6 +25,7 @@ from .schedule import (
     compute_next_run_at,
     ensure_utc,
     format_shanghai,
+    in_watch_window,
     shanghai_hhmm_on,
 )
 from ..calendar_util import is_trading_day
@@ -57,7 +58,7 @@ def activate_due_jobs(*, now: datetime | None = None) -> dict[str, int]:
     current = now or datetime.now(timezone.utc)
     if current.tzinfo is None:
         current = current.replace(tzinfo=timezone.utc)
-    stats = {"activated": 0, "run_at": 0, "completed_early": 0}
+    stats = {"activated": 0, "run_at": 0, "completed_early": 0, "missed": 0}
     for job in list_due_scheduled_jobs(current):
         job_id = str(job.get("id") or "")
         user_id = str(job.get("user_id") or "")
@@ -85,6 +86,24 @@ def activate_due_jobs(*, now: datetime | None = None) -> dict[str, int]:
                 message="已过结束时间，未进入盯盘窗口",
             )
             stats["completed_early"] += 1
+            continue
+        # 盘后/非窗口补跑：勿先 activate 再被 finalize 跳过整天
+        if not in_watch_window(job, now=current):
+            nxt = compute_next_run_at(job, now=current)
+            touch_job_run(
+                job_id,
+                status="scheduled",
+                next_run_at=ensure_utc(nxt),
+                started_at=None,
+            )
+            append_job_log(
+                user_id,
+                job_id,
+                level="warn",
+                event="missed",
+                message=f"已错过盯盘窗口，下次 {format_shanghai(nxt)}",
+            )
+            stats["missed"] += 1
             continue
         touch_job_run(
             job_id,
@@ -338,6 +357,7 @@ def run_monitor_tick(*, quote_limit: int = 200) -> dict[str, int]:
         "llm_runs": 0,
         "llm_notified": 0,
         "activated": 0,
+        "missed": 0,
         "run_at": 0,
         "finalized": 0,
     }
@@ -345,6 +365,7 @@ def run_monitor_tick(*, quote_limit: int = 200) -> dict[str, int]:
 
     act = activate_due_jobs(now=now)
     stats["activated"] = act.get("activated", 0)
+    stats["missed"] = act.get("missed", 0)
     stats["run_at"] = act.get("run_at", 0)
 
     fin = finalize_watch_windows(now=now)

@@ -44,3 +44,17 @@ def test_run_at_recurring_everyday_after_fire(monkeypatch):
 def test_compute_watch_end_at():
     end = sch.compute_watch_end_at("2026-07-29", "15:05")
     assert end.astimezone(SH).strftime("%Y-%m-%d %H:%M") == "2026-07-29 15:05"
+
+
+def test_in_watch_window_friday_session(monkeypatch):
+    monkeypatch.setattr(sch, "is_trading_day", lambda d: d.weekday() < 5)
+    job = {
+        "kind": "watch",
+        "repeat": "recurring",
+        "calendar": "trading_days",
+        "run_time": "09:15",
+        "end_time": "15:05",
+    }
+    assert sch.in_watch_window(job, now=datetime(2026, 7, 31, 10, 30, tzinfo=SH))
+    assert not sch.in_watch_window(job, now=datetime(2026, 7, 31, 22, 0, tzinfo=SH))
+    assert not sch.in_watch_window(job, now=datetime(2026, 8, 1, 10, 0, tzinfo=SH))
