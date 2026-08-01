@@ -19,6 +19,7 @@ import CommitteePage from './committee/CommitteePage'
 import HistoryPage from './pages/HistoryPage'
 import KnowledgePage from './pages/KnowledgePage'
 import LeaderboardPage from './pages/LeaderboardPage'
+import LimitUpPage from './pages/LimitUpPage'
 import LoginPage from './pages/LoginPage'
 import PaperPage from './pages/PaperPage'
 import PerformancePage from './pages/PerformancePage'
@@ -184,6 +185,7 @@ export default function App() {
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/paper" element={<PaperPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
+            <Route path="/limitup" element={<LimitUpPage />} />
             <Route path="/performance" element={<PerformancePage />} />
             <Route path="/strategy" element={<StrategyPage />} />
             <Route path="/settings" element={<SettingsPage />} />

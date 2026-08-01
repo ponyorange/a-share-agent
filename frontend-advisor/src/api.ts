@@ -1568,3 +1568,59 @@ export function resetStrategy(): Promise<UserStrategy> {
   })
 }
 
+export type LimitUpStatus = 'sealed' | 'broken'
+
+export type LimitUpTodayItem = {
+  symbol: string
+  name: string
+  day_chg_pct: number | null
+  board_count: number
+  status: LimitUpStatus
+  limit_up_price: number | null
+}
+
+export type LimitUpLadderItem = {
+  symbol: string
+  name: string
+  day_chg_pct: number | null
+}
+
+export type LimitUpLadderTier = {
+  board_count: number
+  items: LimitUpLadderItem[]
+}
+
+export type LimitUpResponse = {
+  source: string
+  as_of: string
+  date?: string
+  session: {
+    is_trading: boolean
+    is_trading_day: boolean
+  }
+  today: LimitUpTodayItem[]
+  ladder: LimitUpLadderTier[]
+}
+
+export function fetchLimitUp(source = 'akshare'): Promise<LimitUpResponse> {
+  return authFetch(`/api/${encodeURIComponent(source)}/limit-up`)
+}
+
+/** day_chg_pct 为小数比例（0.10 = 10%）。 */
+export function formatLimitUpChg(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return '—'
+  const pct = value * 100
+  const sign = pct > 0 ? '+' : ''
+  return `${sign}${pct.toFixed(2)}%`
+}
+
+export function shouldShowTodayTable(session: {
+  is_trading?: boolean
+} | null | undefined): boolean {
+  return Boolean(session?.is_trading)
+}
+
+export function statusLabel(status: LimitUpStatus): string {
+  return status === 'sealed' ? '当前涨停' : '曾涨停'
+}
+

@@ -2733,6 +2733,83 @@ body:has(.app-shell--agent-chat) {
   color: var(--color-error);
 }
 
+.limitup-section {
+  margin-top: 1.5rem;
+}
+
+.limitup-section h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.limitup-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.limitup-badge.sealed {
+  background: color-mix(in srgb, var(--color-error, #c62828) 15%, transparent);
+  color: var(--color-error, #c62828);
+}
+
+.limitup-badge.broken {
+  background: color-mix(in srgb, var(--muted, #555) 12%, transparent);
+  color: var(--muted, #555);
+}
+
+.limitup-ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.limitup-tier h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.limitup-fold-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  margin: 0 0 0.5rem;
+  padding: 0.45rem 0.15rem;
+  border: none;
+  border-bottom: 1px solid var(--line, rgba(0, 0, 0, 0.08));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.limitup-tier .limitup-fold-btn {
+  font-size: 0.95rem;
+  margin-bottom: 0.4rem;
+}
+
+.limitup-fold-btn:hover {
+  color: var(--color-brand);
+}
+
+.limitup-fold-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.limitup-tier-scroll {
+  max-height: 28rem;
+  overflow: auto;
+}
+
+
 .row-actions {
   display: flex;
   flex-wrap: wrap;

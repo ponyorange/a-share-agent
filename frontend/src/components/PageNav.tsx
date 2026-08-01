@@ -56,20 +56,20 @@ export function PageNav({ sources, activeFeature }: Props) {
             K线图
           </Link>
         ) : null}
-        {hasFeature(current, 'fund') ? (
-          <Link
-            to={sourcePath(sourceId, 'fund')}
-            className={activeFeature === 'fund' ? 'active' : ''}
-          >
-            基金详情
-          </Link>
-        ) : null}
         {hasFeature(current, 'limitup') ? (
           <Link
             to={sourcePath(sourceId, 'limitup')}
             className={activeFeature === 'limitup' ? 'active' : ''}
           >
             打板
+          </Link>
+        ) : null}
+        {hasFeature(current, 'fund') ? (
+          <Link
+            to={sourcePath(sourceId, 'fund')}
+            className={activeFeature === 'fund' ? 'active' : ''}
+          >
+            基金详情
           </Link>
         ) : null}
       </nav>

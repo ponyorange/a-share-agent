@@ -18,6 +18,10 @@ it('横向展示模块，并可用全部菜单切换', async () => {
     'href',
     '/watchlist',
   )
+  expect(screen.getByRole('link', { name: '打板' })).toHaveAttribute(
+    'href',
+    '/limitup',
+  )
 
   await user.click(screen.getByRole('button', { name: '全部' }))
   const menu = screen.getByRole('menu', { name: '全部功能模块' })
