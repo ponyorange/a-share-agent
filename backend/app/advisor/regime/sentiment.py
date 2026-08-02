@@ -17,13 +17,19 @@ def _board_histogram(sealed: list[dict]) -> Counter[int]:
 
 
 def _cycle_from_score(score: float, thresholds: dict[str, float]) -> str:
-    if score >= thresholds.get("climax", 0.75):
+    # Score bands: [0,ice)→ice, [ice,repair)→repair, [repair,strengthen)→strengthen,
+    # [strengthen,climax)→strengthen (until climax threshold), [climax,1]→climax; ebb via hysteresis only.
+    ice = thresholds.get("ice", 0.20)
+    repair = thresholds.get("repair", 0.35)
+    strengthen = thresholds.get("strengthen", 0.55)
+    climax = thresholds.get("climax", 0.75)
+    if score >= climax:
         return "climax"
-    if score >= thresholds.get("strengthen", 0.55):
-        return "ebb"
-    if score >= thresholds.get("repair", 0.35):
+    if score >= strengthen:
         return "strengthen"
-    if score >= thresholds.get("ice", 0.20):
+    if score >= repair:
+        return "strengthen"
+    if score >= ice:
         return "repair"
     return "ice"
 

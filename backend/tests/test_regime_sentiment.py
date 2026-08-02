@@ -1,4 +1,4 @@
-from app.advisor.regime.sentiment import compute_sentiment_metrics
+from app.advisor.regime.sentiment import _cycle_from_score, compute_sentiment_metrics
 
 CFG = {
     "height_board_min": 3,
@@ -27,3 +27,10 @@ def test_promotion_rate_two_day():
     m = compute_sentiment_metrics(today, prev=prev, cfg=CFG)
     # 3 boards at 2 / 10 yesterday at 1 → 0.3
     assert abs(m["promotion_rate"] - 0.3) < 1e-6
+
+
+def test_cycle_from_score_bands():
+    th = CFG["cycle_thresholds"]
+    assert _cycle_from_score(0.1, th) == "ice"
+    assert _cycle_from_score(0.6, th) == "strengthen"
+    assert _cycle_from_score(0.8, th) == "climax"
