@@ -1,7 +1,7 @@
 # 首页 Agent 解读：资讯驱动观察股
 
 日期：2026-08-02  
-状态：已确认设计（待用户审阅 spec 正文）  
+状态：已确认（实现计划见 `docs/superpowers/plans/2026-08-02-home-news-stock-picks.md`）  
 关联：`docs/superpowers/specs/2026-08-02-home-news-brief-design.md`
 
 ## 目标
