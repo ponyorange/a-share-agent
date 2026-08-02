@@ -121,6 +121,17 @@ def regime_sentiment(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
     return get_sentiment_detail()
 
 
+@router.get("/regime/brief-template")
+def regime_brief_template(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    from .regime import REGIME_MORNING_BRIEF_PROMPT
+
+    return {
+        "prompt": REGIME_MORNING_BRIEF_PROMPT,
+        "suggested_time": "09:05",
+        "kind": "run_at",
+    }
+
+
 class StrategyUpdateBody(BaseModel):
     config: dict[str, Any] | None = None
     config_patch: dict[str, Any] | None = None

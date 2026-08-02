@@ -34,6 +34,7 @@ from ..snapshots import (
     list_snapshot_dates,
     snapshot_as_recommendations,
 )
+from ..regime import get_current_regime, get_sentiment_detail
 from ..user_strategy import (
     get_user_strategy,
     strategy_public_view,
@@ -263,9 +264,27 @@ def build_tools(
         )
 
     @tool
-    def get_today_recommendations(board: str = "all") -> str:
+    def get_market_regime() -> str:
+        """获取当前市场状态闸门：gate_level、position_cap、data_quality、evidence 等。
+        回答买卖、仓位、今天能否交易前必须先调用。"""
+        _bind()
+        return json.dumps(get_current_regime(), ensure_ascii=False, default=str)
+
+    @tool
+    def get_sentiment_dashboard() -> str:
+        """获取打板/连板情绪仪表盘细节：情绪周期与相关 metrics。
+        用户问打板情绪、周期、晋级率、连板细节时调用。"""
+        _bind()
+        return json.dumps(get_sentiment_detail(), ensure_ascii=False, default=str)
+
+    @tool
+    def get_today_recommendations(
+        board: str = "all",
+        regime_override: bool = False,
+    ) -> str:
         """获取当前用户「今日关注」多因子推荐列表摘要（综合分 + tech/flow/sector/value/market 子分）。
         用户问今日关注/今日推荐时优先调用。board 可选 etf/hs/star/all。
+        regime_override=true 表示用户明确要求 risk_off 下仍看票/强制看推荐。
         返回的 archive_day_chg_* 是刷新归档时的涨跌快照，不是实时行情；
         若要报盘中今日涨跌，必须再调用 get_stock_quotes。
         无归档时提示去基础面板刷新候选池；可再配合联播/宏观工具补充叙事。
@@ -281,7 +300,12 @@ def build_tools(
                 ensure_ascii=False,
             )
         board_key = None if board in ("", "all") else board
-        recs = snapshot_as_recommendations(td, board=board_key, user_id=user_id)
+        recs = snapshot_as_recommendations(
+            td,
+            board=board_key,
+            user_id=user_id,
+            regime_override=bool(regime_override),
+        )
         if not recs:
             return json.dumps({"trade_date": td, "message": "无推荐数据"}, ensure_ascii=False)
         boards = recs.get("boards") or {}
@@ -1749,6 +1773,8 @@ def build_tools(
 
     tools = [
         get_stock_quotes,
+        get_market_regime,
+        get_sentiment_dashboard,
         get_today_recommendations,
         get_portfolio_summary,
         get_watchlist,

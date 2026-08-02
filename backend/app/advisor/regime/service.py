@@ -17,6 +17,12 @@ SH = ZoneInfo("Asia/Shanghai")
 _CACHE: dict[str, Any] = {}
 _CLOCK = lambda: datetime.now(SH)
 
+REGIME_MORNING_BRIEF_PROMPT = (
+    "请调用 get_market_regime，用中文输出今日市场状态简报："
+    "趋势、情绪周期、闸门、仓位上限、三条证据、对交易的含义。"
+    "不要编造点位；需要指数点位时再调 fetch_market_indices。"
+)
+
 
 def _regime_cfg() -> dict[str, Any]:
     return dict((load_config().get("regime") or {}))
