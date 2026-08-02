@@ -14,26 +14,14 @@ import {
 } from '../api'
 import { useMediaQuery } from '../components/ResponsiveDataView'
 import { explorerKlineUrl } from '../explorerLinks'
+import { sentimentLabel } from '../regimeCopy'
 
 const POLL_MS = 10_000
 const PC_QUERY = '(min-width: 900px)'
-const SENTIMENT_LABELS: Record<string, string> = {
-  ice: '情绪冰点',
-  strengthen: '情绪增强',
-  climax: '情绪高潮',
-  ebb: '情绪退潮',
-  repair: '情绪修复',
-  neutral: '情绪中性',
-}
 
 function chgClass(v: number | null | undefined): string {
   if (v == null || Number.isNaN(v) || v === 0) return ''
   return v > 0 ? 'up' : 'down'
-}
-
-function sentimentLabel(value: string | null | undefined): string {
-  if (!value) return '—'
-  return SENTIMENT_LABELS[value] || value
 }
 
 function sentimentScore(data: RegimeSentiment | null): string {
@@ -364,7 +352,7 @@ export default function LimitUpPage() {
           <span className="mono">{sentimentScore(sentiment)}</span>
           {' · '}
           <Link className="text-link" to="/regime">
-            查看市场状态
+            查看今日闸门
           </Link>
         </div>
         {error ? <p className="status error">{error}</p> : null}

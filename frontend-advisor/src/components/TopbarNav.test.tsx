@@ -18,7 +18,7 @@ it('横向展示模块，并可用全部菜单切换', async () => {
     'href',
     '/watchlist',
   )
-  expect(screen.getByRole('link', { name: '市场状态' })).toHaveAttribute(
+  expect(screen.getByRole('link', { name: '今日闸门' })).toHaveAttribute(
     'href',
     '/regime',
   )

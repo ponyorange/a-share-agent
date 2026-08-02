@@ -14,9 +14,9 @@ const GATE_ONE_LINERS: Record<string, string> = {
 
 const GATE_SHORT_LABELS: Record<string, string> = {
   aggressive: '可积极',
-  normal: '正常参与',
+  normal: '正常',
   defensive: '轻仓观望',
-  risk_off: '今天先别买',
+  risk_off: '风险关闭',
 }
 
 const TREND_LABELS: Record<string, string> = {
@@ -99,27 +99,27 @@ function pushUnique(bullets: string[], line: string) {
   bullets.push(line)
 }
 
-export function gateConclusion(level: string): string {
+export function gateConclusion(level: string | null | undefined): string {
   return mapLabel(GATE_CONCLUSIONS, level)
 }
 
-export function gateOneLiner(level: string): string {
+export function gateOneLiner(level: string | null | undefined): string {
   return mapLabel(GATE_ONE_LINERS, level)
 }
 
-export function gateShortLabel(level: string): string {
+export function gateShortLabel(level: string | null | undefined): string {
   return mapLabel(GATE_SHORT_LABELS, level)
 }
 
-export function trendLabel(v: string): string {
+export function trendLabel(v: string | null | undefined): string {
   return mapLabel(TREND_LABELS, v)
 }
 
-export function sentimentLabel(v: string): string {
+export function sentimentLabel(v: string | null | undefined): string {
   return mapLabel(SENTIMENT_LABELS, v)
 }
 
-export function dataQualityLabel(v: string): string {
+export function dataQualityLabel(v: string | null | undefined): string {
   return mapLabel(DATA_QUALITY_LABELS, v)
 }
 

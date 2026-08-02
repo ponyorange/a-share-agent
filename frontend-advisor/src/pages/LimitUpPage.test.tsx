@@ -117,7 +117,7 @@ describe('LimitUpPage', () => {
     expect(screen.getAllByRole('columnheader', { name: '主力流入' }).length).toBeGreaterThan(0)
   })
 
-  it('展示市场情绪周期与分数，并链接到市场状态页', async () => {
+  it('展示市场情绪周期与分数，并链接到今日闸门页', async () => {
     vi.mocked(api.fetchLimitUp).mockResolvedValue(sample)
     vi.mocked(api.fetchRegimeSentiment).mockResolvedValue({
       sentiment_cycle: 'strengthen',
@@ -133,9 +133,9 @@ describe('LimitUpPage', () => {
     await waitFor(() => {
       expect(screen.getByText('市场情绪')).toBeInTheDocument()
     })
-    expect(screen.getByText('情绪增强')).toBeInTheDocument()
+    expect(screen.getByText('增强')).toBeInTheDocument()
     expect(screen.getByText('0.88')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '查看市场状态' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: '查看今日闸门' })).toHaveAttribute(
       'href',
       '/regime',
     )

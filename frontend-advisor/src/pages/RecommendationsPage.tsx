@@ -21,6 +21,7 @@ import { RecommendationCard } from '../components/RecommendationCard'
 import { ResponsiveDataView } from '../components/ResponsiveDataView'
 import { StarToggle } from '../components/StarToggle'
 import { explorerKlineUrl } from '../explorerLinks'
+import { gateShortLabel } from '../regimeCopy'
 
 type BoardTab = 'etf' | 'hs' | 'star'
 
@@ -30,23 +31,11 @@ const TABS: { id: BoardTab; label: string }[] = [
   { id: 'star', label: '科创股' },
 ]
 
-const REGIME_LABELS: Record<string, string> = {
-  risk_off: '风险关闭',
-  defensive: '防御模式',
-  normal: '正常模式',
-  aggressive: '积极模式',
-}
-
 function chgClass(v: number | null | undefined): string {
   if (v == null || Number.isNaN(v)) return ''
   if (v > 0) return 'up'
   if (v < 0) return 'down'
   return ''
-}
-
-function regimeLabel(level: string | null | undefined): string {
-  if (!level) return '—'
-  return REGIME_LABELS[level] || level
 }
 
 /** 归档里的 close/day_chg 是刷新时快照，列表展示前先清掉，改用实时行情。 */
@@ -856,13 +845,12 @@ export default function RecommendationsPage() {
       {buyMsg ? <p className="status ok">{buyMsg}</p> : null}
       {regime ? (
         <p className="meta-line">
-          <span>市场状态：{regimeLabel(regime.gate_level)}</span>
+          <span>今日闸门：{gateShortLabel(regime.gate_level)}</span>
           {regime.position_cap != null ? ` · 仓位上限 ${formatPct(regime.position_cap, 0)}` : ''}
-          {regime.pool_policy ? ` · ${regime.pool_policy}` : ''}
           {regime.override_applied || regimeOverride ? ' · 已开启 override' : ''}
           {' · '}
           <Link className="text-link" to="/regime">
-            查看市场状态
+            查看今日闸门
           </Link>
         </p>
       ) : null}

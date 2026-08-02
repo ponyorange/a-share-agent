@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   gateConclusion,
   gateOneLiner,
+  gateShortLabel,
   buildWhyBullets,
   trendLabel,
   sentimentLabel,
@@ -16,6 +17,13 @@ describe('regimeCopy', () => {
     expect(gateConclusion('defensive')).toBe('先轻仓观望')
     expect(gateConclusion('normal')).toBe('正常参与即可')
     expect(gateConclusion('aggressive')).toBe('可以积极一点')
+  })
+
+  it('maps compact gate labels', () => {
+    expect(gateShortLabel('risk_off')).toBe('风险关闭')
+    expect(gateShortLabel('defensive')).toBe('轻仓观望')
+    expect(gateShortLabel('normal')).toBe('正常')
+    expect(gateShortLabel('aggressive')).toBe('可积极')
   })
 
   it('formats position cap', () => {

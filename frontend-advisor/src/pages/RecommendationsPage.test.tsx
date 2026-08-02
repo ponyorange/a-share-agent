@@ -153,7 +153,12 @@ it('从查询参数透传市场状态 override，并展示闸门徽章与覆盖�
   await waitFor(() => {
     expect(fetchRecommendations).toHaveBeenCalledWith(10, 'all', false, true)
   })
-  expect(screen.getByText('市场状态：风险关闭')).toBeInTheDocument()
+  expect(screen.getByText('今日闸门：风险关闭')).toBeInTheDocument()
+  expect(screen.queryByText('block')).not.toBeInTheDocument()
+  expect(screen.getByRole('link', { name: '查看今日闸门' })).toHaveAttribute(
+    'href',
+    '/regime',
+  )
   expect(screen.getAllByText(/已开启 override/).length).toBeGreaterThan(0)
 
   cleanup()

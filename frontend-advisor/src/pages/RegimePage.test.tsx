@@ -166,6 +166,6 @@ it('shows recent regime history', async () => {
 
   expect(await screen.findByText('近 N 日周期')).toBeInTheDocument()
   expect(screen.getByText('2026-08-01')).toBeInTheDocument()
-  expect(screen.getByText('今天先别买')).toBeInTheDocument()
+  expect(screen.getByText('风险关闭')).toBeInTheDocument()
   expect(screen.queryByText('risk_off')).not.toBeInTheDocument()
 })
