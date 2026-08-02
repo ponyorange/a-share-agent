@@ -25,6 +25,7 @@ import PaperPage from './pages/PaperPage'
 import PerformancePage from './pages/PerformancePage'
 import PortfolioPage from './pages/PortfolioPage'
 import RecommendationsPage from './pages/RecommendationsPage'
+import RegimePage from './pages/RegimePage'
 import WatchlistPage from './pages/WatchlistPage'
 import MonitorJobsPage from './pages/MonitorJobsPage'
 import SettingsPage from './pages/SettingsPage'
@@ -185,6 +186,7 @@ export default function App() {
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/paper" element={<PaperPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
+            <Route path="/regime" element={<RegimePage />} />
             <Route path="/limitup" element={<LimitUpPage />} />
             <Route path="/performance" element={<PerformancePage />} />
             <Route path="/strategy" element={<StrategyPage />} />

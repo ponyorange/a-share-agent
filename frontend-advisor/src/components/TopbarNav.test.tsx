@@ -18,9 +18,16 @@ it('横向展示模块，并可用全部菜单切换', async () => {
     'href',
     '/watchlist',
   )
+  expect(screen.getByRole('link', { name: '市场状态' })).toHaveAttribute(
+    'href',
+    '/regime',
+  )
   expect(screen.getByRole('link', { name: '打板' })).toHaveAttribute(
     'href',
     '/limitup',
+  )
+  expect(BASE_NAV_LINKS.findIndex((link) => link.to === '/regime')).toBe(
+    BASE_NAV_LINKS.findIndex((link) => link.to === '/limitup') - 1,
   )
 
   await user.click(screen.getByRole('button', { name: '全部' }))

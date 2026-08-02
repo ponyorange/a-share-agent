@@ -2958,6 +2958,41 @@ body:has(.app-shell--agent-chat) {
   font-size: 0.78rem;
 }
 
+.regime-hero-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(12rem, 0.9fr);
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--color-surface);
+  box-shadow: 0 14px 36px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.regime-hero-card--risk_off {
+  border-color: color-mix(in srgb, var(--color-error) 32%, var(--line));
+  background:
+    linear-gradient(135deg, var(--color-error-soft), transparent 45%),
+    var(--color-surface);
+}
+
+.regime-gate-label,
+.regime-cap {
+  margin: 0.2rem 0 0.35rem;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.regime-banner {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--hold) 35%, var(--line));
+  border-radius: 12px;
+  color: var(--hold);
+  background: var(--hold-soft);
+}
+
 .board-tabs {
   display: flex;
   flex-wrap: wrap;

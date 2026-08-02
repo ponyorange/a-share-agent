@@ -1568,6 +1568,56 @@ export function resetStrategy(): Promise<UserStrategy> {
   })
 }
 
+export type RegimeEvidence = {
+  key: string
+  value: string | number | null
+  note?: string | null
+}
+
+export type RegimeCurrent = {
+  as_of?: string | null
+  trade_date?: string | null
+  trend_regime: string
+  sentiment_cycle: string
+  sentiment_score?: number | null
+  gate_level: string
+  position_cap: number
+  pool_policy?: string | null
+  data_quality: string
+  evidence?: RegimeEvidence[]
+  override_allowed?: boolean
+  metrics?: Record<string, unknown>
+  by_board?: Record<string, unknown>
+}
+
+export type RegimeSentiment = {
+  metrics?: Record<string, unknown>
+  sentiment_cycle?: string | null
+}
+
+export type RegimeBriefTemplate = {
+  kind: string
+  suggested_time?: string
+  prompt: string
+}
+
+export function fetchRegimeCurrent(): Promise<RegimeCurrent> {
+  return authFetch('/api/advisor/regime/current')
+}
+
+export function fetchRegimeHistory(limit = 20): Promise<RegimeCurrent[]> {
+  const q = new URLSearchParams({ limit: String(limit) })
+  return authFetch(`/api/advisor/regime/history?${q}`)
+}
+
+export function fetchRegimeSentiment(): Promise<RegimeSentiment> {
+  return authFetch('/api/advisor/regime/sentiment')
+}
+
+export function fetchRegimeBriefTemplate(): Promise<RegimeBriefTemplate> {
+  return authFetch('/api/advisor/regime/brief-template')
+}
+
 export type LimitUpStatus = 'sealed' | 'broken'
 
 export type LimitUpTodayItem = {
