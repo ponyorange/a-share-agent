@@ -32,6 +32,7 @@ from .paper import (
     sell_all_positions,
 )
 from .portfolio import PortfolioPayload, load_portfolio, save_portfolio
+from .home_market import list_hot_sectors
 from .regime import get_regime_for_gate
 from .regime.gate import apply_regime_gate
 from .service import get_advice, get_portfolio_advice, get_recommendations
@@ -132,6 +133,22 @@ def regime_brief_template(user: dict[str, Any] = Depends(_user)) -> dict[str, An
         "suggested_time": "09:05",
         "kind": "run_at",
     }
+
+
+@router.get("/regime/summary")
+def regime_summary(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    """Fast gate snapshot for home tiles — never live-collects market data."""
+    from .regime import get_regime_for_gate as _get_regime_for_gate
+
+    return _get_regime_for_gate(allow_stale=True)
+
+
+@router.get("/market/sectors")
+def market_sectors(
+    top: int = Query(default=8, ge=1, le=30),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    return list_hot_sectors(top=top)
 
 
 class StrategyUpdateBody(BaseModel):
