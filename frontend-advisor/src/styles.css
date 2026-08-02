@@ -2984,6 +2984,56 @@ body:has(.app-shell--agent-chat) {
   letter-spacing: -0.03em;
 }
 
+.regime-cap {
+  font-size: clamp(1.35rem, 3vw, 2rem);
+}
+
+.regime-one-liner {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.regime-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0 0.5rem;
+}
+
+.regime-tags span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.regime-why {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+  padding-left: 1.35rem;
+  line-height: 1.55;
+}
+
+.regime-details {
+  margin-top: 1rem;
+}
+
+.regime-details summary {
+  cursor: pointer;
+  color: var(--color-brand);
+  font-weight: 600;
+}
+
+.regime-details .table-wrap {
+  margin-top: 0.65rem;
+}
+
 .regime-banner {
   margin: 0 0 1rem;
   padding: 0.75rem 0.9rem;

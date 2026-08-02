@@ -26,6 +26,59 @@ beforeEach(() => {
   vi.mocked(api.fetchRegimeHistory).mockResolvedValue([])
 })
 
+it('shows decision-first Chinese hero without raw English enums', async () => {
+  vi.mocked(api.fetchRegimeCurrent).mockResolvedValue({
+    gate_level: 'defensive',
+    position_cap: 0.35,
+    trend_regime: 'range',
+    sentiment_cycle: 'ebb',
+    data_quality: 'ok',
+    evidence: [{ key: 'seal_rate', value: '0.4', note: '封板偏弱，赚钱效应一般' }],
+    override_allowed: true,
+  })
+
+  render(
+    <MemoryRouter initialEntries={['/regime']}>
+      <RegimePage />
+    </MemoryRouter>,
+  )
+
+  expect(await screen.findByRole('heading', { name: '今日闸门' })).toBeInTheDocument()
+  expect(screen.getByText('先轻仓观望')).toBeInTheDocument()
+  expect(screen.getByText(/建议总仓位不超过\s*35%/)).toBeInTheDocument()
+  expect(screen.getAllByText('赚钱效应转弱或结构一般，先降仓位、少开新仓。').length).toBeGreaterThan(0)
+  expect(screen.getByText('趋势：震荡')).toBeInTheDocument()
+  expect(screen.getByText('情绪：退潮')).toBeInTheDocument()
+  expect(screen.getByText('数据：可用')).toBeInTheDocument()
+  expect(screen.getByText('为什么这样判')).toBeInTheDocument()
+  expect(screen.getAllByText('封板偏弱，赚钱效应一般').length).toBeGreaterThan(0)
+  expect(screen.queryByText(/raw gate_level/i)).not.toBeInTheDocument()
+  expect(screen.queryByText('defensive')).not.toBeInTheDocument()
+  expect(screen.queryByText('range')).not.toBeInTheDocument()
+  expect(screen.queryByText('ebb')).not.toBeInTheDocument()
+})
+
+it('keeps metrics details collapsed by default', async () => {
+  vi.mocked(api.fetchRegimeCurrent).mockResolvedValue({
+    gate_level: 'normal',
+    position_cap: 0.7,
+    trend_regime: 'uptrend',
+    sentiment_cycle: 'strengthen',
+    data_quality: 'ok',
+    evidence: [{ key: 'seal_rate', value: '0.4', note: '封板率尚可' }],
+    metrics: { sentiment_score: 0.62 },
+  })
+
+  render(
+    <MemoryRouter initialEntries={['/regime']}>
+      <RegimePage />
+    </MemoryRouter>,
+  )
+
+  expect(await screen.findByText('查看指标明细')).toBeInTheDocument()
+  expect(document.querySelector('details.regime-details')).not.toHaveAttribute('open')
+})
+
 it('shows risk_off and override CTA', async () => {
   vi.mocked(api.fetchRegimeCurrent).mockResolvedValue({
     gate_level: 'risk_off',
@@ -46,7 +99,8 @@ it('shows risk_off and override CTA', async () => {
     </MemoryRouter>,
   )
 
-  expect(await screen.findByText(/risk_off|风险/i)).toBeInTheDocument()
+  expect(await screen.findByText('今天先别急着买')).toBeInTheDocument()
+  expect(screen.queryByText('risk_off')).not.toBeInTheDocument()
   const cta = screen.getByRole('button', { name: /仍要看今日关注/ })
   expect(cta).toBeInTheDocument()
 
@@ -90,5 +144,6 @@ it('shows recent regime history', async () => {
 
   expect(await screen.findByText('近 N 日周期')).toBeInTheDocument()
   expect(screen.getByText('2026-08-01')).toBeInTheDocument()
-  expect(screen.getByText('risk_off')).toBeInTheDocument()
+  expect(screen.getByText('今天先别买')).toBeInTheDocument()
+  expect(screen.queryByText('risk_off')).not.toBeInTheDocument()
 })

@@ -1,44 +1,36 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchRegimeCurrent, fetchRegimeHistory, type RegimeCurrent } from '../api'
-
-const GATE_LABELS: Record<string, string> = {
-  risk_off: '风险关闭',
-  defensive: '防御模式',
-  normal: '正常模式',
-  aggressive: '积极模式',
-}
-
-const TREND_LABELS: Record<string, string> = {
-  uptrend: '上行趋势',
-  range: '震荡区间',
-  downtrend: '下行趋势',
-}
-
-const SENTIMENT_LABELS: Record<string, string> = {
-  ice: '情绪冰点',
-  repair: '情绪修复',
-  strengthen: '情绪增强',
-  climax: '情绪高潮',
-  ebb: '情绪退潮',
-  neutral: '情绪中性',
-}
-
-function labelOf(map: Record<string, string>, value: string | null | undefined) {
-  if (!value) return '—'
-  return map[value] || value
-}
-
-function formatPct(value: number | null | undefined, digits = 0): string {
-  if (value == null || Number.isNaN(value)) return '—'
-  return `${(value * 100).toFixed(digits)}%`
-}
+import {
+  buildWhyBullets,
+  dataQualityLabel,
+  formatCapPct,
+  gateConclusion,
+  gateOneLiner,
+  gateShortLabel,
+  metricLabel,
+  sentimentLabel,
+  trendLabel,
+} from '../regimeCopy'
 
 function formatMaybeNumber(value: unknown): string {
   if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2)
   if (typeof value === 'string' && value) return value
   if (value == null) return '—'
   return String(value)
+}
+
+function formatMetricValue(key: string, value: unknown): string {
+  const num =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : NaN
+  if (Number.isFinite(num) && /(?:rate|pct|ratio)$/.test(key)) {
+    return formatCapPct(num)
+  }
+  return formatMaybeNumber(value)
 }
 
 export default function RegimePage() {
@@ -84,16 +76,24 @@ export default function RegimePage() {
   }, [])
 
   const gateLevel = data?.gate_level
-  const gateLabel = labelOf(GATE_LABELS, gateLevel)
   const showQualityBanner = data && data.data_quality !== 'ok'
   const metrics = data?.metrics || {}
+  const whyBullets = data
+    ? buildWhyBullets({
+        gate_level: data.gate_level,
+        trend_regime: data.trend_regime,
+        data_quality: data.data_quality,
+        evidence: data.evidence,
+        metrics,
+      })
+    : []
 
   return (
     <section className="page regime-page">
       <div className="page-hero">
-        <h1>市场状态</h1>
+        <h1>今日闸门</h1>
         <p>
-          汇总趋势、情绪周期与数据质量，给出今日推荐闸门和仓位上限。风险关闭时默认不主动推买入名单。
+          先看今天能不能干、最多干多大，再看为什么这样判。
         </p>
       </div>
 
@@ -105,21 +105,21 @@ export default function RegimePage() {
           <>
             {showQualityBanner ? (
               <div className="regime-banner" role="status">
-                数据质量：{data.data_quality}。请降低仓位，并优先查看 evidence。
+                数据质量：{dataQualityLabel(data.data_quality)}。请降低仓位，并优先查看指标明细。
               </div>
             ) : null}
 
             <div className={`regime-hero-card regime-hero-card--${gateLevel || 'unknown'}`}>
               <div>
-                <span className="metric-label">今日闸门</span>
-                <div className="regime-gate-label">{gateLabel}</div>
-                <p className="meta-line">
-                  raw gate_level: <span className="mono">{gateLevel || '—'}</span>
-                </p>
+                <span className="metric-label">今日结论</span>
+                <div className="regime-gate-label">{gateConclusion(data.gate_level)}</div>
+                <p className="regime-one-liner">{gateOneLiner(data.gate_level)}</p>
               </div>
               <div>
-                <span className="metric-label">仓位上限</span>
-                <div className="regime-cap">{formatPct(data.position_cap)}</div>
+                <span className="metric-label">仓位建议</span>
+                <div className="regime-cap">
+                  建议总仓位不超过 {formatCapPct(data.position_cap)}
+                </div>
                 <p className="meta-line">
                   {data.trade_date ? `交易日 ${data.trade_date}` : '交易日 —'}
                   {data.as_of
@@ -129,71 +129,71 @@ export default function RegimePage() {
               </div>
             </div>
 
-            <div className="stat-row">
-              <div className="stat">
-                <span className="metric-label">趋势状态</span>
-                <div className="metric-value">{labelOf(TREND_LABELS, data.trend_regime)}</div>
-                <span className="meta-line mono">{data.trend_regime}</span>
-              </div>
-              <div className="stat">
-                <span className="metric-label">情绪周期</span>
-                <div className="metric-value">
-                  {labelOf(SENTIMENT_LABELS, data.sentiment_cycle)}
-                </div>
-                <span className="meta-line mono">{data.sentiment_cycle}</span>
-              </div>
-              <div className="stat">
-                <span className="metric-label">数据质量</span>
-                <div className="metric-value">{data.data_quality}</div>
-                <span className="meta-line">{data.pool_policy || '—'}</span>
-              </div>
+            <div className="regime-tags" aria-label="今日闸门标签">
+              <span>趋势：{trendLabel(data.trend_regime)}</span>
+              <span>情绪：{sentimentLabel(data.sentiment_cycle)}</span>
+              <span>数据：{dataQualityLabel(data.data_quality)}</span>
             </div>
 
-            {gateLevel === 'risk_off' && data.override_allowed ? (
-              <button
-                type="button"
-                className="btn"
-                onClick={() => navigate('/?regime_override=1')}
-              >
-                仍要看今日关注
-              </button>
-            ) : null}
+            <h2 className="section-title">为什么这样判</h2>
+            <ol className="regime-why">
+              {whyBullets.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ol>
 
-            <h2 className="section-title">关键证据</h2>
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>指标</th>
-                    <th>数值</th>
-                    <th>说明</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data.evidence || []).map((item) => (
-                    <tr key={`${item.key}-${item.value}`}>
-                      <td className="mono">{item.key}</td>
-                      <td>{formatMaybeNumber(item.value)}</td>
-                      <td>{item.note || '—'}</td>
+            <div className="btn-row">
+              {gateLevel === 'risk_off' ? (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => navigate('/?regime_override=1')}
+                >
+                  仍要看今日关注
+                </button>
+              ) : (
+                <button type="button" className="btn ghost" onClick={() => navigate('/')}>
+                  查看今日关注
+                </button>
+              )}
+            </div>
+
+            <details className="regime-details">
+              <summary>查看指标明细</summary>
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>指标</th>
+                      <th>数值</th>
+                      <th>说明</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              {data.evidence?.length ? null : <p className="muted">暂无 evidence。</p>}
-            </div>
-
-            <h2 className="section-title">情绪指标</h2>
-            <div className="stat-row">
-              {Object.entries(metrics)
-                .filter(([key]) => key !== 'evidence')
-                .slice(0, 6)
-                .map(([key, value]) => (
-                  <div className="stat" key={key}>
-                    <span className="metric-label mono">{key}</span>
-                    <div className="metric-value">{formatMaybeNumber(value)}</div>
-                  </div>
-                ))}
-            </div>
+                  </thead>
+                  <tbody>
+                    {(data.evidence || []).map((item) => (
+                      <tr key={`evidence-${item.key}-${item.value}`}>
+                        <td>{metricLabel(item.key)}</td>
+                        <td>{formatMetricValue(item.key, item.value)}</td>
+                        <td>{item.note || '—'}</td>
+                      </tr>
+                    ))}
+                    {Object.entries(metrics)
+                      .filter(([key]) => key !== 'evidence')
+                      .slice(0, 6)
+                      .map(([key, value]) => (
+                        <tr key={`metric-${key}`}>
+                          <td>{metricLabel(key)}</td>
+                          <td>{formatMetricValue(key, value)}</td>
+                          <td>—</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                {data.evidence?.length || Object.keys(metrics).length ? null : (
+                  <p className="muted">暂无指标明细。</p>
+                )}
+              </div>
+            </details>
 
             <h2 className="section-title">近 N 日周期</h2>
             {history.length ? (
@@ -201,9 +201,10 @@ export default function RegimePage() {
                 {history.slice(0, 8).map((item) => (
                   <div className="stat" key={item.trade_date || `${item.gate_level}-${item.as_of}`}>
                     <span className="metric-label">{item.trade_date || '—'}</span>
-                    <div className="metric-value mono">{item.gate_level}</div>
+                    <div className="metric-value">{gateShortLabel(item.gate_level)}</div>
                     <span className="meta-line">
-                      {labelOf(SENTIMENT_LABELS, item.sentiment_cycle)} · 仓位{formatPct(item.position_cap)}
+                      情绪{sentimentLabel(item.sentiment_cycle)} · 仓位
+                      {formatCapPct(item.position_cap)}
                     </span>
                   </div>
                 ))}
