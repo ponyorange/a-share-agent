@@ -210,3 +210,51 @@ agent_web:
     max_redirects: 3
     allowed_ports: [80, 443]
     max_calls_per_turn: 8
+
+regime:
+  position_cap:
+    aggressive: 0.85
+    normal: 0.70
+    defensive: 0.35
+    risk_off: 0.15
+  pool_policy:
+    aggressive: full
+    normal: full
+    defensive: shrink
+    risk_off: defense_only
+  shrink_top_k: 8
+  defensive_buy_threshold_boost: 0.10
+  height_board_min: 3
+  sentiment_weights:
+    seal_rate: 0.25
+    height: 0.25
+    promotion: 0.25
+    limit_up_count: 0.15
+    limit_down_penalty: 0.10
+  cycle_thresholds:
+    ice: 0.20
+    repair: 0.35
+    strengthen: 0.55
+    climax: 0.75
+  cycle_hysteresis: 0.05
+  matrix:
+    uptrend:
+      ice: normal
+      repair: normal
+      strengthen: aggressive
+      climax: normal
+      ebb: defensive
+    range:
+      ice: defensive
+      repair: defensive
+      strengthen: normal
+      climax: defensive
+      ebb: risk_off
+    downtrend:
+      ice: risk_off
+      repair: risk_off
+      strengthen: defensive
+      climax: risk_off
+      ebb: risk_off
+  cache_ttl_seconds: 30
+  history_default_limit: 20
