@@ -35,3 +35,11 @@
 ## Gaps
 
 - No blocking gaps found against acceptance criteria 1-9.
+
+## Quality follow-up (gate_level market_score mapping)
+
+- Extended `tests/test_regime_market_context.py`:
+  - Parametrized all four `gate_level` values → `market_score` (0.8 / 0.55 / 0.35 / 0.2).
+  - When `market` lacks `gate_level`, `get_current_regime` → `risk_off` yields `market_score` 0.2.
+  - When `get_current_regime` raises, falls back to legacy `market.score`.
+- Re-run: `pytest tests/test_regime_market_context.py tests/test_regime_*.py -q` → **42 passed**, 2 warnings.
