@@ -23,6 +23,8 @@ from .market_context import (
     fetch_industry_strength_map,
     get_market_score,
 )
+from .regime import get_current_regime
+from .regime.gate import apply_regime_gate
 
 
 def _analyze_symbol(
@@ -279,6 +281,7 @@ def get_recommendations(
     max_workers: int = 3,
     force_universe: bool = False,
     user_id: str | None = None,
+    regime_override: bool = False,
 ) -> dict[str, Any]:
     """大池 spot 粗筛 → 仅对 Top 精算（日线因子）。"""
     from .screen import select_for_precise
@@ -428,7 +431,7 @@ def get_recommendations(
         except Exception:
             pass
 
-    return {
+    result = {
         "as_of": as_of
         or next(
             (i["as_of"] for b in board_ids for i in boards_out[b]["items"] if i.get("as_of")),
@@ -455,6 +458,11 @@ def get_recommendations(
         },
         **strategy_meta,
     }
+    return apply_regime_gate(
+        result,
+        get_current_regime(),
+        override=regime_override,
+    )
 
 
 def iter_recommendations_refresh_events(
@@ -749,6 +757,7 @@ def iter_recommendations_refresh_events(
             },
             **strategy_meta,
         }
+        result = apply_regime_gate(result, get_current_regime())
 
         if persist and user_id and td:
             yield {

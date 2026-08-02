@@ -63,3 +63,40 @@ def test_regime_history_and_sentiment_routes(monkeypatch):
     assert history.json() == [{"trade_date": "2026-08-02", "gate_level": "normal"}]
     assert sentiment.status_code == 200
     assert sentiment.json()["metrics"]["limit_up_count"] == 12
+
+
+def test_recommendations_accepts_regime_override(monkeypatch):
+    import app.advisor.routes as routes
+
+    seen = {}
+    _auth()
+    monkeypatch.setattr(routes, "_bind", lambda user: str(user["id"]))
+    monkeypatch.setattr(routes, "effective_rec_date", lambda as_of=None: "2026-08-02")
+    monkeypatch.setattr(routes, "has_snapshot", lambda trade_date, user_id=None: False)
+    monkeypatch.setattr(
+        routes,
+        "get_recommendations",
+        lambda **kwargs: seen.setdefault(
+            "result",
+            {
+                "as_of": "2026-08-02",
+                "items": [],
+                "boards": {},
+                "regime_override": kwargs.get("regime_override"),
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        routes,
+        "save_snapshot",
+        lambda payload, trade_date=None, user_id=None: {"saved": True},
+    )
+    try:
+        response = TestClient(app).get(
+            "/api/advisor/recommendations?regime_override=true"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["regime_override"] is True

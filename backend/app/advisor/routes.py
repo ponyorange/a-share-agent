@@ -590,6 +590,7 @@ def recommendations(
         description="手动刷新候选池：重算并覆盖有效交易日归档",
     ),
     persist: bool = Query(default=True, description="是否写入/覆盖有效交易日快照"),
+    regime_override: bool = Query(default=False, description="风险关闭时允许防御模式展示"),
     user: dict[str, Any] = Depends(_user),
 ) -> dict[str, Any]:
     uid = _bind(user)
@@ -598,7 +599,11 @@ def recommendations(
 
     if not refresh_universe and has_snapshot(trade_date, user_id=uid):
         cached = snapshot_as_recommendations(
-            trade_date, board=board_key, top=top, user_id=uid
+            trade_date,
+            board=board_key,
+            top=top,
+            user_id=uid,
+            regime_override=regime_override,
         )
         if cached:
             return cached
@@ -610,6 +615,7 @@ def recommendations(
             board=board_key,
             force_universe=refresh_universe,
             user_id=uid,
+            regime_override=regime_override,
         )
         if persist:
             snap = save_snapshot(result, trade_date=trade_date, user_id=uid)

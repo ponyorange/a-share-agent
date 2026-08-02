@@ -9,6 +9,8 @@ from ..db import get_db
 from . import context
 from .calendar_util import is_trading_day, last_trading_day, parse_date
 from .features import fetch_daily_df
+from .regime import get_current_regime
+from .regime.gate import apply_regime_gate
 
 
 def _resolve_user_id(user_id: str | None = None) -> str:
@@ -271,6 +273,7 @@ def snapshot_as_recommendations(
     board: str | None = None,
     top: int | None = None,
     user_id: str | None = None,
+    regime_override: bool = False,
 ) -> dict[str, Any] | None:
     """Rebuild recommendations API payload from a stored snapshot."""
     snap = get_snapshot(trade_date, user_id=user_id)
@@ -304,7 +307,7 @@ def snapshot_as_recommendations(
     if board and board not in ("", "all"):
         flat = list((boards_out.get(board) or {}).get("items") or [])
 
-    return {
+    result = {
         "as_of": snap.get("as_of") or trade_date,
         "trade_date": trade_date,
         "count": len(flat),
@@ -327,6 +330,11 @@ def snapshot_as_recommendations(
             "user_id": snap.get("user_id"),
         },
     }
+    return apply_regime_gate(
+        result,
+        get_current_regime(),
+        override=regime_override,
+    )
 
 
 def load_history_plain(
