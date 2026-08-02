@@ -29,13 +29,32 @@ def normalize_symbol(symbol: str) -> str:
     return digits
 
 
+# Shanghai indices that begin with 0 — without this they are mis-mapped to SZ.
+# 000001 is intentionally omitted: it collides with 平安银行 (SZ000001).
+_SH_INDEX_SYMBOLS = frozenset(
+    {
+        "000016",  # 上证50
+        "000300",  # 沪深300
+        "000510",  # 中证A500
+        "000680",  # 科创综指
+        "000688",  # 科创50
+        "000852",  # 中证1000
+        "000905",  # 中证500
+        "000922",  # 中证红利
+    }
+)
+
+
 def market_prefix(symbol: str) -> str:
     """Map 6-digit code to exchange prefix used by Tencent/Sina.
 
-    Shanghai: 6xxxxx stocks, 5xxxxx funds/ETFs, 9xxxxx B-shares.
+    Shanghai: 6xxxxx stocks, 5xxxxx funds/ETFs, 9xxxxx B-shares,
+    plus curated 0xxxxx Shanghai indices (e.g. 000300).
     Beijing: 4xxxxx / 8xxxxx.
-    Shenzhen: 0xxxxx / 1xxxxx / 2xxxxx / 3xxxxx (incl. 15/16xx ETFs).
+    Shenzhen: remaining 0xxxxx / 1xxxxx / 2xxxxx / 3xxxxx (incl. 15/16xx ETFs).
     """
+    if symbol in _SH_INDEX_SYMBOLS:
+        return "sh"
     if symbol.startswith(("5", "6", "9")):
         return "sh"
     if symbol.startswith(("4", "8")):
