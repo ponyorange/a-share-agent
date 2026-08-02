@@ -98,7 +98,7 @@ def test_snapshot_as_recommendations_applies_regime_gate(monkeypatch):
             },
         },
     )
-    monkeypatch.setattr(snapshots, "get_current_regime", lambda: _risk_off_regime())
+    monkeypatch.setattr(snapshots, "get_regime_for_gate", lambda allow_stale=True: _risk_off_regime())
 
     out = snapshots.snapshot_as_recommendations("2026-08-02", board="hs", user_id="u1")
 
@@ -129,7 +129,7 @@ def test_snapshot_keeps_ungated_actions_for_regime_override(monkeypatch):
         "get_db",
         lambda: type("DB", (), {"rec_snapshots": _Snapshots()})(),
     )
-    monkeypatch.setattr(snapshots, "get_current_regime", lambda: _risk_off_regime())
+    monkeypatch.setattr(snapshots, "get_regime_for_gate", lambda allow_stale=True: _risk_off_regime())
     raw = {
         "as_of": "2026-08-03",
         "boards": {

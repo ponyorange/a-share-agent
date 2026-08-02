@@ -23,7 +23,7 @@ from .market_context import (
     fetch_industry_strength_map,
     get_market_score,
 )
-from .regime import get_current_regime
+from .regime import get_regime_for_gate
 from .regime.gate import apply_regime_gate
 
 
@@ -461,7 +461,7 @@ def get_recommendations(
     }
     if not apply_regime:
         return result
-    return apply_regime_gate(result, get_current_regime(), override=regime_override)
+    return apply_regime_gate(result, get_regime_for_gate(allow_stale=True), override=regime_override)
 
 
 def iter_recommendations_refresh_events(
@@ -779,7 +779,7 @@ def iter_recommendations_refresh_events(
                 },
             }
 
-        yield {"event": "done", "data": apply_regime_gate(result, get_current_regime())}
+        yield {"event": "done", "data": apply_regime_gate(result, get_regime_for_gate(allow_stale=True))}
     except Exception as exc:
         yield {
             "event": "error",

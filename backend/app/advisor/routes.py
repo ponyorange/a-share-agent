@@ -32,7 +32,7 @@ from .paper import (
     sell_all_positions,
 )
 from .portfolio import PortfolioPayload, load_portfolio, save_portfolio
-from .regime import get_current_regime
+from .regime import get_regime_for_gate
 from .regime.gate import apply_regime_gate
 from .service import get_advice, get_portfolio_advice, get_recommendations
 from .snapshots import (
@@ -637,7 +637,7 @@ def recommendations(
             result["trade_date"] = trade_date
         return apply_regime_gate(
             result,
-            get_current_regime(),
+            get_regime_for_gate(allow_stale=True),
             override=regime_override,
         )
     except Exception as exc:
@@ -1298,7 +1298,7 @@ def paper_one_click(
                 apply_regime=False,
             )
             save_snapshot(recs, trade_date=trade_date, user_id=uid)
-            recs = apply_regime_gate(recs, get_current_regime())
+            recs = apply_regime_gate(recs, get_regime_for_gate(allow_stale=True))
         return one_click_buy_from_recs(
             uid,
             recs,
@@ -1348,7 +1348,7 @@ def paper_one_click_stream(
                     apply_regime=False,
                 )
                 save_snapshot(recs, trade_date=trade_date, user_id=uid)
-                recs = apply_regime_gate(recs, get_current_regime())
+                recs = apply_regime_gate(recs, get_regime_for_gate(allow_stale=True))
             for ev in iter_one_click_buy_events(
                 uid,
                 recs,

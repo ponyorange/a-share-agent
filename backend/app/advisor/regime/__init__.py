@@ -2,6 +2,7 @@ from .service import (
     REGIME_MORNING_BRIEF_PROMPT,
     build_regime_from_parts,
     get_current_regime,
+    get_regime_for_gate,
     get_regime_history,
     get_sentiment_detail,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "apply_regime_gate",
     "build_regime_from_parts",
     "get_current_regime",
+    "get_regime_for_gate",
     "get_regime_history",
     "get_sentiment_detail",
 ]

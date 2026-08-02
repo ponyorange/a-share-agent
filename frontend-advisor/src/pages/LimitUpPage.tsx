@@ -347,9 +347,15 @@ export default function LimitUpPage() {
         <div className="meta-line" role="status">
           <span>市场情绪</span>
           {' · '}
-          <strong>{sentimentLabel(sentiment?.sentiment_cycle)}</strong>
-          {' · '}
-          <span className="mono">{sentimentScore(sentiment)}</span>
+          {sentiment ? (
+            <>
+              <strong>{sentimentLabel(sentiment.sentiment_cycle)}</strong>
+              {' · '}
+              <span className="mono">{sentimentScore(sentiment)}</span>
+            </>
+          ) : (
+            <span className="muted">加载中…</span>
+          )}
           {' · '}
           <Link className="text-link" to="/regime">
             查看今日闸门
@@ -358,17 +364,19 @@ export default function LimitUpPage() {
         {error ? <p className="status error">{error}</p> : null}
         {loading && !data ? <p className="status">正在拉取涨停数据…</p> : null}
 
-        {isPc ? (
-          <>
-            {ladderSection}
-            {todaySection}
-          </>
-        ) : (
-          <>
-            {todaySection}
-            {ladderSection}
-          </>
-        )}
+        {data ? (
+          isPc ? (
+            <>
+              {ladderSection}
+              {todaySection}
+            </>
+          ) : (
+            <>
+              {todaySection}
+              {ladderSection}
+            </>
+          )
+        ) : null}
       </div>
     </section>
   )

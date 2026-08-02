@@ -639,7 +639,7 @@ export default function RecommendationsPage() {
           <p>
             大池粗筛 + Top 精算；按有效交易日归档。点「刷新候选池」会在后台跑完（关页面也继续），稍后回来可看新结果。
           </p>
-          {data && !loading ? (
+          {data ? (
             <div className="recommendation-summary" aria-label="推荐摘要">
               <div className="summary-stat">
                 <span>大池</span>
@@ -656,7 +656,7 @@ export default function RecommendationsPage() {
             </div>
           ) : null}
         </MobileDisclosure>
-        {data && !loading ? (
+        {data ? (
           <div className="recommendation-mobile-meta" aria-label="推荐日期与归档状态">
             <span>推荐日 {recommendationDate}</span>
             <span>{archiveStatus}</span>
@@ -837,8 +837,11 @@ export default function RecommendationsPage() {
         </div>
       ) : null}
 
-      {loading && !refreshProgress ? (
+      {loading && !refreshProgress && !data ? (
         <p className="status">加载今日关注…（无归档时会粗筛精算；有归档则直接读库）</p>
+      ) : null}
+      {loading && !refreshProgress && data ? (
+        <p className="status">正在更新…</p>
       ) : null}
       {refreshStatus ? <p className="status">{refreshStatus}</p> : null}
       {error ? <p className="status error">{error}</p> : null}
@@ -869,7 +872,7 @@ export default function RecommendationsPage() {
         </div>
       ) : null}
 
-      {data && !loading ? (
+      {data ? (
         <>
           <MobileDisclosure summary="筛选与数据源">
             <p className="meta-line">{metaLine}</p>

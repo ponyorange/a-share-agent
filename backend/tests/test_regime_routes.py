@@ -102,7 +102,7 @@ def test_recommendations_accepts_regime_override(monkeypatch):
         "save_snapshot",
         lambda payload, trade_date=None, user_id=None: {"saved": True},
     )
-    monkeypatch.setattr(routes, "get_current_regime", lambda: {"gate_level": "normal"})
+    monkeypatch.setattr(routes, "get_regime_for_gate", lambda allow_stale=True: {"gate_level": "normal"})
     monkeypatch.setattr(
         routes,
         "apply_regime_gate",

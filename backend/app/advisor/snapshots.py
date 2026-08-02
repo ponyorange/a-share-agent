@@ -9,7 +9,7 @@ from ..db import get_db
 from . import context
 from .calendar_util import is_trading_day, last_trading_day, parse_date
 from .features import fetch_daily_df
-from .regime import get_current_regime
+from .regime import get_regime_for_gate
 from .regime.gate import apply_regime_gate
 
 
@@ -334,7 +334,7 @@ def snapshot_as_recommendations(
     }
     return apply_regime_gate(
         result,
-        get_current_regime(),
+        get_regime_for_gate(allow_stale=True),
         override=regime_override,
     )
 

@@ -189,6 +189,61 @@ def _ensure_previous_archive(trade_date: str, cfg: dict[str, Any]) -> None:
     store.upsert_daily(prev_date, archived)
 
 
+def _neutral_regime(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Fast fallback so recommendation/limit-up UIs are never blocked on live collect."""
+    regime_cfg = cfg or _regime_cfg()
+    return {
+        "gate_level": "normal",
+        "position_cap": float((regime_cfg.get("position_cap") or {}).get("normal", 0.7)),
+        "pool_policy": (regime_cfg.get("pool_policy") or {}).get("normal", "full"),
+        "data_quality": "degraded",
+        "sentiment_cycle": "repair",
+        "sentiment_score": None,
+        "metrics": {},
+        "evidence": [
+            {
+                "key": "data_quality",
+                "value": "degraded",
+                "note": "无本地闸门缓存，暂用中性默认（不阻塞表格）",
+            }
+        ],
+        "override_allowed": True,
+    }
+
+
+def get_regime_for_gate(*, allow_stale: bool = True) -> dict[str, Any]:
+    """Return a regime snapshot suitable for gating without live market collection.
+
+    Prefer memory cache, then Mongo daily archive. Never calls collector — use
+    ``get_current_regime`` when a fresh rebuild is required (今日闸门页 / agent).
+    """
+    cfg = _regime_cfg()
+    ttl = max(0, int(cfg.get("cache_ttl_seconds") or 0))
+    now_mono = monotonic()
+    cached = _CACHE.get("current")
+    if cached:
+        age = now_mono - float(cached.get("ts") or 0.0)
+        if allow_stale or (ttl > 0 and age < ttl):
+            return dict(cached["payload"])
+
+    today = _CLOCK().date()
+    trade_date = today.isoformat()[:10]
+    if not is_trading_day(trade_date):
+        trade_date = last_trading_day(today)
+    doc = store.get_daily(str(trade_date)[:10])
+    if doc:
+        _CACHE["current"] = {"ts": now_mono, "payload": dict(doc)}
+        return dict(doc)
+
+    hist = store.list_daily(1)
+    if hist:
+        payload = dict(hist[0])
+        _CACHE["current"] = {"ts": now_mono, "payload": payload}
+        return payload
+
+    return _neutral_regime(cfg)
+
+
 def get_current_regime(*, force: bool = False) -> dict[str, Any]:
     cfg = _regime_cfg()
     ttl = max(0, int(cfg.get("cache_ttl_seconds") or 0))
@@ -230,7 +285,8 @@ def get_regime_history(limit: int = 20) -> list[dict[str, Any]]:
 
 
 def get_sentiment_detail() -> dict[str, Any]:
-    current = get_current_regime()
+    # Fast path: never block LimitUp / strip UIs on live K-line collection.
+    current = get_regime_for_gate(allow_stale=True)
     return {
         "metrics": current.get("metrics") or {},
         "sentiment_cycle": current.get("sentiment_cycle"),

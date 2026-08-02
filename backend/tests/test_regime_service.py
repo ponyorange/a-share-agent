@@ -226,7 +226,11 @@ def test_history_and_sentiment_detail_use_archive(monkeypatch, service):
         },
     ]
     monkeypatch.setattr(service.store, "list_daily", lambda limit: rows[:limit])
-    monkeypatch.setattr(service, "get_current_regime", lambda force=False: {"metrics": {"a": 1}, "sentiment_cycle": "ebb"})
+    monkeypatch.setattr(
+        service,
+        "get_regime_for_gate",
+        lambda allow_stale=True: {"metrics": {"a": 1}, "sentiment_cycle": "ebb"},
+    )
 
     assert service.get_regime_history(limit=1) == [rows[0]]
     assert service.get_sentiment_detail() == {"metrics": {"a": 1}, "sentiment_cycle": "ebb"}
@@ -303,3 +307,69 @@ def test_non_trading_day_uses_last_trading_day_without_weekend_archive(
     assert collected == [None, "2026-08-01"]
     assert writes[-1][0] == "2026-08-01"
     assert writes[-1][1]["finalized"] is False
+
+
+def test_get_regime_for_gate_uses_store_without_collect(monkeypatch, service):
+    monkeypatch.setattr(service, "_CACHE", {})
+    monkeypatch.setattr(service, "is_trading_day", lambda day: True)
+    monkeypatch.setattr(
+        service.store,
+        "get_daily",
+        lambda day: {
+            "trade_date": day,
+            "gate_level": "defensive",
+            "position_cap": 0.35,
+            "pool_policy": "shrink",
+            "data_quality": "ok",
+            "sentiment_cycle": "ebb",
+            "metrics": {"sentiment_score": 0.42},
+        },
+    )
+    monkeypatch.setattr(
+        service.collector,
+        "collect_raw",
+        lambda *a, **k: pytest.fail("gate path must not live-collect"),
+    )
+
+    out = service.get_regime_for_gate(allow_stale=True)
+
+    assert out["gate_level"] == "defensive"
+    assert out["sentiment_cycle"] == "ebb"
+
+
+def test_get_regime_for_gate_neutral_when_empty(monkeypatch, service):
+    monkeypatch.setattr(service, "_CACHE", {})
+    monkeypatch.setattr(service, "is_trading_day", lambda day: True)
+    monkeypatch.setattr(service.store, "get_daily", lambda day: None)
+    monkeypatch.setattr(service.store, "list_daily", lambda n: [])
+    monkeypatch.setattr(
+        service.collector,
+        "collect_raw",
+        lambda *a, **k: pytest.fail("gate path must not live-collect"),
+    )
+
+    out = service.get_regime_for_gate(allow_stale=True)
+
+    assert out["gate_level"] == "normal"
+    assert out["data_quality"] == "degraded"
+
+
+def test_sentiment_detail_uses_fast_gate_path(monkeypatch, service):
+    monkeypatch.setattr(
+        service,
+        "get_regime_for_gate",
+        lambda allow_stale=True: {
+            "sentiment_cycle": "strengthen",
+            "metrics": {"sentiment_score": 0.8},
+        },
+    )
+    monkeypatch.setattr(
+        service,
+        "get_current_regime",
+        lambda force=False: pytest.fail("sentiment must not call live regime"),
+    )
+
+    out = service.get_sentiment_detail()
+
+    assert out["sentiment_cycle"] == "strengthen"
+    assert out["metrics"]["sentiment_score"] == 0.8

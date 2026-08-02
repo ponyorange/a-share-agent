@@ -141,6 +141,26 @@ describe('LimitUpPage', () => {
     )
   })
 
+  it('情绪未返回时不阻塞涨停表格渲染', async () => {
+    vi.mocked(api.fetchLimitUp).mockResolvedValue(sample)
+    vi.mocked(api.fetchRegimeSentiment).mockImplementation(
+      () => new Promise(() => {}),
+    )
+
+    render(
+      <MemoryRouter>
+        <LimitUpPage />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('浦发银行')).toBeInTheDocument()
+    })
+    expect(screen.getByText('市场情绪')).toBeInTheDocument()
+    expect(screen.getByText('加载中…')).toBeInTheDocument()
+    expect(screen.queryByText('增强')).not.toBeInTheDocument()
+  })
+
   it('非交易时段隐藏当天涨停明细', async () => {
     vi.mocked(api.fetchLimitUp).mockResolvedValue({
       ...sample,
