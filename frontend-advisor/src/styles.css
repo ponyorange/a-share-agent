@@ -4357,7 +4357,8 @@ body:has(.app-shell--agent-chat) {
 }
 
 .home-regime,
-.home-hot {
+.home-hot,
+.home-breadth {
   display: grid;
   gap: 0.45rem;
 }

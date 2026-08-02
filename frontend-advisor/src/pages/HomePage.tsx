@@ -40,6 +40,37 @@ function metricNum(metrics: Record<string, unknown> | undefined, key: string): n
   return Number.isFinite(n) ? n : null
 }
 
+/** Breadth lives in trend evidence more often than in sentiment metrics. */
+export function breadthFromRegime(data: RegimeCurrent | null | undefined): number | null {
+  if (!data) return null
+  const fromMetrics = metricNum(data.metrics, 'breadth')
+  if (fromMetrics != null) return fromMetrics
+  const hit = (data.evidence || []).find((e) => e.key === 'breadth')
+  if (!hit || hit.value == null || hit.value === '') return null
+  const n = Number(hit.value)
+  return Number.isFinite(n) ? n : null
+}
+
+function featuredBreadth(market: MarketResponse | null | undefined): {
+  up: number
+  down: number
+  flat: number
+  total: number
+} | null {
+  const rows = (market?.featured || []).filter((x) => x.change_pct != null)
+  if (!rows.length) return null
+  let up = 0
+  let down = 0
+  let flat = 0
+  for (const row of rows) {
+    const pct = Number(row.change_pct)
+    if (pct > 0) up += 1
+    else if (pct < 0) down += 1
+    else flat += 1
+  }
+  return { up, down, flat, total: rows.length }
+}
+
 function pickFeatured(market: MarketResponse) {
   const featured = [...(market.featured || [])]
   featured.sort((a, b) => {
@@ -155,7 +186,10 @@ export default function HomePage() {
   }
 
   const metrics = regime.status === 'ok' ? regime.data.metrics : undefined
-  const breadth = metricNum(metrics, 'breadth')
+  const breadth =
+    regime.status === 'ok' ? breadthFromRegime(regime.data) : null
+  const indexBreadth =
+    market.status === 'ok' ? featuredBreadth(market.data) : null
   const maxBoard = metricNum(metrics, 'max_board')
   const promotion = metricNum(metrics, 'promotion_rate')
   const limitUpCount = metricNum(metrics, 'limit_up_count')
@@ -163,6 +197,19 @@ export default function HomePage() {
     limitUp.status === 'ok'
       ? Math.max(0, ...(limitUp.data.ladder || []).map((t) => t.board_count || 0))
       : null
+
+  const breadthTileState: TileState<{
+    breadth: number | null
+    indexBreadth: ReturnType<typeof featuredBreadth>
+  }> =
+    market.status === 'loading' && regime.status === 'loading'
+      ? { status: 'loading' }
+      : market.status === 'error' && regime.status === 'error'
+        ? { status: 'error', error: '涨跌分布暂不可用' }
+        : {
+            status: 'ok',
+            data: { breadth, indexBreadth },
+          }
 
   return (
     <section className="page home-page">
@@ -234,29 +281,40 @@ export default function HomePage() {
 
         <Tile
           title="涨跌分布"
-          state={
-            regime.status === 'loading'
-              ? { status: 'loading' }
-              : regime.status === 'error'
-                ? regime
-                : {
-                    status: 'ok',
-                    data: { breadth },
-                  }
-          }
-          onRetry={loadRegime}
+          state={breadthTileState}
+          onRetry={() => {
+            loadMarket()
+            loadRegime()
+          }}
         >
-          {() => (
-            <div>
-              <p>
-                上涨家数占比{' '}
-                <strong className="mono">
-                  {breadth == null ? '—' : `${(breadth * 100).toFixed(1)}%`}
-                </strong>
-              </p>
-              <p className="muted">摘要 · 来自市场闸门 breadth</p>
-            </div>
-          )}
+          {(data) => {
+            const idx = data.indexBreadth
+            const ratio = data.breadth
+            if (ratio == null && !idx) {
+              return <p className="muted">暂无涨跌分布数据</p>
+            }
+            return (
+              <div className="home-breadth">
+                {idx ? (
+                  <p>
+                    主要指数{' '}
+                    <strong className="chg up">上涨 {idx.up}</strong>
+                    {' · '}
+                    <strong className="chg down">下跌 {idx.down}</strong>
+                    {idx.flat ? ` · 平盘 ${idx.flat}` : ''}
+                    <span className="muted"> / {idx.total}</span>
+                  </p>
+                ) : null}
+                <p>
+                  指数上涨占比{' '}
+                  <strong className="mono">
+                    {ratio == null ? '—' : `${(ratio * 100).toFixed(1)}%`}
+                  </strong>
+                </p>
+                <p className="muted">摘要 · 闸门趋势 breadth + 主要指数涨跌</p>
+              </div>
+            )
+          }}
         </Tile>
 
         <Tile
