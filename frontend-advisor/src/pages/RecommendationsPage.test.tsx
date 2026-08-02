@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -102,6 +102,14 @@ beforeEach(() => {
     scanned: 9,
     mode: '归档优先',
     universe_source: 'akshare',
+    regime: {
+      gate_level: 'risk_off',
+      position_cap: 0.15,
+      pool_policy: 'block',
+      data_quality: 'ok',
+      override_applied: false,
+    },
+    gate_blocked_buys: true,
     snapshot: { from_cache: true, trade_date: '2026-07-24' },
     boards: {
       etf: {
@@ -130,6 +138,60 @@ beforeEach(() => {
       hs: { id: 'hs', label: '沪深股', scanned: 0, count: 0, items: [] },
       star: { id: 'star', label: '科创股', scanned: 0, count: 0, items: [] },
     },
+  })
+})
+
+it('从查询参数透传市场状态 override，并展示闸门徽章与覆盖提示', async () => {
+  const user = userEvent.setup()
+
+  render(
+    <MemoryRouter initialEntries={['/?regime_override=1']}>
+      <RecommendationsPage />
+    </MemoryRouter>,
+  )
+
+  await waitFor(() => {
+    expect(fetchRecommendations).toHaveBeenCalledWith(10, 'all', false, true)
+  })
+  expect(screen.getByText('市场状态：风险关闭')).toBeInTheDocument()
+  expect(screen.getAllByText(/已开启 override/).length).toBeGreaterThan(0)
+
+  cleanup()
+  fetchRecommendations.mockClear()
+  fetchRecommendations.mockResolvedValueOnce({
+    as_of: '2026-07-24 15:00:00',
+    trade_date: '2026-07-24',
+    count: 1,
+    buy_threshold: 0.7,
+    strategy_hit_rate: 0.61,
+    items: [],
+    scanned: 9,
+    mode: '归档优先',
+    gate_blocked_buys: true,
+    regime: {
+      gate_level: 'risk_off',
+      position_cap: 0.15,
+      pool_policy: 'block',
+      data_quality: 'ok',
+      override_applied: false,
+    },
+    boards: {
+      etf: { id: 'etf', label: 'ETF', scanned: 1, count: 0, items: [] },
+      hs: { id: 'hs', label: '沪深股', scanned: 0, count: 0, items: [] },
+      star: { id: 'star', label: '科创股', scanned: 0, count: 0, items: [] },
+    },
+  })
+
+  render(
+    <MemoryRouter>
+      <RecommendationsPage />
+    </MemoryRouter>,
+  )
+
+  expect(await screen.findByText(/市场状态为风险关闭/)).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '仍要查看推荐' }))
+  await waitFor(() => {
+    expect(fetchRecommendations).toHaveBeenLastCalledWith(10, 'all', false, true)
   })
 })
 

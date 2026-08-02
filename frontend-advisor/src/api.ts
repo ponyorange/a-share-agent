@@ -73,6 +73,14 @@ export type RecommendationsResponse = {
     from_cache?: boolean
   }
   errors?: { symbol: string; error?: string; board?: string }[]
+  gate_blocked_buys?: boolean
+  regime?: {
+    gate_level?: string | null
+    position_cap?: number | null
+    pool_policy?: string | null
+    data_quality?: string | null
+    override_applied?: boolean
+  }
 }
 
 export type Position = {
@@ -188,6 +196,7 @@ export function fetchRecommendations(
   top = 15,
   board: 'etf' | 'hs' | 'star' | 'all' = 'all',
   refreshUniverse = false,
+  regimeOverride = false,
 ): Promise<RecommendationsResponse> {
   const q = new URLSearchParams({
     top: String(top),
@@ -195,6 +204,7 @@ export function fetchRecommendations(
     refresh_universe: refreshUniverse ? 'true' : 'false',
     persist: 'true',
   })
+  if (regimeOverride) q.set('regime_override', 'true')
   return authFetch(`/api/advisor/recommendations?${q}`)
 }
 

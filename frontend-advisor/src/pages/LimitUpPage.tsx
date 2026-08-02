@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   fetchLimitUp,
+  fetchRegimeSentiment,
   formatLimitUpChg,
   formatLimitUpMoney,
   shouldShowTodayTable,
@@ -8,16 +10,34 @@ import {
   type LimitUpLadderTier,
   type LimitUpResponse,
   type LimitUpTodayItem,
+  type RegimeSentiment,
 } from '../api'
 import { useMediaQuery } from '../components/ResponsiveDataView'
 import { explorerKlineUrl } from '../explorerLinks'
 
 const POLL_MS = 10_000
 const PC_QUERY = '(min-width: 900px)'
+const SENTIMENT_LABELS: Record<string, string> = {
+  strengthen: '情绪增强',
+  climax: '情绪高潮',
+  ebb: '情绪退潮',
+  repair: '情绪修复',
+  neutral: '情绪中性',
+}
 
 function chgClass(v: number | null | undefined): string {
   if (v == null || Number.isNaN(v) || v === 0) return ''
   return v > 0 ? 'up' : 'down'
+}
+
+function sentimentLabel(value: string | null | undefined): string {
+  if (!value) return '—'
+  return SENTIMENT_LABELS[value] || value
+}
+
+function sentimentScore(data: RegimeSentiment | null): string {
+  const raw = data?.metrics?.sentiment_score
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw.toFixed(2) : '—'
 }
 
 /** PC 默认：≥2 连板展开，1 连板折叠。 */
@@ -149,6 +169,7 @@ export default function LimitUpPage() {
   const [error, setError] = useState<string | null>(null)
   const [tierOpen, setTierOpen] = useState<Record<number, boolean>>({})
   const [todayExpanded, setTodayExpanded] = useState(false)
+  const [sentiment, setSentiment] = useState<RegimeSentiment | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -166,6 +187,20 @@ export default function LimitUpPage() {
     setLoading(true)
     void load()
   }, [load])
+
+  useEffect(() => {
+    let alive = true
+    fetchRegimeSentiment()
+      .then((res) => {
+        if (alive) setSentiment(res)
+      })
+      .catch(() => {
+        if (alive) setSentiment(null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   useEffect(() => {
     const isTrading = shouldShowTodayTable(data?.session)
@@ -320,6 +355,17 @@ export default function LimitUpPage() {
             : ''}
           {isTrading ? ' · 交易中 · 约 10 秒刷新' : ' · 非交易时段'}
         </p>
+        <div className="meta-line" role="status">
+          <span>市场情绪</span>
+          {' · '}
+          <strong>{sentimentLabel(sentiment?.sentiment_cycle)}</strong>
+          {' · '}
+          <span className="mono">{sentimentScore(sentiment)}</span>
+          {' · '}
+          <Link className="text-link" to="/regime">
+            查看市场状态
+          </Link>
+        </div>
         {error ? <p className="status error">{error}</p> : null}
         {loading && !data ? <p className="status">正在拉取涨停数据…</p> : null}
 

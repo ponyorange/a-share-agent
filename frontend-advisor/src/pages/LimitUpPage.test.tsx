@@ -11,6 +11,7 @@ vi.mock('../api', async () => {
   return {
     ...actual,
     fetchLimitUp: vi.fn(),
+    fetchRegimeSentiment: vi.fn(),
   }
 })
 
@@ -87,6 +88,11 @@ function setViewport(pc: boolean) {
 describe('LimitUpPage', () => {
   beforeEach(() => {
     vi.mocked(api.fetchLimitUp).mockReset()
+    vi.mocked(api.fetchRegimeSentiment).mockReset()
+    vi.mocked(api.fetchRegimeSentiment).mockResolvedValue({
+      sentiment_cycle: 'repair',
+      metrics: { sentiment_score: 0.42 },
+    })
     setViewport(false)
   })
 
@@ -109,6 +115,30 @@ describe('LimitUpPage', () => {
     expect(within(today).getByText('+3041.20万')).toBeInTheDocument()
     expect(within(ladder).getByText('+4500.00万')).toBeInTheDocument()
     expect(screen.getAllByRole('columnheader', { name: '主力流入' }).length).toBeGreaterThan(0)
+  })
+
+  it('展示市场情绪周期与分数，并链接到市场状态页', async () => {
+    vi.mocked(api.fetchLimitUp).mockResolvedValue(sample)
+    vi.mocked(api.fetchRegimeSentiment).mockResolvedValue({
+      sentiment_cycle: 'strengthen',
+      metrics: { sentiment_score: 0.876 },
+    })
+
+    render(
+      <MemoryRouter>
+        <LimitUpPage />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('市场情绪')).toBeInTheDocument()
+    })
+    expect(screen.getByText('情绪增强')).toBeInTheDocument()
+    expect(screen.getByText('0.88')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '查看市场状态' })).toHaveAttribute(
+      'href',
+      '/regime',
+    )
   })
 
   it('非交易时段隐藏当天涨停明细', async () => {

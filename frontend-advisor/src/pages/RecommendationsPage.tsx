@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   addWatchlist,
   fetchActiveRecommendationsRefresh,
@@ -30,11 +30,23 @@ const TABS: { id: BoardTab; label: string }[] = [
   { id: 'star', label: '科创股' },
 ]
 
+const REGIME_LABELS: Record<string, string> = {
+  risk_off: '风险关闭',
+  defensive: '防御模式',
+  normal: '正常模式',
+  aggressive: '积极模式',
+}
+
 function chgClass(v: number | null | undefined): string {
   if (v == null || Number.isNaN(v)) return ''
   if (v > 0) return 'up'
   if (v < 0) return 'down'
   return ''
+}
+
+function regimeLabel(level: string | null | undefined): string {
+  if (!level) return '—'
+  return REGIME_LABELS[level] || level
 }
 
 /** 归档里的 close/day_chg 是刷新时快照，列表展示前先清掉，改用实时行情。 */
@@ -149,6 +161,7 @@ function patchQuote(
 }
 
 export default function RecommendationsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab] = useState<BoardTab>('etf')
   const [data, setData] = useState<RecommendationsResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -182,6 +195,9 @@ export default function RecommendationsPage() {
   dataRef.current = data
   const quotesLiveRef = useRef(quotesLive)
   quotesLiveRef.current = quotesLive
+  const regimeOverride =
+    searchParams.get('regime_override') === '1' ||
+    searchParams.get('regime_override') === 'true'
 
   const applyProgress = useCallback(
     (row: {
@@ -277,7 +293,7 @@ export default function RecommendationsPage() {
 
       setRefreshStatus('刷新完成，正在加载归档…')
       try {
-        const payload = await fetchRecommendations(10, 'all', false)
+        const payload = await fetchRecommendations(10, 'all', false, regimeOverride)
         if (reqId !== refreshReqRef.current) return
         setQuotesLive(false)
         setQuotesTrading(false)
@@ -296,7 +312,7 @@ export default function RecommendationsPage() {
         }
       }
     },
-    [applyProgress],
+    [applyProgress, regimeOverride],
   )
 
   const load = useCallback(async () => {
@@ -321,7 +337,7 @@ export default function RecommendationsPage() {
         await attachRefreshStream(active.job.job_id, reqId, ac)
         return
       }
-      const payload = await fetchRecommendations(10, 'all', false)
+      const payload = await fetchRecommendations(10, 'all', false, regimeOverride)
       setQuotesLive(false)
       setQuotesTrading(false)
       setData(stripArchiveQuotes(payload))
@@ -332,6 +348,12 @@ export default function RecommendationsPage() {
       setLoading(false)
     }
   }, [attachRefreshStream])
+
+  const enableRegimeOverride = useCallback(() => {
+    const next = new URLSearchParams(searchParams)
+    next.set('regime_override', '1')
+    setSearchParams(next)
+  }, [searchParams, setSearchParams])
 
   const refreshPool = useCallback(async () => {
     const reqId = ++refreshReqRef.current
@@ -590,6 +612,7 @@ export default function RecommendationsPage() {
       : data?.snapshot?.reason
         ? '未归档'
         : '归档状态未知'
+  const regime = data?.regime
 
   const metaLine = (
     <>
@@ -831,6 +854,32 @@ export default function RecommendationsPage() {
       {refreshStatus ? <p className="status">{refreshStatus}</p> : null}
       {error ? <p className="status error">{error}</p> : null}
       {buyMsg ? <p className="status ok">{buyMsg}</p> : null}
+      {regime ? (
+        <p className="meta-line">
+          <span>市场状态：{regimeLabel(regime.gate_level)}</span>
+          {regime.position_cap != null ? ` · 仓位上限 ${formatPct(regime.position_cap, 0)}` : ''}
+          {regime.pool_policy ? ` · ${regime.pool_policy}` : ''}
+          {regime.override_applied || regimeOverride ? ' · 已开启 override' : ''}
+          {' · '}
+          <Link className="text-link" to="/regime">
+            查看市场状态
+          </Link>
+        </p>
+      ) : null}
+      {data?.gate_blocked_buys ? (
+        <div className="regime-banner" role="status">
+          <span>
+            市场状态为风险关闭，买入建议已降级为观察。确认风险后可手动覆盖。
+          </span>
+          {regimeOverride ? (
+            <span className="meta-line">已开启 override，刷新后按防御模式展示。</span>
+          ) : (
+            <button type="button" className="btn ghost" onClick={enableRegimeOverride}>
+              仍要查看推荐
+            </button>
+          )}
+        </div>
+      ) : null}
 
       {data && !loading ? (
         <>

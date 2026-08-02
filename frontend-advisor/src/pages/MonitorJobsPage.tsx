@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   deleteMonitorJob,
+  fetchRegimeBriefTemplate,
   fetchMonitorJobLogs,
   fetchMonitorJobs,
   pauseMonitorJob,
@@ -10,6 +11,7 @@ import {
   type MonitorJobLog,
   type MonitorRule,
 } from '../api'
+import { copyText } from '../copyText'
 
 const SCOPE_LABEL: Record<string, string> = {
   watchlist: '收藏',
@@ -103,6 +105,7 @@ export default function MonitorJobsPage() {
   const [logs, setLogs] = useState<MonitorJobLog[]>([])
   const [logsError, setLogsError] = useState<string | null>(null)
   const [logsLoading, setLogsLoading] = useState(false)
+  const [briefCopy, setBriefCopy] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -171,6 +174,19 @@ export default function MonitorJobsPage() {
     }
   }
 
+  async function copyBriefTemplate() {
+    try {
+      const res = await fetchRegimeBriefTemplate()
+      await copyText(res.prompt)
+      setBriefCopy('copied')
+      window.setTimeout(() => setBriefCopy('idle'), 1500)
+    } catch (err) {
+      setBriefCopy('failed')
+      setError(err instanceof Error ? err.message : String(err))
+      window.setTimeout(() => setBriefCopy('idle'), 2000)
+    }
+  }
+
   return (
     <section className="page">
       <div className="page-hero">
@@ -189,6 +205,17 @@ export default function MonitorJobsPage() {
             onClick={() => void load()}
           >
             {loading ? '刷新中…' : '刷新'}
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => void copyBriefTemplate()}
+          >
+            {briefCopy === 'copied'
+              ? '已复制早盘简报'
+              : briefCopy === 'failed'
+                ? '复制失败'
+                : '复制市场状态早盘简报'}
           </button>
         </div>
         <p className="meta-line">
