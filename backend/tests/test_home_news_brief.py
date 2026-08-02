@@ -1,0 +1,179 @@
+from __future__ import annotations
+
+import json
+
+from fastapi.testclient import TestClient
+
+
+def test_get_brief_idle_when_missing(monkeypatch):
+    from app.advisor import home_news_brief as hb
+
+    monkeypatch.setattr(hb, "last_trading_day", lambda: "2026-08-01")
+    monkeypatch.setattr(hb, "_load_brief", lambda uid, day: None)
+    out = hb.get_home_news_brief("u1")
+    assert out["status"] == "idle"
+    assert out["bullets"] == []
+
+
+def test_generate_brief_parses_llm_json(monkeypatch):
+    from app.advisor import home_news_brief as hb
+
+    class FakeModel:
+        def invoke(self, messages):
+            class R:
+                content = json.dumps(
+                    {
+                        "summary": "政策偏暖，成长占优",
+                        "bullets": ["联播提及科技创新", "流动性边际改善"],
+                        "sectors": [{"name": "人工智能", "reason": "题材活跃"}],
+                        "symbols": [
+                            {
+                                "symbol": "600519",
+                                "name": "贵州茅台",
+                                "reason": "示例",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                )
+
+            return R()
+
+    monkeypatch.setattr(hb, "resolve_llm_credentials", lambda uid: {"api_key": "x"})
+    monkeypatch.setattr(hb, "build_chat_model", lambda uid, **k: FakeModel())
+    monkeypatch.setattr(hb, "_optional_knowledge_titles", lambda uid: [])
+    monkeypatch.setattr(hb, "_maybe_fetch_web_items", lambda uid: [])
+
+    news = {
+        "trade_date": "2026-08-01",
+        "as_of": "t0",
+        "groups": {
+            "cctv": {
+                "ok": True,
+                "source": "c",
+                "error": None,
+                "items": [
+                    {
+                        "title": "联播",
+                        "summary": None,
+                        "published_at": None,
+                        "url": None,
+                        "tags": None,
+                    }
+                ],
+            },
+            "macro": {"ok": True, "source": "m", "error": None, "items": []},
+            "index_sentiment": {
+                "ok": False,
+                "source": None,
+                "error": "x",
+                "items": [],
+            },
+            "sectors": {
+                "ok": True,
+                "source": "s",
+                "error": None,
+                "items": [
+                    {
+                        "title": "人工智能",
+                        "summary": "+5%",
+                        "published_at": None,
+                        "url": None,
+                        "tags": ["sector"],
+                    }
+                ],
+            },
+            "web": {"ok": False, "source": None, "error": None, "items": []},
+        },
+    }
+    out = hb.generate_home_news_brief("u1", news)
+    assert out["summary"].startswith("政策")
+    assert len(out["bullets"]) == 2
+    assert out["sectors"][0]["name"] == "人工智能"
+    assert out["symbols"][0]["symbol"] == "600519"
+
+
+def test_refresh_rejects_without_llm_key(monkeypatch):
+    from app.advisor import home_news_brief as hb
+
+    monkeypatch.setattr(hb, "last_trading_day", lambda: "2026-08-01")
+
+    def _boom(uid):
+        raise ValueError("尚未配置 DeepSeek API Key，请先在 Agent 设置中填写")
+
+    monkeypatch.setattr(hb, "resolve_llm_credentials", _boom)
+    try:
+        hb.start_home_news_brief_refresh("u1")
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "DeepSeek" in str(exc)
+
+
+def test_refresh_reuses_running(monkeypatch):
+    from app.advisor import home_news_brief as hb
+
+    monkeypatch.setattr(hb, "last_trading_day", lambda: "2026-08-01")
+    monkeypatch.setattr(hb, "resolve_llm_credentials", lambda uid: {"api_key": "x"})
+    existing = {
+        "user_id": "u1",
+        "trade_date": "2026-08-01",
+        "status": "running",
+        "summary": "",
+        "bullets": [],
+        "sectors": [],
+        "symbols": [],
+        "updated_at": "t",
+        "error": None,
+        "news_as_of": None,
+    }
+    monkeypatch.setattr(hb, "_load_brief", lambda uid, day: existing)
+    monkeypatch.setattr(hb, "_thread_alive_for", lambda uid, day: True)
+    started = {"n": 0}
+    monkeypatch.setattr(
+        hb,
+        "_spawn_refresh_thread",
+        lambda *a, **k: started.__setitem__("n", started["n"] + 1),
+    )
+    out = hb.start_home_news_brief_refresh("u1")
+    assert out["status"] == "running"
+    assert started["n"] == 0
+
+
+def test_brief_routes(monkeypatch):
+    from app.main import app
+    from app.advisor import routes
+
+    def _user():
+        return {"id": "u1", "username": "t"}
+
+    app.dependency_overrides[routes._user] = _user
+    monkeypatch.setattr(
+        routes,
+        "get_home_news_brief",
+        lambda uid: {
+            "trade_date": "2026-08-01",
+            "status": "idle",
+            "summary": "",
+            "bullets": [],
+            "sectors": [],
+            "symbols": [],
+            "updated_at": None,
+            "error": None,
+            "news_as_of": None,
+        },
+    )
+
+    def _refresh(uid):
+        raise ValueError("尚未配置 DeepSeek API Key，请先在 Agent 设置中填写")
+
+    monkeypatch.setattr(routes, "start_home_news_brief_refresh", _refresh)
+    try:
+        client = TestClient(app)
+        g = client.get("/api/advisor/home/news-brief")
+        assert g.status_code == 200
+        assert g.json()["status"] == "idle"
+        p = client.post("/api/advisor/home/news-brief/refresh")
+        assert p.status_code == 400
+        assert "DeepSeek" in p.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
