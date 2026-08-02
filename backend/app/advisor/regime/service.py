@@ -33,8 +33,10 @@ def _previous_trading_day(trade_date: str) -> str:
     return last_trading_day(parsed - timedelta(days=1))
 
 
-def _by_board(sealed: list[dict[str, Any]]) -> dict[int, int]:
-    return dict(Counter(int(x.get("board_count") or 0) for x in sealed))
+def _by_board(sealed: list[dict[str, Any]]) -> dict[str, int]:
+    """Board-count histogram with string keys (Mongo BSON forbids int keys)."""
+    counts = Counter(int(x.get("board_count") or 0) for x in sealed)
+    return {str(k): int(v) for k, v in counts.items()}
 
 
 def _data_quality(raw: dict[str, Any], metrics: dict[str, Any]) -> str:

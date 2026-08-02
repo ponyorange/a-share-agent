@@ -21,6 +21,29 @@ def test_upsert_and_get(monkeypatch):
     assert get_daily("2026-08-01")["limit_up_count"] == 40
 
 
+def test_upsert_stringifies_int_dict_keys(monkeypatch):
+    mem = {}
+
+    class _Col:
+        def update_one(self, flt, upd, upsert=False):
+            payload = upd.get("$set") or {}
+            for key in payload.get("by_board", {}):
+                assert isinstance(key, str)
+            mem[flt["trade_date"]] = {**flt, **payload}
+
+        def find_one(self, flt):
+            return mem.get(flt.get("trade_date"))
+
+    monkeypatch.setattr(
+        "app.advisor.regime.store.get_db",
+        lambda: type("D", (), {"market_regime_daily": _Col()})(),
+    )
+    from app.advisor.regime.store import get_daily, upsert_daily
+
+    upsert_daily("2026-08-01", {"by_board": {1: 10, 2: 3}})
+    assert get_daily("2026-08-01")["by_board"] == {"1": 10, "2": 3}
+
+
 def test_list_daily_sorts_latest_first(monkeypatch):
     rows = [
         {"trade_date": "2026-08-01", "limit_up_count": 40},

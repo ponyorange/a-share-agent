@@ -18,6 +18,17 @@ def _without_mongo_id(doc: dict[str, Any] | None) -> dict[str, Any] | None:
     return out
 
 
+def _bson_safe(value: Any) -> Any:
+    """Recursively stringify non-str dict keys for Mongo BSON."""
+    if isinstance(value, dict):
+        return {str(k): _bson_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_bson_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_bson_safe(v) for v in value]
+    return value
+
+
 def _ensure_trade_date_index(col: Any) -> None:
     create_index = getattr(col, "create_index", None)
     if callable(create_index):
@@ -28,11 +39,12 @@ def upsert_daily(trade_date: str, doc: dict) -> None:
     col = _collection()
     _ensure_trade_date_index(col)
     now = datetime.now(timezone.utc)
+    payload = _bson_safe(dict(doc))
     col.update_one(
         {"trade_date": trade_date},
         {
             "$set": {
-                **dict(doc),
+                **payload,
                 "trade_date": trade_date,
                 "updated_at": now,
             },
