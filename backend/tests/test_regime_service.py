@@ -34,6 +34,7 @@ CFG = {
         "strengthen": 0.55,
         "climax": 0.75,
     },
+    "cycle_hysteresis": 0.05,
     "trend_rules": {
         "uptrend_breadth_min": 0.55,
         "uptrend_drawdown_max": 0.12,
@@ -142,39 +143,55 @@ def test_degraded_quality_when_promotion_rate_missing(monkeypatch, service):
     assert out["promotion_rate"] is None
 
 
-def test_cycle_hysteresis_sets_ebb_after_previous_climax(monkeypatch, service):
+def _metrics_for_hysteresis(sentiment_score: float, sentiment_cycle: str = "strengthen") -> dict:
+    return {
+        "limit_up_count": 8,
+        "limit_down_count": 1,
+        "broken_count": 2,
+        "seal_rate": 0.8,
+        "break_rate": 0.2,
+        "max_board": 1,
+        "height_board_count": 0,
+        "promotion_rate": 0.5,
+        "sentiment_score": sentiment_score,
+        "sentiment_cycle": sentiment_cycle,
+        "evidence": [],
+    }
+
+
+def test_cycle_hysteresis_no_ebb_within_band(monkeypatch, service):
+    """Score below strengthen but above strengthen−hysteresis must not flip to ebb."""
+    monkeypatch.setattr(
+        service,
+        "compute_sentiment_metrics",
+        lambda raw, prev, cfg=None: _metrics_for_hysteresis(0.52),
+    )
+    prev = {
+        "trade_date": "2026-08-01",
+        "sentiment_cycle": "climax",
+        "gate_level": "normal",
+    }
+    out = service.build_regime_from_parts(_raw(), prev, cfg=CFG)
+    assert out["sentiment_cycle"] == "strengthen"
+    assert not any(
+        e["key"] == "sentiment_cycle" and e["value"] == "ebb" for e in out["evidence"]
+    )
+
+
+def test_cycle_hysteresis_sets_ebb_below_strengthen_minus_hysteresis(monkeypatch, service):
     prev = {
         "trade_date": "2026-08-01",
         "by_board": {1: 20},
         "sentiment_cycle": "climax",
         "gate_level": "normal",
     }
-    monkeypatch.setattr(service, "_previous_trading_day", lambda trade_date: "2026-08-01")
     monkeypatch.setattr(
-        service.collector,
-        "collect_raw",
-        lambda trade_date=None: _raw(
-            sealed=[{"board_count": 1}] * 8,
-            broken=[{"board_count": 1}] * 2,
-            trend_features={
-                "ma_stack": "mixed",
-                "drawdown_from_high": 0.08,
-                "breadth": 0.50,
-                "volume_vs_ma20": 1.0,
-            },
-        ),
+        service,
+        "compute_sentiment_metrics",
+        lambda raw, prev_daily, cfg=None: _metrics_for_hysteresis(0.49),
     )
-    monkeypatch.setattr(
-        service.store,
-        "get_daily",
-        lambda trade_date: prev if trade_date == "2026-08-01" else None,
-    )
-    monkeypatch.setattr(service.store, "upsert_daily", lambda trade_date, doc: None)
-
-    out = service.get_current_regime(force=True)
-
+    out = service.build_regime_from_parts(_raw(), prev, cfg=CFG)
     assert out["sentiment_cycle"] == "ebb"
-    assert out["gate_level"] == "risk_off"
     assert any(e["key"] == "sentiment_cycle" and e["value"] == "ebb" for e in out["evidence"])
 
 

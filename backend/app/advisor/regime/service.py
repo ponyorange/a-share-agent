@@ -90,10 +90,12 @@ def _cycle_after_quality_and_hysteresis(
     cycle = str(metrics.get("sentiment_cycle") or "repair")
     thresholds = cfg.get("cycle_thresholds") or {}
     strengthen = float(thresholds.get("strengthen", 0.55))
+    hysteresis = float(cfg.get("cycle_hysteresis", 0.05))
+    ebb_threshold = strengthen - hysteresis
     score = float(metrics.get("sentiment_score") or 0.0)
     if (
         prev_daily
-        and score < strengthen
+        and score < ebb_threshold
         and (
             prev_daily.get("sentiment_cycle") == "climax"
             or prev_daily.get("gate_level") == "aggressive"
@@ -103,7 +105,10 @@ def _cycle_after_quality_and_hysteresis(
             {
                 "key": "sentiment_cycle",
                 "value": "ebb",
-                "note": "前一归档为高潮/进攻，当前温度跌破 strengthen 阈值",
+                "note": (
+                    f"前一归档为高潮/进攻，当前温度 {score:.4f} 低于 "
+                    f"strengthen−hysteresis（{ebb_threshold:.4f}）"
+                ),
             }
         )
         return "ebb"
