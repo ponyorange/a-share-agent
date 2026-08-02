@@ -72,3 +72,61 @@ def test_parse_stock_pick_empty_note():
     out = parse_stock_pick_payload('{"symbols":[],"symbols_note":"证据不足"}')
     assert out["symbols"] == []
     assert out["symbols_note"] == "证据不足"
+
+
+def test_run_stock_picks_uses_agent_and_parses(monkeypatch):
+    from app.advisor import home_news_stock_picks as picks
+
+    monkeypatch.setattr(picks, "build_home_news_stock_pick_tools", lambda uid: [])
+    monkeypatch.setattr(picks, "build_chat_model", lambda *a, **k: object())
+
+    class FakeAgent:
+        def invoke(self, payload, config=None):
+            assert config and config.get("recursion_limit") == 16
+            return {
+                "messages": [
+                    type(
+                        "M",
+                        (),
+                        {
+                            "content": json.dumps(
+                                {
+                                    "symbols": [
+                                        {
+                                            "symbol": "600519",
+                                            "name": "贵州茅台",
+                                            "reason": "消费政策预期",
+                                        }
+                                    ],
+                                    "symbols_note": "",
+                                },
+                                ensure_ascii=False,
+                            )
+                        },
+                    )()
+                ]
+            }
+
+    monkeypatch.setattr(
+        picks,
+        "create_react_agent",
+        lambda model, tools, prompt=None: FakeAgent(),
+    )
+    out = picks.run_home_news_stock_picks(
+        "u1",
+        news={"trade_date": "2026-08-01", "groups": {}},
+        sectors=[{"name": "白酒", "reason": "政策"}],
+    )
+    assert out["symbols"][0]["symbol"] == "600519"
+
+
+def test_run_stock_picks_degrades_on_error(monkeypatch):
+    from app.advisor import home_news_stock_picks as picks
+
+    monkeypatch.setattr(picks, "build_home_news_stock_pick_tools", lambda uid: [])
+    monkeypatch.setattr(
+        picks, "build_chat_model", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    out = picks.run_home_news_stock_picks("u1", news={}, sectors=[])
+    assert out["symbols"] == []
+    assert out["symbols_note"]
