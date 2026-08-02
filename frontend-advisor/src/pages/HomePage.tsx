@@ -50,16 +50,16 @@ function pickFeatured(market: MarketResponse) {
   return featured.slice(0, 6)
 }
 
-function Tile({
+function Tile<T>({
   title,
   state,
   onRetry,
   children,
 }: {
   title: string
-  state: TileState<unknown>
+  state: TileState<T>
   onRetry?: () => void
-  children: (data: never) => ReactNode
+  children: (data: T) => ReactNode
 }) {
   return (
     <section className="home-tile" aria-label={title}>
@@ -75,7 +75,7 @@ function Tile({
           ) : null}
         </div>
       ) : null}
-      {state.status === 'ok' ? children(state.data as never) : null}
+      {state.status === 'ok' ? children(state.data) : null}
     </section>
   )
 }
