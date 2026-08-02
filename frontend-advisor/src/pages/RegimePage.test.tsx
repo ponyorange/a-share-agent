@@ -108,6 +108,28 @@ it('shows risk_off and override CTA', async () => {
   expect(screen.getByTestId('override')).toHaveTextContent('?regime_override=1')
 })
 
+it('hides override CTA when risk_off but override_allowed is false', async () => {
+  vi.mocked(api.fetchRegimeCurrent).mockResolvedValue({
+    gate_level: 'risk_off',
+    position_cap: 0.15,
+    trend_regime: 'range',
+    sentiment_cycle: 'ebb',
+    data_quality: 'ok',
+    evidence: [{ key: 'seal_rate', value: '0.4', note: '' }],
+    override_allowed: false,
+  })
+
+  render(
+    <MemoryRouter initialEntries={['/regime']}>
+      <RegimePage />
+    </MemoryRouter>,
+  )
+
+  expect(await screen.findByText('今天先别急着买')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /仍要看今日关注/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /查看今日关注/ })).not.toBeInTheDocument()
+})
+
 it('shows recent regime history', async () => {
   vi.mocked(api.fetchRegimeCurrent).mockResolvedValue({
     gate_level: 'normal',

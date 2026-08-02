@@ -143,7 +143,7 @@ export default function RegimePage() {
             </ol>
 
             <div className="btn-row">
-              {gateLevel === 'risk_off' ? (
+              {gateLevel === 'risk_off' && data.override_allowed ? (
                 <button
                   type="button"
                   className="btn"
@@ -151,11 +151,11 @@ export default function RegimePage() {
                 >
                   仍要看今日关注
                 </button>
-              ) : (
+              ) : gateLevel !== 'risk_off' ? (
                 <button type="button" className="btn ghost" onClick={() => navigate('/')}>
                   查看今日关注
                 </button>
-              )}
+              ) : null}
             </div>
 
             <details className="regime-details">
