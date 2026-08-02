@@ -1628,6 +1628,49 @@ export function fetchRegimeBriefTemplate(): Promise<RegimeBriefTemplate> {
   return authFetch('/api/advisor/regime/brief-template')
 }
 
+export function fetchRegimeSummary(): Promise<RegimeCurrent> {
+  return authFetch('/api/advisor/regime/summary')
+}
+
+export type MarketIndexItem = {
+  symbol: string
+  name: string
+  price?: number | null
+  change?: number | null
+  change_pct?: number | null
+  featured?: boolean
+}
+
+export type MarketResponse = {
+  featured?: MarketIndexItem[]
+  as_of?: string
+  source?: string
+}
+
+export function fetchMarket(): Promise<MarketResponse> {
+  return authFetch('/api/market')
+}
+
+export type HomeSectorItem = {
+  rank: number
+  name: string
+  change_pct: number | null
+  strength: number | null
+}
+
+export type HomeSectorsResponse = {
+  trade_date: string
+  ok: boolean
+  source: string
+  items: HomeSectorItem[]
+  error?: string | null
+}
+
+export function fetchHomeSectors(top = 8): Promise<HomeSectorsResponse> {
+  const q = new URLSearchParams({ top: String(top) })
+  return authFetch(`/api/advisor/market/sectors?${q}`)
+}
+
 export type LimitUpStatus = 'sealed' | 'broken'
 
 export type LimitUpTodayItem = {
