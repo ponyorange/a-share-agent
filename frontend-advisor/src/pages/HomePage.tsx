@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { HomeNewsSection } from './HomeNewsSection'
 import {
   fetchHomeSectors,
   fetchLimitUp,
@@ -376,6 +377,8 @@ export default function HomePage() {
           )}
         </Tile>
       </div>
+
+      <HomeNewsSection />
     </section>
   )
 }

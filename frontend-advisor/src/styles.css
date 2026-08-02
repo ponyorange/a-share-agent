@@ -4352,6 +4352,72 @@ body:has(.app-shell--agent-chat) {
   align-items: baseline;
 }
 
+.home-news {
+  margin-top: 14px;
+}
+
+.home-news-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 899px) {
+  .home-news-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.home-news-pane-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 0.4rem;
+}
+
+.home-news-group h4 {
+  margin: 0.6rem 0 0.3rem;
+  font-size: 0.85rem;
+}
+
+.home-news-list,
+.home-news-bullets,
+.home-news-symbols {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.home-news-list li,
+.home-news-symbols li {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.9rem;
+}
+
+.home-news-summary {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+
+.home-news-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0.5rem 0;
+}
+
+.home-news-chip {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.8rem;
+  background: var(--bg2);
+}
+
 .home-sector-list li {
   grid-template-columns: 1fr auto;
 }

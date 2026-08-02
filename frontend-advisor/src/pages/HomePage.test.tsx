@@ -13,8 +13,32 @@ vi.mock('../api', async () => {
     fetchRegimeSummary: vi.fn(),
     fetchLimitUp: vi.fn(),
     fetchHomeSectors: vi.fn(),
+    fetchHomeNews: vi.fn(),
+    fetchHomeNewsBrief: vi.fn(),
+    refreshHomeNewsBrief: vi.fn(),
   }
 })
+
+const idleBrief = {
+  trade_date: '2026-08-01',
+  status: 'idle' as const,
+  summary: '',
+  bullets: [] as string[],
+  sectors: [] as { name: string; reason: string }[],
+  symbols: [] as { symbol: string; name: string; reason: string }[],
+}
+
+const emptyNews = {
+  trade_date: '2026-08-01',
+  as_of: 't',
+  groups: {
+    cctv: { ok: false, source: null, error: null, items: [] },
+    macro: { ok: false, source: null, error: null, items: [] },
+    index_sentiment: { ok: false, source: null, error: null, items: [] },
+    sectors: { ok: false, source: null, error: null, items: [] },
+    web: { ok: false, source: null, error: null, items: [] },
+  },
+}
 
 describe('HomePage', () => {
   beforeEach(() => {
@@ -22,6 +46,11 @@ describe('HomePage', () => {
     vi.mocked(api.fetchRegimeSummary).mockReset()
     vi.mocked(api.fetchLimitUp).mockReset()
     vi.mocked(api.fetchHomeSectors).mockReset()
+    vi.mocked(api.fetchHomeNews).mockReset()
+    vi.mocked(api.fetchHomeNewsBrief).mockReset()
+    vi.mocked(api.refreshHomeNewsBrief).mockReset()
+    vi.mocked(api.fetchHomeNews).mockResolvedValue(emptyNews)
+    vi.mocked(api.fetchHomeNewsBrief).mockResolvedValue(idleBrief)
   })
 
   it('breadthFromRegime reads evidence when metrics omit breadth', () => {
@@ -71,6 +100,8 @@ describe('HomePage', () => {
     })
     expect(screen.getByText(/人工智能/)).toBeInTheDocument()
     expect(screen.getByText('趋势 · 情绪 · 闸门')).toBeInTheDocument()
+    expect(screen.getByText('今日资讯')).toBeInTheDocument()
+    expect(api.refreshHomeNewsBrief).not.toHaveBeenCalled()
   })
 
   it('shows breadth from evidence and featured up/down counts', async () => {
