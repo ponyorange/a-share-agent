@@ -43,6 +43,14 @@ def test_generate_brief_parses_llm_json(monkeypatch):
     monkeypatch.setattr(hb, "build_chat_model", lambda uid, **k: FakeModel())
     monkeypatch.setattr(hb, "_optional_knowledge_titles", lambda uid: [])
     monkeypatch.setattr(hb, "_maybe_fetch_web_items", lambda uid: [])
+    monkeypatch.setattr(
+        hb,
+        "run_home_news_stock_picks",
+        lambda uid, news, sectors: {
+            "symbols": [{"symbol": "600519", "name": "贵州茅台", "reason": "示例"}],
+            "symbols_note": None,
+        },
+    )
 
     news = {
         "trade_date": "2026-08-01",
@@ -91,6 +99,84 @@ def test_generate_brief_parses_llm_json(monkeypatch):
     assert len(out["bullets"]) == 2
     assert out["sectors"][0]["name"] == "人工智能"
     assert out["symbols"][0]["symbol"] == "600519"
+
+
+def test_generate_brief_runs_stock_picks_after_summary(monkeypatch):
+    from app.advisor import home_news_brief as hb
+
+    class FakeModel:
+        def invoke(self, messages):
+            class R:
+                content = json.dumps(
+                    {
+                        "summary": "政策偏暖",
+                        "bullets": ["要点"],
+                        "sectors": [{"name": "人工智能", "reason": "题材"}],
+                        "symbols": [{"symbol": "999999", "name": "应忽略", "reason": "x"}],
+                    },
+                    ensure_ascii=False,
+                )
+
+            return R()
+
+    monkeypatch.setattr(hb, "resolve_llm_credentials", lambda uid: {"api_key": "x"})
+    monkeypatch.setattr(hb, "build_chat_model", lambda uid, **k: FakeModel())
+    monkeypatch.setattr(hb, "_optional_knowledge_titles", lambda uid: [])
+    monkeypatch.setattr(hb, "_maybe_fetch_web_items", lambda uid: [])
+    monkeypatch.setattr(
+        hb,
+        "run_home_news_stock_picks",
+        lambda uid, news, sectors: {
+            "symbols": [
+                {
+                    "symbol": "600519",
+                    "name": "贵州茅台",
+                    "reason": "消费预期",
+                    "horizon": "3-5d",
+                }
+            ],
+            "symbols_note": None,
+        },
+    )
+    news = {
+        "trade_date": "2026-08-01",
+        "as_of": "t0",
+        "groups": {
+            "cctv": {"ok": True, "source": "c", "error": None, "items": []},
+            "macro": {"ok": True, "source": "m", "error": None, "items": []},
+            "index_sentiment": {"ok": False, "source": None, "error": "x", "items": []},
+            "sectors": {"ok": True, "source": "s", "error": None, "items": []},
+            "web": {"ok": False, "source": None, "error": None, "items": []},
+        },
+    }
+    out = hb.generate_home_news_brief("u1", news)
+    assert out["summary"] == "政策偏暖"
+    assert out["symbols"][0]["symbol"] == "600519"
+    assert out["symbols"][0]["symbol"] != "999999"
+
+
+def test_public_includes_symbols_note(monkeypatch):
+    from app.advisor import home_news_brief as hb
+
+    monkeypatch.setattr(hb, "last_trading_day", lambda: "2026-08-01")
+    monkeypatch.setattr(
+        hb,
+        "_load_brief",
+        lambda uid, day: {
+            "trade_date": "2026-08-01",
+            "status": "ready",
+            "summary": "s",
+            "bullets": [],
+            "sectors": [],
+            "symbols": [],
+            "symbols_note": "暂无足够证据的观察股",
+            "updated_at": "t",
+            "error": None,
+            "news_as_of": "t0",
+        },
+    )
+    out = hb.get_home_news_brief("u1")
+    assert out["symbols_note"] == "暂无足够证据的观察股"
 
 
 def test_refresh_rejects_without_llm_key(monkeypatch):

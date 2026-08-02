@@ -15,6 +15,7 @@ from .agent.llm import build_chat_model
 from .agent.web_research import run_web_research
 from .calendar_util import last_trading_day
 from .home_news import get_or_build_home_news, merge_web_group
+from .home_news_stock_picks import run_home_news_stock_picks
 from .llm_settings import resolve_llm_credentials, web_tool_flags
 
 _lock = threading.Lock()
@@ -51,6 +52,7 @@ def _idle(day: str) -> dict[str, Any]:
         "bullets": [],
         "sectors": [],
         "symbols": [],
+        "symbols_note": None,
         "updated_at": None,
         "error": None,
         "news_as_of": None,
@@ -60,6 +62,7 @@ def _idle(day: str) -> dict[str, Any]:
 def _public(doc: dict[str, Any] | None, day: str) -> dict[str, Any]:
     if not doc:
         return _idle(day)
+    symbols_note = doc.get("symbols_note")
     return {
         "trade_date": str(doc.get("trade_date") or day)[:10],
         "status": str(doc.get("status") or "idle"),
@@ -75,11 +78,13 @@ def _public(doc: dict[str, Any] | None, day: str) -> dict[str, Any]:
                 "symbol": str(x.get("symbol") or ""),
                 "name": str(x.get("name") or ""),
                 "reason": str(x.get("reason") or ""),
+                "horizon": str(x.get("horizon") or "3-5d"),
             }
             for x in (doc.get("symbols") or [])
             if isinstance(x, dict)
             and re.fullmatch(r"\d{6}", str(x.get("symbol") or ""))
-        ][:8],
+        ][:5],
+        "symbols_note": str(symbols_note) if symbols_note else None,
         "updated_at": doc.get("updated_at"),
         "error": doc.get("error"),
         "news_as_of": doc.get("news_as_of"),
@@ -176,25 +181,11 @@ def _parse_llm_json(text: str) -> dict[str, Any]:
             sectors.append(
                 {"name": name[:40], "reason": str(x.get("reason") or "")[:80]}
             )
-    symbols = []
-    for x in data.get("symbols") or []:
-        if not isinstance(x, dict):
-            continue
-        sym = re.sub(r"\D", "", str(x.get("symbol") or ""))[-6:]
-        if not re.fullmatch(r"\d{6}", sym):
-            continue
-        symbols.append(
-            {
-                "symbol": sym,
-                "name": str(x.get("name") or "")[:40],
-                "reason": str(x.get("reason") or "")[:80],
-            }
-        )
     return {
         "summary": str(data.get("summary") or "")[:200],
         "bullets": bullets,
         "sectors": sectors[:8],
-        "symbols": symbols[:8],
+        "symbols": [],
     }
 
 
@@ -271,10 +262,9 @@ def generate_home_news_brief(user_id: str, news: dict[str, Any]) -> dict[str, An
     }
     system = (
         "你是投研助手。根据今日资讯包，用中文输出市场解读 JSON（不要 Markdown 围栏）。"
-        '格式: {"summary":"一句话","bullets":["..."],"sectors":[{"name":"...","reason":"..."}],'
-        '"symbols":[{"symbol":"600000","name":"...","reason":"..."}]}。'
-        "summary≤80字；bullets≤5条每条≤40字；sectors/symbols 各≤5；"
-        "股票代码必须是6位A股；勿编造未提供的数据；勿给出保证收益或下单指令；"
+        '格式: {"summary":"一句话","bullets":["..."],"sectors":[{"name":"...","reason":"..."}]}。'
+        "summary≤80字；bullets≤5条每条≤40字；sectors≤5；"
+        "勿编造未提供的数据；勿给出保证收益或下单指令；"
         "表述为研究观察，非投资建议。"
     )
     resp = model.invoke(
@@ -284,7 +274,15 @@ def generate_home_news_brief(user_id: str, news: dict[str, Any]) -> dict[str, An
         ]
     )
     text = resp.content if isinstance(resp.content, str) else str(resp.content)
-    return _parse_llm_json(text)
+    brief = _parse_llm_json(text)
+    picks = run_home_news_stock_picks(
+        user_id,
+        news=news,
+        sectors=brief.get("sectors") or [],
+    )
+    brief["symbols"] = picks.get("symbols") or []
+    brief["symbols_note"] = picks.get("symbols_note")
+    return brief
 
 
 def _thread_alive_for(user_id: str, day: str) -> bool:
@@ -309,6 +307,7 @@ def _spawn_refresh_thread(user_id: str, day: str) -> None:
                     "bullets": parsed["bullets"],
                     "sectors": parsed["sectors"],
                     "symbols": parsed["symbols"],
+                    "symbols_note": parsed.get("symbols_note"),
                     "error": None,
                     "news_as_of": news.get("as_of"),
                 },
@@ -355,6 +354,7 @@ def start_home_news_brief_refresh(
             "bullets": (existing or {}).get("bullets") or [],
             "sectors": (existing or {}).get("sectors") or [],
             "symbols": (existing or {}).get("symbols") or [],
+            "symbols_note": (existing or {}).get("symbols_note"),
             "error": None,
             "news_as_of": (existing or {}).get("news_as_of"),
         },
