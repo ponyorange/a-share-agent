@@ -116,14 +116,23 @@ def apply_regime_gate(
 
     boards = out.get("boards") or {}
     if boards:
-        flat: list[dict[str, Any]] = []
         for block in boards.values():
             items = apply_items(list(block.get("items") or []))
             block["items"] = items
             block["count"] = len(items)
-            flat.extend(items)
-        out["items"] = flat
-        out["count"] = len(flat)
+
+        board_filter = out.get("board")
+        preserve_items = board_filter not in (None, "", "all")
+        if preserve_items:
+            items = apply_items(list(out.get("items") or []))
+            out["items"] = items
+            out["count"] = len(items)
+        else:
+            flat: list[dict[str, Any]] = []
+            for block in boards.values():
+                flat.extend(block.get("items") or [])
+            out["items"] = flat
+            out["count"] = len(flat)
     else:
         items = apply_items(list(out.get("items") or []))
         out["items"] = items

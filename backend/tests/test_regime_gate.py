@@ -10,6 +10,30 @@ def _risk_off_regime() -> dict:
     }
 
 
+def test_apply_regime_gate_preserves_board_filtered_items():
+    result = {
+        "board": "hs",
+        "count": 1,
+        "items": [{"symbol": "000001", "action": "hold", "score": 0.5}],
+        "boards": {
+            "hs": {
+                "items": [{"symbol": "000001", "action": "hold", "score": 0.5}],
+            },
+            "etf": {
+                "items": [{"symbol": "510300", "action": "buy", "score": 0.9}],
+            },
+        },
+    }
+
+    out = apply_regime_gate(result, _risk_off_regime(), override=False)
+
+    symbols = [i["symbol"] for i in out["items"]]
+    assert symbols == ["000001"]
+    assert "510300" not in symbols
+    assert out["count"] == 1
+    assert out["boards"]["etf"]["items"][0]["action"] == "watch"
+
+
 def test_risk_off_blocks_buys():
     result = {"items": [{"symbol": "000001", "action": "buy", "score": 0.9}]}
 
