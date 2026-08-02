@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from functools import lru_cache
+from threading import Lock
+
+# akshare.tool_trade_date_hist_sina uses py_mini_racer; concurrent first-load
+# MiniRacer() init aborts the whole process (V8 address_pool_manager).
+_TRADE_DATES_LOCK = Lock()
 
 
 def _today() -> date:
@@ -11,7 +16,7 @@ def _today() -> date:
 
 
 @lru_cache(maxsize=1)
-def _trade_dates_set() -> set[str] | None:
+def _trade_dates_set_unlocked() -> set[str] | None:
     try:
         import akshare as ak
 
@@ -22,6 +27,11 @@ def _trade_dates_set() -> set[str] | None:
         return {str(x)[:10].replace("/", "-") for x in df[col].tolist()}
     except Exception:
         return None
+
+
+def _trade_dates_set() -> set[str] | None:
+    with _TRADE_DATES_LOCK:
+        return _trade_dates_set_unlocked()
 
 
 def is_trading_day(d: date | str | None = None) -> bool:
