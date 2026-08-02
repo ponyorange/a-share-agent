@@ -10,6 +10,7 @@ import {
 } from './auth'
 import MobileAgentMoreMenu from './components/MobileAgentMoreMenu'
 import TopbarNav, { AGENT_NAV_LINKS, BASE_NAV_LINKS } from './components/TopbarNav'
+import HomePage from './pages/HomePage'
 import AccountPage from './pages/AccountPage'
 import AdvicePage from './pages/AdvicePage'
 import AgentChatPage from './pages/AgentChatPage'
@@ -179,7 +180,8 @@ export default function App() {
 
         <main className="main">
           <Routes>
-            <Route path="/" element={<RecommendationsPage />} />
+            <Route path="/" element={<HomePage />} />
+            <Route path="/recommendations" element={<RecommendationsPage />} />
             <Route path="/advice" element={<AdvicePage />} />
             <Route path="/portfolio" element={<PortfolioPage />} />
             <Route path="/watchlist" element={<WatchlistPage />} />

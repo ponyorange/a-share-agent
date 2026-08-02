@@ -51,6 +51,14 @@ vi.mock('./pages/SettingsPage', () => ({
   default: () => <h1>配色设置</h1>,
 }))
 
+vi.mock('./pages/HomePage', () => ({
+  default: () => <h1>市场首页</h1>,
+}))
+
+vi.mock('./pages/RecommendationsPage', () => ({
+  default: () => <h1>今日关注页</h1>,
+}))
+
 beforeEach(() => {
   localStorage.clear()
   authState.token = null
@@ -171,7 +179,11 @@ it('Agent 聊天页更多菜单可切回基础面板', async () => {
 
   await user.click(screen.getByRole('button', { name: '更多' }))
   await user.click(screen.getByRole('menuitem', { name: '切换到基础' }))
-  expect(await screen.findByRole('link', { name: '今日关注' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '市场首页' })).toBeInTheDocument()
+  expect(await screen.findByRole('link', { name: '今日关注' })).toHaveAttribute(
+    'href',
+    '/recommendations',
+  )
   expect(screen.queryByRole('button', { name: '更多' })).not.toBeInTheDocument()
 })
 

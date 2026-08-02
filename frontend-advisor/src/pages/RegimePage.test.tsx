@@ -94,7 +94,7 @@ it('shows risk_off and override CTA', async () => {
     <MemoryRouter initialEntries={['/regime']}>
       <Routes>
         <Route path="/regime" element={<RegimePage />} />
-        <Route path="/" element={<HomeProbe />} />
+        <Route path="/recommendations" element={<HomeProbe />} />
       </Routes>
     </MemoryRouter>,
   )

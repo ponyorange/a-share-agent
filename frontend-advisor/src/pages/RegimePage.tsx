@@ -147,12 +147,16 @@ export default function RegimePage() {
                 <button
                   type="button"
                   className="btn"
-                  onClick={() => navigate('/?regime_override=1')}
+                  onClick={() => navigate('/recommendations?regime_override=1')}
                 >
                   仍要看今日关注
                 </button>
               ) : gateLevel !== 'risk_off' ? (
-                <button type="button" className="btn ghost" onClick={() => navigate('/')}>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => navigate('/recommendations')}
+                >
                   查看今日关注
                 </button>
               ) : null}

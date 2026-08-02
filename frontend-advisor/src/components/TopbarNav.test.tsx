@@ -22,6 +22,11 @@ it('横向展示模块，并可用全部菜单切换', async () => {
     'href',
     '/regime',
   )
+  expect(screen.getByRole('link', { name: '首页' })).toHaveAttribute('href', '/')
+  expect(screen.getByRole('link', { name: '今日关注' })).toHaveAttribute(
+    'href',
+    '/recommendations',
+  )
   expect(screen.getByRole('link', { name: '打板' })).toHaveAttribute(
     'href',
     '/limitup',

@@ -145,7 +145,7 @@ it('从查询参数透传市场状态 override，并展示闸门徽章与覆盖�
   const user = userEvent.setup()
 
   render(
-    <MemoryRouter initialEntries={['/?regime_override=1']}>
+    <MemoryRouter initialEntries={['/recommendations?regime_override=1']}>
       <RecommendationsPage />
     </MemoryRouter>,
   )
