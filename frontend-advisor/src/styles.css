@@ -4298,3 +4298,75 @@ body:has(.app-shell--agent-chat) {
 .monitor-log-event {
   color: #8ec7ff;
 }
+
+.home-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 899px) {
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.home-tile {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--bg1);
+  min-height: 140px;
+}
+
+.home-tile-title {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+}
+
+.home-tile-skeleton {
+  height: 72px;
+  border-radius: 6px;
+  background: var(--bg2);
+}
+
+.home-tile-error {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.home-index-list,
+.home-sector-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.home-index-list li,
+.home-sector-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.home-sector-list li {
+  grid-template-columns: 1fr auto;
+}
+
+.home-regime,
+.home-hot {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.home-page .chg.up {
+  color: var(--color-market-up);
+}
+
+.home-page .chg.down {
+  color: var(--color-market-down);
+}
+
