@@ -237,6 +237,10 @@ regime:
     strengthen: 0.55
     climax: 0.75
   cycle_hysteresis: 0.05
+  trend_rules:
+    uptrend_breadth_min: 0.55
+    uptrend_drawdown_max: 0.12
+    downtrend_drawdown_min: 0.18
   matrix:
     uptrend:
       ice: normal
