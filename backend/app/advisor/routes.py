@@ -33,6 +33,7 @@ from .paper import (
 )
 from .portfolio import PortfolioPayload, load_portfolio, save_portfolio
 from .home_market import list_hot_sectors
+from .home_news import get_or_build_home_news
 from .regime import get_regime_for_gate
 from .regime.gate import apply_regime_gate
 from .service import get_advice, get_portfolio_advice, get_recommendations
@@ -149,6 +150,11 @@ def market_sectors(
     user: dict[str, Any] = Depends(_user),
 ) -> dict[str, Any]:
     return list_hot_sectors(top=top)
+
+
+@router.get("/home/news")
+def home_news(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    return get_or_build_home_news()
 
 
 class StrategyUpdateBody(BaseModel):
