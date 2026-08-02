@@ -97,6 +97,30 @@ def advisor_universe() -> dict[str, Any]:
     return describe_universe()
 
 
+@router.get("/regime/current")
+def regime_current(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    from .regime import get_current_regime
+
+    return get_current_regime()
+
+
+@router.get("/regime/history")
+def regime_history(
+    limit: int = Query(default=20, ge=1, le=366),
+    user: dict[str, Any] = Depends(_user),
+) -> list[dict[str, Any]]:
+    from .regime import get_regime_history
+
+    return get_regime_history(limit=limit)
+
+
+@router.get("/regime/sentiment")
+def regime_sentiment(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    from .regime import get_sentiment_detail
+
+    return get_sentiment_detail()
+
+
 class StrategyUpdateBody(BaseModel):
     config: dict[str, Any] | None = None
     config_patch: dict[str, Any] | None = None
