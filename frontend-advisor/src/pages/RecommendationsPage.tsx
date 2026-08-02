@@ -857,7 +857,7 @@ export default function RecommendationsPage() {
       {data?.gate_blocked_buys ? (
         <div className="regime-banner" role="status">
           <span>
-            市场状态为风险关闭，买入建议已降级为观察。确认风险后可手动覆盖。
+            今日闸门为风险关闭，买入建议已降级为观察。确认风险后可手动覆盖。
           </span>
           {regimeOverride ? (
             <span className="meta-line">已开启 override，刷新后按防御模式展示。</span>

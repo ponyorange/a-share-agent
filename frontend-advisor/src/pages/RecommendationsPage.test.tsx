@@ -193,7 +193,7 @@ it('从查询参数透传市场状态 override，并展示闸门徽章与覆盖�
     </MemoryRouter>,
   )
 
-  expect(await screen.findByText(/市场状态为风险关闭/)).toBeInTheDocument()
+  expect(await screen.findByText(/今日闸门为风险关闭/)).toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: '仍要查看推荐' }))
   await waitFor(() => {
     expect(fetchRecommendations).toHaveBeenLastCalledWith(10, 'all', false, true)

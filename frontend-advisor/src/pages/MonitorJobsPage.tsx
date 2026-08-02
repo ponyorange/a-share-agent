@@ -212,10 +212,10 @@ export default function MonitorJobsPage() {
             onClick={() => void copyBriefTemplate()}
           >
             {briefCopy === 'copied'
-              ? '已复制早盘简报'
+              ? '已复制今日闸门早盘简报'
               : briefCopy === 'failed'
                 ? '复制失败'
-                : '复制市场状态早盘简报'}
+                : '复制今日闸门早盘简报'}
           </button>
         </div>
         <p className="meta-line">

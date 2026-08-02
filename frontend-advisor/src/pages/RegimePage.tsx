@@ -98,7 +98,7 @@ export default function RegimePage() {
       </div>
 
       <div className="diag-block">
-        {loading && !data ? <p className="status">正在加载市场状态…</p> : null}
+        {loading && !data ? <p className="status">正在加载今日闸门…</p> : null}
         {error ? <p className="status error">{error}</p> : null}
 
         {data ? (
