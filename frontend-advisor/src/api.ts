@@ -1671,6 +1671,59 @@ export function fetchHomeSectors(top = 8): Promise<HomeSectorsResponse> {
   return authFetch(`/api/advisor/market/sectors?${q}`)
 }
 
+export type HomeNewsItem = {
+  title: string
+  summary?: string | null
+  published_at?: string | null
+  url?: string | null
+  tags?: string[] | null
+}
+
+export type HomeNewsGroup = {
+  ok: boolean
+  source?: string | null
+  error?: string | null
+  items: HomeNewsItem[]
+}
+
+export type HomeNewsResponse = {
+  trade_date: string
+  as_of: string
+  groups: {
+    cctv: HomeNewsGroup
+    macro: HomeNewsGroup
+    index_sentiment: HomeNewsGroup
+    sectors: HomeNewsGroup
+    web: HomeNewsGroup
+  }
+}
+
+export function fetchHomeNews(): Promise<HomeNewsResponse> {
+  return authFetch('/api/advisor/home/news')
+}
+
+export type HomeNewsBriefStatus = 'idle' | 'running' | 'ready' | 'failed'
+
+export type HomeNewsBrief = {
+  trade_date: string
+  status: HomeNewsBriefStatus
+  summary: string
+  bullets: string[]
+  sectors: { name: string; reason: string }[]
+  symbols: { symbol: string; name: string; reason: string }[]
+  updated_at?: string | null
+  error?: string | null
+  news_as_of?: string | null
+}
+
+export function fetchHomeNewsBrief(): Promise<HomeNewsBrief> {
+  return authFetch('/api/advisor/home/news-brief')
+}
+
+export function refreshHomeNewsBrief(): Promise<HomeNewsBrief> {
+  return authFetch('/api/advisor/home/news-brief/refresh', { method: 'POST' })
+}
+
 export type LimitUpStatus = 'sealed' | 'broken'
 
 export type LimitUpTodayItem = {

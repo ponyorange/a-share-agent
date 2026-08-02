@@ -31,4 +31,22 @@ describe('home api helpers', () => {
     await fetchRegimeSummary()
     expect(auth.authFetch).toHaveBeenCalledWith('/api/advisor/regime/summary')
   })
+
+  it('fetchHomeNews hits /api/advisor/home/news', async () => {
+    vi.mocked(auth.authFetch).mockResolvedValue({ trade_date: '2026-08-01', groups: {} })
+    const { fetchHomeNews } = await import('./api')
+    await fetchHomeNews()
+    expect(auth.authFetch).toHaveBeenCalledWith('/api/advisor/home/news')
+  })
+
+  it('fetchHomeNewsBrief and refreshHomeNewsBrief hit brief endpoints', async () => {
+    vi.mocked(auth.authFetch).mockResolvedValue({ status: 'idle' })
+    const { fetchHomeNewsBrief, refreshHomeNewsBrief } = await import('./api')
+    await fetchHomeNewsBrief()
+    expect(auth.authFetch).toHaveBeenCalledWith('/api/advisor/home/news-brief')
+    await refreshHomeNewsBrief()
+    expect(auth.authFetch).toHaveBeenCalledWith('/api/advisor/home/news-brief/refresh', {
+      method: 'POST',
+    })
+  })
 })
