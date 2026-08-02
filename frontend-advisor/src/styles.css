@@ -4398,6 +4398,15 @@ body:has(.app-shell--agent-chat) {
   font-size: 0.9rem;
 }
 
+.home-news-picks {
+  margin-top: 0.75rem;
+}
+
+.home-news-picks-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.9rem;
+}
+
 .home-news-summary {
   margin: 0 0 0.5rem;
   font-weight: 600;

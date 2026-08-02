@@ -7,6 +7,7 @@ import {
   type HomeNewsGroup,
   type HomeNewsResponse,
 } from '../api'
+import { explorerKlineUrl } from '../explorerLinks'
 
 const GROUP_LABELS: { key: keyof HomeNewsResponse['groups']; label: string }[] = [
   { key: 'cctv', label: '联播' },
@@ -175,18 +176,33 @@ export function HomeNewsSection() {
                   ))}
                 </div>
               ) : null}
-              {brief.symbols.length ? (
-                <ul className="home-news-symbols">
-                  {brief.symbols.map((s) => (
-                    <li key={s.symbol}>
-                      <span className="mono">
-                        {s.symbol} {s.name}
-                      </span>
-                      <span className="muted">{s.reason}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
+              <div className="home-news-picks">
+                <h4 className="home-news-picks-title">资讯驱动观察股</h4>
+                <p className="meta-line">
+                  基于今日资讯 · 观察窗口约 3–5 个交易日 · 非投资建议
+                </p>
+                {brief.symbols.length ? (
+                  <ul className="home-news-symbols">
+                    {brief.symbols.map((s) => (
+                      <li key={s.symbol}>
+                        <a
+                          className="text-link mono"
+                          href={explorerKlineUrl(s.symbol)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {s.symbol} {s.name}
+                        </a>
+                        <span className="muted">{s.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted">
+                    {brief.symbols_note || '暂无足够证据的观察股'}
+                  </p>
+                )}
+              </div>
             </div>
           ) : null}
         </div>

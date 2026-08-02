@@ -102,4 +102,49 @@ describe('HomeNewsSection', () => {
     expect(screen.getAllByText('人工智能').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/600519/)).toBeInTheDocument()
   })
+
+  it('shows news-driven stock picks section when ready', async () => {
+    vi.mocked(api.fetchHomeNews).mockResolvedValue({
+      trade_date: '2026-08-01',
+      as_of: 't',
+      groups: emptyGroups,
+    })
+    vi.mocked(api.fetchHomeNewsBrief).mockResolvedValue({
+      trade_date: '2026-08-01',
+      status: 'ready',
+      summary: '政策偏暖',
+      bullets: [],
+      sectors: [],
+      symbols: [
+        { symbol: '600519', name: '贵州茅台', reason: '消费预期', horizon: '3-5d' },
+      ],
+      symbols_note: null,
+    })
+    render(<HomeNewsSection />)
+    await waitFor(() => expect(screen.getByText('资讯驱动观察股')).toBeInTheDocument())
+    expect(screen.getByText(/观察窗口约 3–5 个交易日/)).toBeInTheDocument()
+    expect(screen.getByText(/600519/)).toBeInTheDocument()
+    expect(screen.queryByText('今日关注')).not.toBeInTheDocument()
+  })
+
+  it('shows empty note when no symbols', async () => {
+    vi.mocked(api.fetchHomeNews).mockResolvedValue({
+      trade_date: '2026-08-01',
+      as_of: 't',
+      groups: emptyGroups,
+    })
+    vi.mocked(api.fetchHomeNewsBrief).mockResolvedValue({
+      trade_date: '2026-08-01',
+      status: 'ready',
+      summary: '观望',
+      bullets: [],
+      sectors: [],
+      symbols: [],
+      symbols_note: '暂无足够证据的观察股',
+    })
+    render(<HomeNewsSection />)
+    await waitFor(() =>
+      expect(screen.getByText('暂无足够证据的观察股')).toBeInTheDocument(),
+    )
+  })
 })

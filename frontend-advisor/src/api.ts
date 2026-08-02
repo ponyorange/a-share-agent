@@ -1710,7 +1710,8 @@ export type HomeNewsBrief = {
   summary: string
   bullets: string[]
   sectors: { name: string; reason: string }[]
-  symbols: { symbol: string; name: string; reason: string }[]
+  symbols: { symbol: string; name: string; reason: string; horizon?: string }[]
+  symbols_note?: string | null
   updated_at?: string | null
   error?: string | null
   news_as_of?: string | null
