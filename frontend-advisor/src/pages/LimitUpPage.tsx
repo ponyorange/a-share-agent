@@ -18,6 +18,7 @@ import { explorerKlineUrl } from '../explorerLinks'
 const POLL_MS = 10_000
 const PC_QUERY = '(min-width: 900px)'
 const SENTIMENT_LABELS: Record<string, string> = {
+  ice: '情绪冰点',
   strengthen: '情绪增强',
   climax: '情绪高潮',
   ebb: '情绪退潮',

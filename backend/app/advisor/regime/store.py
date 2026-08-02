@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from app.db import get_db
@@ -26,9 +27,17 @@ def _ensure_trade_date_index(col: Any) -> None:
 def upsert_daily(trade_date: str, doc: dict) -> None:
     col = _collection()
     _ensure_trade_date_index(col)
+    now = datetime.now(timezone.utc)
     col.update_one(
         {"trade_date": trade_date},
-        {"$set": {**dict(doc), "trade_date": trade_date}},
+        {
+            "$set": {
+                **dict(doc),
+                "trade_date": trade_date,
+                "updated_at": now,
+            },
+            "$setOnInsert": {"created_at": now},
+        },
         upsert=True,
     )
 

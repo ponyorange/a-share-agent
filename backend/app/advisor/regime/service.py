@@ -177,11 +177,13 @@ def _ensure_previous_archive(trade_date: str, cfg: dict[str, Any]) -> None:
     if not is_trading_day(trade_date):
         return
     prev_date = _previous_trading_day(trade_date)
-    if store.get_daily(prev_date):
+    previous = store.get_daily(prev_date)
+    if previous and previous.get("finalized") is True:
         return
     prev_prev = store.get_daily(_previous_trading_day(prev_date))
     raw = collector.collect_raw(prev_date)
     archived = build_regime_from_parts(raw, prev_prev, cfg=cfg)
+    archived["finalized"] = True
     store.upsert_daily(prev_date, archived)
 
 
@@ -199,10 +201,20 @@ def get_current_regime(*, force: bool = False) -> dict[str, Any]:
         return dict(cached["payload"])
 
     raw = collector.collect_raw()
-    trade_date = str(raw.get("trade_date") or _CLOCK().date().isoformat())
+    collected_date = str(raw.get("trade_date") or _CLOCK().date().isoformat())[:10]
+    trade_date = collected_date
+    if not is_trading_day(trade_date):
+        trade_date = last_trading_day(date.fromisoformat(trade_date))
+        existing = store.get_daily(trade_date)
+        if existing and existing.get("finalized") is True:
+            _CACHE["current"] = {"ts": now_mono, "payload": dict(existing)}
+            return dict(existing)
+        raw = collector.collect_raw(trade_date)
+    raw = {**raw, "trade_date": trade_date}
     _ensure_previous_archive(trade_date, cfg)
     prev_daily = store.get_daily(_previous_trading_day(trade_date))
     payload = build_regime_from_parts(raw, prev_daily, cfg=cfg)
+    payload["finalized"] = False
     store.upsert_daily(trade_date, payload)
     _CACHE["current"] = {"ts": now_mono, "payload": dict(payload)}
     return payload

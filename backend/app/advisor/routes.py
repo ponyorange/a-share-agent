@@ -32,6 +32,8 @@ from .paper import (
     sell_all_positions,
 )
 from .portfolio import PortfolioPayload, load_portfolio, save_portfolio
+from .regime import get_current_regime
+from .regime.gate import apply_regime_gate
 from .service import get_advice, get_portfolio_advice, get_recommendations
 from .snapshots import (
     accuracy_summary,
@@ -627,12 +629,17 @@ def recommendations(
             force_universe=refresh_universe,
             user_id=uid,
             regime_override=regime_override,
+            apply_regime=False,
         )
         if persist:
             snap = save_snapshot(result, trade_date=trade_date, user_id=uid)
             result["snapshot"] = snap
             result["trade_date"] = trade_date
-        return result
+        return apply_regime_gate(
+            result,
+            get_current_regime(),
+            override=regime_override,
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=502, detail=f"推荐生成失败: {type(exc).__name__}"
@@ -1288,8 +1295,10 @@ def paper_one_click(
                 board=None,
                 force_universe=False,
                 user_id=uid,
+                apply_regime=False,
             )
             save_snapshot(recs, trade_date=trade_date, user_id=uid)
+            recs = apply_regime_gate(recs, get_current_regime())
         return one_click_buy_from_recs(
             uid,
             recs,
@@ -1336,8 +1345,10 @@ def paper_one_click_stream(
                     board=None,
                     force_universe=False,
                     user_id=uid,
+                    apply_regime=False,
                 )
                 save_snapshot(recs, trade_date=trade_date, user_id=uid)
+                recs = apply_regime_gate(recs, get_current_regime())
             for ev in iter_one_click_buy_events(
                 uid,
                 recs,

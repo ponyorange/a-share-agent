@@ -70,6 +70,9 @@ def test_get_today_recommendations_passes_regime_override(monkeypatch):
         return {
             "buy_threshold": 0.7,
             "boards": {"hs": {"count": 0, "items": []}},
+            "regime": {"gate_level": "defensive"},
+            "warnings": ["风险提示"],
+            "gate_blocked_buys": True,
         }
 
     monkeypatch.setattr(agent_tools, "snapshot_as_recommendations", fake_snapshot)
@@ -82,6 +85,9 @@ def test_get_today_recommendations_passes_regime_override(monkeypatch):
 
     assert seen["regime_override"] is True
     assert payload["boards"]["hs"]["count"] == 0
+    assert payload["regime"] == {"gate_level": "defensive"}
+    assert payload["warnings"] == ["风险提示"]
+    assert payload["gate_blocked_buys"] is True
 
 
 def test_system_prompt_includes_regime_rules():

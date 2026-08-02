@@ -312,6 +312,9 @@ def build_tools(
         summary = {
             "trade_date": td,
             "buy_threshold": recs.get("buy_threshold"),
+            "regime": recs.get("regime"),
+            "warnings": recs.get("warnings") or [],
+            "gate_blocked_buys": bool(recs.get("gate_blocked_buys")),
             "quote_note": (
                 "items 中 archive_day_chg_* 为归档快照，非实时；"
                 "盘中涨跌请调用 get_stock_quotes"

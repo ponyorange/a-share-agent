@@ -87,23 +87,26 @@ def test_recommendations_accepts_regime_override(monkeypatch):
     monkeypatch.setattr(routes, "_bind", lambda user: str(user["id"]))
     monkeypatch.setattr(routes, "effective_rec_date", lambda as_of=None: "2026-08-02")
     monkeypatch.setattr(routes, "has_snapshot", lambda trade_date, user_id=None: False)
-    monkeypatch.setattr(
-        routes,
-        "get_recommendations",
-        lambda **kwargs: seen.setdefault(
-            "result",
-            {
-                "as_of": "2026-08-02",
-                "items": [],
-                "boards": {},
-                "regime_override": kwargs.get("regime_override"),
-            },
-        ),
-    )
+    def get_recommendations(**kwargs):
+        seen.update(kwargs)
+        return {
+            "as_of": "2026-08-02",
+            "items": [],
+            "boards": {},
+            "regime_override": kwargs.get("regime_override"),
+        }
+
+    monkeypatch.setattr(routes, "get_recommendations", get_recommendations)
     monkeypatch.setattr(
         routes,
         "save_snapshot",
         lambda payload, trade_date=None, user_id=None: {"saved": True},
+    )
+    monkeypatch.setattr(routes, "get_current_regime", lambda: {"gate_level": "normal"})
+    monkeypatch.setattr(
+        routes,
+        "apply_regime_gate",
+        lambda payload, regime, override=False: payload,
     )
     try:
         response = TestClient(app).get(
@@ -114,3 +117,4 @@ def test_recommendations_accepts_regime_override(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["regime_override"] is True
+    assert seen["apply_regime"] is False

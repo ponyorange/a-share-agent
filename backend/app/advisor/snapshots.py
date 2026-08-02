@@ -49,9 +49,11 @@ def save_snapshot(
     trade_date: str | None = None,
     *,
     user_id: str | None = None,
+    raw_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Upsert recommendation snapshot for the effective trading day (overwrite same day)."""
+    """Upsert ungated recommendations for the effective trading day."""
     uid = _resolve_user_id(user_id)
+    payload = raw_payload or payload
     td = trade_date or effective_rec_date(
         str(payload.get("as_of") or "")[:10] or None
     )

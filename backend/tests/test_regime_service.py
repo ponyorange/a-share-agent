@@ -128,7 +128,7 @@ def test_failed_quality_forces_defensive(monkeypatch, service):
     assert out["position_cap"] == 0.35
     assert out["sentiment_cycle"] == "repair"
     assert any(e["key"] == "data_quality" and e["value"] == "failed" for e in out["evidence"])
-    assert writes[0][0] == "2026-08-02"
+    assert writes[-1][0] == "2026-07-31"
 
 
 def test_degraded_quality_when_promotion_rate_missing(monkeypatch, service):
@@ -205,14 +205,15 @@ def test_cache_returns_same_payload_until_force(monkeypatch, service):
     monkeypatch.setattr(service.collector, "collect_raw", collect)
     monkeypatch.setattr(service.store, "get_daily", lambda trade_date: None)
     monkeypatch.setattr(service.store, "upsert_daily", lambda trade_date, doc: None)
+    monkeypatch.setattr(service, "_ensure_previous_archive", lambda trade_date, cfg: None)
 
     first = service.get_current_regime(force=True)
     second = service.get_current_regime()
     third = service.get_current_regime(force=True)
 
     assert first == second
-    assert third["limit_up_count"] == first["limit_up_count"] + 1
-    assert len(calls) == 2
+    assert third["limit_up_count"] == first["limit_up_count"] + 2
+    assert len(calls) == 4
 
 
 def test_history_and_sentiment_detail_use_archive(monkeypatch, service):
@@ -229,3 +230,76 @@ def test_history_and_sentiment_detail_use_archive(monkeypatch, service):
 
     assert service.get_regime_history(limit=1) == [rows[0]]
     assert service.get_sentiment_detail() == {"metrics": {"a": 1}, "sentiment_cycle": "ebb"}
+
+
+def test_previous_intraday_archive_is_finalized_on_next_trading_day(monkeypatch, service):
+    collected = []
+    writes = []
+
+    monkeypatch.setattr(service, "is_trading_day", lambda day: True)
+    monkeypatch.setattr(
+        service.store,
+        "get_daily",
+        lambda day: {"trade_date": day, "finalized": False}
+        if day == "2026-08-03"
+        else None,
+    )
+    monkeypatch.setattr(
+        service.collector,
+        "collect_raw",
+        lambda day: collected.append(day) or _raw(trade_date=day),
+    )
+    monkeypatch.setattr(
+        service.store,
+        "upsert_daily",
+        lambda day, doc: writes.append((day, doc)),
+    )
+
+    service._ensure_previous_archive("2026-08-04", CFG)
+
+    assert collected == ["2026-08-03"]
+    assert writes[0][0] == "2026-08-03"
+    assert writes[0][1]["finalized"] is True
+
+
+def test_previous_finalized_archive_is_not_recomputed(monkeypatch, service):
+    monkeypatch.setattr(service, "is_trading_day", lambda day: True)
+    monkeypatch.setattr(
+        service.store,
+        "get_daily",
+        lambda day: {"trade_date": day, "finalized": True},
+    )
+    monkeypatch.setattr(
+        service.collector,
+        "collect_raw",
+        lambda day: pytest.fail("finalized archive must not be recollected"),
+    )
+
+    service._ensure_previous_archive("2026-08-04", CFG)
+
+
+def test_non_trading_day_uses_last_trading_day_without_weekend_archive(
+    monkeypatch, service
+):
+    writes = []
+    collected = []
+    monkeypatch.setattr(service, "is_trading_day", lambda day: day == "2026-08-01")
+    monkeypatch.setattr(service, "last_trading_day", lambda day=None: "2026-08-01")
+    monkeypatch.setattr(
+        service.collector,
+        "collect_raw",
+        lambda day=None: collected.append(day) or _raw(trade_date=day or "2026-08-02"),
+    )
+    monkeypatch.setattr(service.store, "get_daily", lambda day: None)
+    monkeypatch.setattr(
+        service.store,
+        "upsert_daily",
+        lambda day, doc: writes.append((day, doc)),
+    )
+    monkeypatch.setattr(service, "_ensure_previous_archive", lambda trade_date, cfg: None)
+
+    service.get_current_regime(force=True)
+
+    assert collected == [None, "2026-08-01"]
+    assert writes[-1][0] == "2026-08-01"
+    assert writes[-1][1]["finalized"] is False

@@ -282,6 +282,7 @@ def get_recommendations(
     force_universe: bool = False,
     user_id: str | None = None,
     regime_override: bool = False,
+    apply_regime: bool = True,
 ) -> dict[str, Any]:
     """大池 spot 粗筛 → 仅对 Top 精算（日线因子）。"""
     from .screen import select_for_precise
@@ -458,11 +459,9 @@ def get_recommendations(
         },
         **strategy_meta,
     }
-    return apply_regime_gate(
-        result,
-        get_current_regime(),
-        override=regime_override,
-    )
+    if not apply_regime:
+        return result
+    return apply_regime_gate(result, get_current_regime(), override=regime_override)
 
 
 def iter_recommendations_refresh_events(
@@ -757,8 +756,6 @@ def iter_recommendations_refresh_events(
             },
             **strategy_meta,
         }
-        result = apply_regime_gate(result, get_current_regime())
-
         if persist and user_id and td:
             yield {
                 "event": "progress",
@@ -782,7 +779,7 @@ def iter_recommendations_refresh_events(
                 },
             }
 
-        yield {"event": "done", "data": result}
+        yield {"event": "done", "data": apply_regime_gate(result, get_current_regime())}
     except Exception as exc:
         yield {
             "event": "error",

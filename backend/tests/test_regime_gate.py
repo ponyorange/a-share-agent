@@ -105,3 +105,50 @@ def test_snapshot_as_recommendations_applies_regime_gate(monkeypatch):
     assert out is not None
     assert out["items"][0]["action"] == "watch"
     assert out["regime"]["gate_level"] == "risk_off"
+
+
+def test_snapshot_keeps_ungated_actions_for_regime_override(monkeypatch):
+    """A gated response must not permanently overwrite the archived score/actions."""
+    from app.advisor import snapshots
+
+    stored = {}
+
+    class _Snapshots:
+        def update_one(self, flt, update, upsert=False):
+            stored[flt["trade_date"]] = {
+                **flt,
+                **update["$set"],
+                **update.get("$setOnInsert", {}),
+            }
+
+        def find_one(self, flt, projection):
+            return stored.get(flt["trade_date"])
+
+    monkeypatch.setattr(
+        snapshots,
+        "get_db",
+        lambda: type("DB", (), {"rec_snapshots": _Snapshots()})(),
+    )
+    monkeypatch.setattr(snapshots, "get_current_regime", lambda: _risk_off_regime())
+    raw = {
+        "as_of": "2026-08-03",
+        "boards": {
+            "hs": {
+                "label": "沪深",
+                "items": [{"symbol": "000001", "action": "buy", "score": 0.9}],
+            }
+        },
+    }
+    gated = apply_regime_gate(raw, _risk_off_regime())
+
+    snapshots.save_snapshot(gated, "2026-08-03", user_id="u1", raw_payload=raw)
+
+    default = snapshots.snapshot_as_recommendations(
+        "2026-08-03", board="hs", user_id="u1"
+    )
+    overridden = snapshots.snapshot_as_recommendations(
+        "2026-08-03", board="hs", user_id="u1", regime_override=True
+    )
+
+    assert default["items"][0]["action"] == "watch"
+    assert overridden["items"][0]["action"] == "buy"

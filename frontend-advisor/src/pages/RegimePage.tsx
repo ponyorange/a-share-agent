@@ -16,7 +16,10 @@ const TREND_LABELS: Record<string, string> = {
 }
 
 const SENTIMENT_LABELS: Record<string, string> = {
+  ice: '情绪冰点',
+  repair: '情绪修复',
   strengthen: '情绪增强',
+  climax: '情绪高潮',
   ebb: '情绪退潮',
   neutral: '情绪中性',
 }
