@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchRegimeCurrent, type RegimeCurrent } from '../api'
+import { fetchRegimeCurrent, fetchRegimeHistory, type RegimeCurrent } from '../api'
 
 const GATE_LABELS: Record<string, string> = {
   risk_off: '风险关闭',
@@ -41,6 +41,7 @@ function formatMaybeNumber(value: unknown): string {
 export default function RegimePage() {
   const navigate = useNavigate()
   const [data, setData] = useState<RegimeCurrent | null>(null)
+  const [history, setHistory] = useState<RegimeCurrent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -59,6 +60,20 @@ export default function RegimePage() {
       })
       .finally(() => {
         if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    fetchRegimeHistory(20)
+      .then((rows) => {
+        if (alive) setHistory(rows)
+      })
+      .catch(() => {
+        if (alive) setHistory([])
       })
     return () => {
       alive = false
@@ -176,6 +191,23 @@ export default function RegimePage() {
                   </div>
                 ))}
             </div>
+
+            <h2 className="section-title">近 N 日周期</h2>
+            {history.length ? (
+              <div className="stat-row">
+                {history.slice(0, 8).map((item) => (
+                  <div className="stat" key={item.trade_date || `${item.gate_level}-${item.as_of}`}>
+                    <span className="metric-label">{item.trade_date || '—'}</span>
+                    <div className="metric-value mono">{item.gate_level}</div>
+                    <span className="meta-line">
+                      {labelOf(SENTIMENT_LABELS, item.sentiment_cycle)} · 仓位{formatPct(item.position_cap)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">暂无历史周期。</p>
+            )}
           </>
         ) : null}
       </div>

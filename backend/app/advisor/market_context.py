@@ -17,6 +17,7 @@ import numpy as np
 from ..db import get_db
 from ..kline import normalize_symbol
 from .calendar_util import last_trading_day
+from .config_loader import load_config
 from .features import load_benchmark
 
 _NEUTRAL = 0.5
@@ -254,6 +255,40 @@ def get_market_score(as_of: str | None = None) -> dict[str, Any]:
             "trade_date": day,
         }
     )
+
+
+_GATE_MARKET_SCORE = {
+    "aggressive": 0.8,
+    "normal": 0.55,
+    "defensive": 0.35,
+    "risk_off": 0.2,
+}
+
+
+def _regime_gate_level(mkt: dict[str, Any]) -> str | None:
+    direct = mkt.get("gate_level")
+    if direct:
+        return str(direct)
+    regime = mkt.get("regime")
+    if isinstance(regime, dict) and regime.get("gate_level"):
+        return str(regime["gate_level"])
+    try:
+        from .regime.service import get_current_regime
+
+        current = get_current_regime()
+    except Exception:
+        return None
+    level = current.get("gate_level")
+    return str(level) if level else None
+
+
+def _market_score_for_context(mkt: dict[str, Any]) -> float:
+    regime_cfg = load_config().get("regime") or {}
+    if regime_cfg.get("use_for_market_score", True):
+        level = _regime_gate_level(mkt)
+        if level in _GATE_MARKET_SCORE:
+            return _GATE_MARKET_SCORE[level]
+    return float(mkt.get("score", _NEUTRAL))
 
 
 # ---------- 行业 ----------
@@ -537,7 +572,7 @@ def enrich_symbol_context(
         "flow_score": float(flow.get("score", _NEUTRAL)),
         "sector_score": float(sector.get("score", _NEUTRAL)),
         "value_score": float(value.get("score", _NEUTRAL)),
-        "market_score": float(mkt.get("score", _NEUTRAL)),
+        "market_score": _market_score_for_context(mkt),
         "flow": flow,
         "sector": sector,
         "value": value,

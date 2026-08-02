@@ -212,6 +212,7 @@ agent_web:
     max_calls_per_turn: 8
 
 regime:
+  use_for_market_score: true
   position_cap:
     aggressive: 0.85
     normal: 0.70
