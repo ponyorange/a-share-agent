@@ -17,6 +17,7 @@ def test_list_sources_includes_yfinance():
     meta = next(s for s in providers.list_sources() if s["id"] == "yfinance")
     assert "explorer" in meta["features"]
     assert "market" in meta["features"]
+    assert "kline" in meta["features"]
 
 
 def test_catalog_nonempty_and_categories():
@@ -185,3 +186,51 @@ def test_describe_not_ready_without_package(monkeypatch):
     desc = YfinanceProvider().describe()
     assert desc["ready"] is False
     assert "yfinance" in (desc["message"] or "")
+
+
+def test_normalize_yfinance_symbol():
+    from app.providers.yfinance_kline import normalize_symbol
+
+    assert normalize_symbol("aapl") == "AAPL"
+    assert normalize_symbol(" ^GSPC ") == "^GSPC"
+    assert normalize_symbol("0700.HK") == "0700.HK"
+    with pytest.raises(ValueError):
+        normalize_symbol("")
+    with pytest.raises(ValueError):
+        normalize_symbol("bad symbol!")
+
+
+def test_get_kline_from_history_df(monkeypatch):
+    from app.providers import yfinance_kline as yk
+
+    idx = pd.date_range("2026-07-01", periods=5, freq="D")
+    hist = pd.DataFrame(
+        {
+            "Open": [1, 2, 3, 4, 5],
+            "High": [2, 3, 4, 5, 6],
+            "Low": [0.5, 1, 2, 3, 4],
+            "Close": [1.5, 2.5, 3.5, 4.5, 5.5],
+            "Volume": [10, 20, 30, 40, 50],
+        },
+        index=idx,
+    )
+
+    class FakeTicker:
+        def __init__(self, symbol):
+            self.symbol = symbol
+
+        def history(self, **kwargs):
+            return hist
+
+        @property
+        def fast_info(self):
+            return {"shortName": "Apple Inc."}
+
+    fake_yf = SimpleNamespace(Ticker=FakeTicker)
+    monkeypatch.setitem(sys.modules, "yfinance", fake_yf)
+    out = yk.get_kline("AAPL", "daily")
+    assert out["symbol"] == "AAPL"
+    assert out["chart_type"] == "candle"
+    assert out["count"] == 5
+    assert out["last"]["close"] == 5.5
+    assert out["pre_close"] == 4.5

@@ -6,17 +6,19 @@
 
 - **接口浏览器**（`explorer`）
 - **大盘行情**（`market`，美股/全球指数为主）
+- **K 线图**（`kline`，默认代码 `AAPL`）
 
-不接入 K 线 / 盘口 / 打板 / 基金，不改顾问侧。
+不接入盘口 / 打板 / 基金，不改顾问侧。
 
 ## 决策
 
 | 项 | 选择 |
 |----|------|
 | Provider id | `yfinance` |
-| features | `explorer`, `market` |
+| features | `explorer`, `market`, `kline` |
 | 目录策略 | 宽目录手写 + 按族 `fetch` 分发（不做运行时反射） |
 | 大盘内容 | 美股/全球指数；沪深成交额字段保持契约但可为 `null` |
+| K 线 | `history` 映射 realtime/5d/daily/weekly/monthly；前端默认 `AAPL` |
 | 依赖 | `requirements.txt` 增加 `yfinance`；出网访问 Yahoo |
 
 ## 架构

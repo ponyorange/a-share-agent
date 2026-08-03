@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 
 from . import yfinance_catalog
+from . import yfinance_kline
 from . import yfinance_market
 from ..serialize import normalize_result
 
@@ -256,7 +257,7 @@ def _call_multi(name: str, call_params: dict[str, Any]) -> Any:
 class YfinanceProvider:
     id = "yfinance"
     label = "yfinance"
-    features = ("explorer", "market")
+    features = ("explorer", "market", "kline")
     docs_url = "https://github.com/ranaroussi/yfinance"
 
     def describe(self) -> dict[str, Any]:
@@ -380,3 +381,6 @@ class YfinanceProvider:
 
     def get_market(self) -> dict[str, Any]:
         return yfinance_market.get_market()
+
+    def get_kline(self, symbol: str, range_: str) -> dict[str, Any]:
+        return yfinance_kline.get_kline(symbol=symbol, range_=range_)

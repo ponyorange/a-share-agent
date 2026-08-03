@@ -42,7 +42,7 @@ export const FALLBACK_SOURCES: DataSourceInfo[] = [
   {
     id: 'yfinance',
     label: 'yfinance',
-    features: ['explorer', 'market'],
+    features: ['explorer', 'market', 'kline'],
     docs_url: 'https://github.com/ranaroussi/yfinance',
     ready: true,
   },
