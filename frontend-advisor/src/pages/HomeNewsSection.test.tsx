@@ -147,4 +147,46 @@ describe('HomeNewsSection', () => {
       expect(screen.getByText('暂无足够证据的观察股')).toBeInTheDocument(),
     )
   })
+
+  it('shows progress message while running', async () => {
+    vi.mocked(api.fetchHomeNews).mockResolvedValue({
+      trade_date: '2026-08-01',
+      as_of: 't',
+      groups: emptyGroups,
+    })
+    vi.mocked(api.fetchHomeNewsBrief).mockResolvedValue({
+      trade_date: '2026-08-01',
+      status: 'running',
+      summary: '',
+      bullets: [],
+      sectors: [],
+      symbols: [],
+      progress: { phase: 'picks', message: '筛选资讯驱动观察股…' },
+    })
+    render(<HomeNewsSection />)
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('筛选资讯驱动观察股…'),
+    )
+  })
+
+  it('falls back when running without progress', async () => {
+    vi.mocked(api.fetchHomeNews).mockResolvedValue({
+      trade_date: '2026-08-01',
+      as_of: 't',
+      groups: emptyGroups,
+    })
+    vi.mocked(api.fetchHomeNewsBrief).mockResolvedValue({
+      trade_date: '2026-08-01',
+      status: 'running',
+      summary: '',
+      bullets: [],
+      sectors: [],
+      symbols: [],
+      progress: null,
+    })
+    render(<HomeNewsSection />)
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('正在生成解读…'),
+    )
+  })
 })

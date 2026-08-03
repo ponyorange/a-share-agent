@@ -43,6 +43,7 @@ def test_generate_brief_parses_llm_json(monkeypatch):
     monkeypatch.setattr(hb, "build_chat_model", lambda uid, **k: FakeModel())
     monkeypatch.setattr(hb, "_optional_knowledge_titles", lambda uid: [])
     monkeypatch.setattr(hb, "_maybe_fetch_web_items", lambda uid: [])
+    monkeypatch.setattr(hb, "_set_progress", lambda *a, **k: None)
     monkeypatch.setattr(
         hb,
         "run_home_news_stock_picks",
@@ -123,6 +124,7 @@ def test_generate_brief_runs_stock_picks_after_summary(monkeypatch):
     monkeypatch.setattr(hb, "build_chat_model", lambda uid, **k: FakeModel())
     monkeypatch.setattr(hb, "_optional_knowledge_titles", lambda uid: [])
     monkeypatch.setattr(hb, "_maybe_fetch_web_items", lambda uid: [])
+    monkeypatch.setattr(hb, "_set_progress", lambda *a, **k: None)
     monkeypatch.setattr(
         hb,
         "run_home_news_stock_picks",
@@ -177,6 +179,59 @@ def test_public_includes_symbols_note(monkeypatch):
     )
     out = hb.get_home_news_brief("u1")
     assert out["symbols_note"] == "暂无足够证据的观察股"
+    assert out["progress"] is None
+
+
+def test_public_includes_progress_when_running(monkeypatch):
+    from app.advisor import home_news_brief as hb
+
+    monkeypatch.setattr(hb, "last_trading_day", lambda: "2026-08-01")
+    monkeypatch.setattr(
+        hb,
+        "_load_brief",
+        lambda uid, day: {
+            "trade_date": "2026-08-01",
+            "status": "running",
+            "summary": "",
+            "bullets": [],
+            "sectors": [],
+            "symbols": [],
+            "progress": {"phase": "picks", "message": "筛选资讯驱动观察股…"},
+            "updated_at": "t",
+            "error": None,
+            "news_as_of": None,
+        },
+    )
+    out = hb.get_home_news_brief("u1")
+    assert out["progress"]["phase"] == "picks"
+    assert "观察股" in out["progress"]["message"]
+
+
+def test_set_progress_writes_phase(monkeypatch):
+    from app.advisor import home_news_brief as hb
+
+    saved: dict = {}
+    monkeypatch.setattr(hb, "last_trading_day", lambda: "2026-08-01")
+    monkeypatch.setattr(
+        hb,
+        "_load_brief",
+        lambda uid, day: {
+            "status": "running",
+            "summary": "old",
+            "bullets": [],
+            "sectors": [],
+            "symbols": [],
+        },
+    )
+
+    def _save(uid, day, fields):
+        saved.update(fields)
+        return {"status": "running", **fields, "trade_date": day}
+
+    monkeypatch.setattr(hb, "_save_brief", _save)
+    hb._set_progress("u1", "2026-08-01", "brief")
+    assert saved["progress"]["phase"] == "brief"
+    assert saved["progress"]["message"] == "撰写市场解读…"
 
 
 def test_refresh_rejects_without_llm_key(monkeypatch):

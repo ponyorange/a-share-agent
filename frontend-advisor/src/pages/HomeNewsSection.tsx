@@ -153,7 +153,11 @@ export function HomeNewsSection() {
               暂无解读。点「刷新解读」生成今日要点与相关板块/股票（会消耗 Token）。
             </p>
           ) : null}
-          {status === 'running' ? <p className="muted">正在生成解读…</p> : null}
+          {status === 'running' ? (
+            <p className="muted" role="status">
+              {brief?.progress?.message || '正在生成解读…'}
+            </p>
+          ) : null}
           {status === 'failed' ? (
             <p className="home-tile-error">{brief?.error || '生成失败'}</p>
           ) : null}

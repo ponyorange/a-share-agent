@@ -1712,6 +1712,7 @@ export type HomeNewsBrief = {
   sectors: { name: string; reason: string }[]
   symbols: { symbol: string; name: string; reason: string; horizon?: string }[]
   symbols_note?: string | null
+  progress?: { phase: string; message: string } | null
   updated_at?: string | null
   error?: string | null
   news_as_of?: string | null

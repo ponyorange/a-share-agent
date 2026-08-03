@@ -40,7 +40,7 @@
 - `_idle` / ready 保存时 `progress=None`
 - `_spawn_refresh_thread`：news → brief → picks 前分别 `_set_progress`；`generate_home_news_brief` 内或线程内拆点均可，优先在 `_run` 与 `generate_home_news_brief` 内清晰切分
 
-- [ ] **Step 1: Failing test** — `start_home_news_brief_refresh` mock spawn 后文档 progress 为 news；或测 `_set_progress` + public
+- [x] **Step 1: Failing test** — `start_home_news_brief_refresh` mock spawn 后文档 progress 为 news；或测 `_set_progress` + public
 
 ```python
 def test_public_includes_progress(monkeypatch):
@@ -92,7 +92,7 @@ def test_set_progress_writes_phase(monkeypatch):
     assert saved["progress"]["message"] == "撰写市场解读…"
 ```
 
-- [ ] **Step 2:** Run fail → implement → pass → commit `feat: expose home news brief progress phases`
+- [x] **Step 2:** Run fail → implement → pass → commit `feat: expose home news brief progress phases`
 
 实现要点：
 
@@ -146,9 +146,9 @@ ready 保存时显式 `"progress": None`。
 - Modify `HomeNewsSection.tsx` — running 展示 message
 - Modify `HomeNewsSection.test.tsx`
 
-- [ ] Test: mock brief `status:running, progress:{phase:'brief', message:'撰写市场解读…'}` → 可见该文案
-- [ ] Implement display under button area
-- [ ] Commit `feat: show home news brief progress message while running`
+- [x] Test: mock brief `status:running, progress:{phase:'brief', message:'撰写市场解读…'}` → 可见该文案
+- [x] Implement display under button area
+- [x] Commit `feat: show home news brief progress message while running`
 
 ---
 

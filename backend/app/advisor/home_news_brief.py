@@ -21,6 +21,12 @@ from .llm_settings import resolve_llm_credentials, web_tool_flags
 _lock = threading.Lock()
 _threads: dict[str, threading.Thread] = {}
 
+PROGRESS_MESSAGES: dict[str, str] = {
+    "news": "整理今日资讯…",
+    "brief": "撰写市场解读…",
+    "picks": "筛选资讯驱动观察股…",
+}
+
 
 def _col():
     return get_db().home_news_briefs
@@ -53,19 +59,32 @@ def _idle(day: str) -> dict[str, Any]:
         "sectors": [],
         "symbols": [],
         "symbols_note": None,
+        "progress": None,
         "updated_at": None,
         "error": None,
         "news_as_of": None,
     }
 
 
+def _public_progress(raw: Any) -> dict[str, str] | None:
+    if not isinstance(raw, dict):
+        return None
+    phase = str(raw.get("phase") or "").strip()
+    message = str(raw.get("message") or "").strip()
+    if not phase or not message:
+        return None
+    return {"phase": phase, "message": message}
+
+
 def _public(doc: dict[str, Any] | None, day: str) -> dict[str, Any]:
     if not doc:
         return _idle(day)
     symbols_note = doc.get("symbols_note")
+    status = str(doc.get("status") or "idle")
+    progress = _public_progress(doc.get("progress")) if status == "running" else None
     return {
         "trade_date": str(doc.get("trade_date") or day)[:10],
-        "status": str(doc.get("status") or "idle"),
+        "status": status,
         "summary": str(doc.get("summary") or ""),
         "bullets": [str(x) for x in (doc.get("bullets") or [])][:5],
         "sectors": [
@@ -85,6 +104,7 @@ def _public(doc: dict[str, Any] | None, day: str) -> dict[str, Any]:
             and re.fullmatch(r"\d{6}", str(x.get("symbol") or ""))
         ][:5],
         "symbols_note": str(symbols_note) if symbols_note else None,
+        "progress": progress,
         "updated_at": doc.get("updated_at"),
         "error": doc.get("error"),
         "news_as_of": doc.get("news_as_of"),
@@ -114,6 +134,28 @@ def _save_brief(user_id: str, day: str, fields: dict[str, Any]) -> dict[str, Any
 def get_home_news_brief(user_id: str, trade_date: str | None = None) -> dict[str, Any]:
     day = (trade_date or last_trading_day())[:10]
     return _public(_load_brief(user_id, day), day)
+
+
+def _set_progress(user_id: str, day: str, phase: str) -> None:
+    msg = PROGRESS_MESSAGES.get(phase)
+    if not msg:
+        return
+    existing = _load_brief(user_id, day) or {}
+    _save_brief(
+        user_id,
+        day,
+        {
+            "status": "running",
+            "summary": existing.get("summary") or "",
+            "bullets": existing.get("bullets") or [],
+            "sectors": existing.get("sectors") or [],
+            "symbols": existing.get("symbols") or [],
+            "symbols_note": existing.get("symbols_note"),
+            "error": None,
+            "news_as_of": existing.get("news_as_of"),
+            "progress": {"phase": phase, "message": msg},
+        },
+    )
 
 
 def _optional_knowledge_titles(user_id: str) -> list[str]:
@@ -233,7 +275,13 @@ def _maybe_fetch_web_items(user_id: str) -> list[dict[str, Any]]:
         return []
 
 
-def generate_home_news_brief(user_id: str, news: dict[str, Any]) -> dict[str, Any]:
+def generate_home_news_brief(
+    user_id: str,
+    news: dict[str, Any],
+    *,
+    trade_date: str | None = None,
+) -> dict[str, Any]:
+    day = (trade_date or str(news.get("trade_date") or last_trading_day()))[:10]
     resolve_llm_credentials(user_id)
     web_items = _maybe_fetch_web_items(user_id)
     if web_items:
@@ -275,6 +323,7 @@ def generate_home_news_brief(user_id: str, news: dict[str, Any]) -> dict[str, An
     )
     text = resp.content if isinstance(resp.content, str) else str(resp.content)
     brief = _parse_llm_json(text)
+    _set_progress(user_id, day, "picks")
     picks = run_home_news_stock_picks(
         user_id,
         news=news,
@@ -296,8 +345,10 @@ def _spawn_refresh_thread(user_id: str, day: str) -> None:
 
     def _run() -> None:
         try:
+            _set_progress(user_id, day, "news")
             news = get_or_build_home_news(day)
-            parsed = generate_home_news_brief(user_id, news)
+            _set_progress(user_id, day, "brief")
+            parsed = generate_home_news_brief(user_id, news, trade_date=day)
             _save_brief(
                 user_id,
                 day,
@@ -308,6 +359,7 @@ def _spawn_refresh_thread(user_id: str, day: str) -> None:
                     "sectors": parsed["sectors"],
                     "symbols": parsed["symbols"],
                     "symbols_note": parsed.get("symbols_note"),
+                    "progress": None,
                     "error": None,
                     "news_as_of": news.get("as_of"),
                 },
@@ -318,6 +370,7 @@ def _spawn_refresh_thread(user_id: str, day: str) -> None:
                 day,
                 {
                     "status": "failed",
+                    "progress": None,
                     "error": f"{type(exc).__name__}: {exc}"[:400],
                 },
             )
@@ -355,6 +408,10 @@ def start_home_news_brief_refresh(
             "sectors": (existing or {}).get("sectors") or [],
             "symbols": (existing or {}).get("symbols") or [],
             "symbols_note": (existing or {}).get("symbols_note"),
+            "progress": {
+                "phase": "news",
+                "message": PROGRESS_MESSAGES["news"],
+            },
             "error": None,
             "news_as_of": (existing or {}).get("news_as_of"),
         },
