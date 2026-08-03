@@ -193,9 +193,12 @@ def market(source: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="大盘行情未实现")
     try:
         return get_market()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=502, detail=f"大盘行情获取失败: {type(exc).__name__}"
+            status_code=502,
+            detail=f"大盘行情获取失败: {type(exc).__name__}: {exc}",
         ) from exc
 
 

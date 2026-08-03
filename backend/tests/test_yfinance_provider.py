@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+import sys
 
 import pandas as pd
 import pytest
@@ -88,6 +89,8 @@ def test_get_market_shape(monkeypatch):
     from app.providers import yfinance_market as ym
     from app.providers.yfinance_provider import YfinanceProvider
 
+    ym._cache["ts"] = 0.0
+    ym._cache["payload"] = None
     monkeypatch.setattr(
         ym,
         "_fetch_indices",
@@ -116,6 +119,7 @@ def test_get_market_shape(monkeypatch):
             "losers": [],
             "amount": [],
             "source": "yfinance",
+            "error": "screener 无数据或当前环境不可用",
         },
     )
     out = YfinanceProvider().get_market()
@@ -124,6 +128,46 @@ def test_get_market_shape(monkeypatch):
     assert out["featured"][0]["symbol"] == "^GSPC"
     assert "boards" in out
     assert out["boards"]["error"] is None or isinstance(out["boards"]["error"], str)
+
+
+def test_quote_from_batched_history():
+    from app.providers import yfinance_market as ym
+
+    idx = pd.DatetimeIndex(["2026-07-31", "2026-08-01"])
+    hist = pd.DataFrame(
+        {
+            "Open": [10.0, 11.0],
+            "High": [12.0, 13.0],
+            "Low": [9.0, 10.5],
+            "Close": [11.0, 12.0],
+            "Volume": [100, 200],
+        },
+        index=idx,
+    )
+    multi = pd.concat({"^GSPC": hist}, axis=1)
+    multi.columns = pd.MultiIndex.from_tuples(
+        [(sym, col) for sym, col in multi.columns]
+    )
+    frame = ym._hist_frame_for_symbol(multi, "^GSPC")
+    row = ym._quote_from_history("^GSPC", "标普500", True, frame)
+    assert row["price"] == 12.0
+    assert row["pre_close"] == 11.0
+    assert abs(row["change_pct"] - (100.0 / 11.0)) < 1e-6
+
+
+def test_fetch_indices_raises_when_all_empty(monkeypatch):
+    from app.providers import yfinance_market as ym
+
+    def _download(*a, **k):
+        cols = pd.MultiIndex.from_product(
+            [["^GSPC", "^DJI"], ["Open", "High", "Low", "Close", "Volume"]]
+        )
+        return pd.DataFrame(columns=cols)
+
+    fake_yf = SimpleNamespace(download=_download)
+    monkeypatch.setitem(sys.modules, "yfinance", fake_yf)
+    with pytest.raises(RuntimeError, match="未能获取|限流"):
+        ym._fetch_indices()
 
 
 def test_describe_not_ready_without_package(monkeypatch):
