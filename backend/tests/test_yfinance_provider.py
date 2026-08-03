@@ -203,6 +203,7 @@ def test_normalize_yfinance_symbol():
 def test_get_kline_from_history_df(monkeypatch):
     from app.providers import yfinance_kline as yk
 
+    yk._cache.clear()
     idx = pd.date_range("2026-07-01", periods=5, freq="D")
     hist = pd.DataFrame(
         {
@@ -215,6 +216,9 @@ def test_get_kline_from_history_df(monkeypatch):
         index=idx,
     )
 
+    def _download(*a, **k):
+        return hist
+
     class FakeTicker:
         def __init__(self, symbol):
             self.symbol = symbol
@@ -222,15 +226,34 @@ def test_get_kline_from_history_df(monkeypatch):
         def history(self, **kwargs):
             return hist
 
-        @property
-        def fast_info(self):
-            return {"shortName": "Apple Inc."}
-
-    fake_yf = SimpleNamespace(Ticker=FakeTicker)
+    fake_yf = SimpleNamespace(Ticker=FakeTicker, download=_download)
     monkeypatch.setitem(sys.modules, "yfinance", fake_yf)
     out = yk.get_kline("AAPL", "daily")
     assert out["symbol"] == "AAPL"
+    assert out["name"] == "AAPL"
     assert out["chart_type"] == "candle"
     assert out["count"] == 5
     assert out["last"]["close"] == 5.5
     assert out["pre_close"] == 4.5
+
+
+def test_kline_route_surfaces_runtime_message(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.providers import yfinance_provider as yp
+
+    monkeypatch.setattr(
+        yp.YfinanceProvider,
+        "get_kline",
+        lambda self, symbol, range_: (_ for _ in ()).throw(
+            RuntimeError("Yahoo Finance 限流，请稍后再试")
+        ),
+    )
+    # patch registry instance
+    from app import providers
+
+    providers._PROVIDERS["yfinance"] = yp.YfinanceProvider()
+    client = TestClient(app)
+    res = client.get("/api/yfinance/kline", params={"symbol": "AAPL", "range": "daily"})
+    assert res.status_code == 502
+    assert "限流" in res.json()["detail"]

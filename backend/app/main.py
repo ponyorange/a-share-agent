@@ -174,9 +174,12 @@ def kline(
         return get_kline(symbol=symbol, range_=range)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=502, detail=f"K线获取失败: {type(exc).__name__}"
+            status_code=502,
+            detail=f"K线获取失败: {type(exc).__name__}: {exc}",
         ) from exc
 
 

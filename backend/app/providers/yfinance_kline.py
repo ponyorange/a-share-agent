@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+import time
 from typing import Any
 
 import pandas as pd
@@ -14,12 +15,15 @@ VALID_RANGES = ("realtime", "5d", "daily", "weekly", "monthly")
 _RANGE_SPEC: dict[str, tuple[str, str, str]] = {
     "realtime": ("1d", "1m", "line"),
     "5d": ("5d", "5m", "candle"),
-    "daily": ("2y", "1d", "candle"),
-    "weekly": ("10y", "1wk", "candle"),
+    "daily": ("1y", "1d", "candle"),
+    "weekly": ("5y", "1wk", "candle"),
     "monthly": ("max", "1mo", "candle"),
 }
 
 _SYMBOL_RE = re.compile(r"^[A-Za-z0-9.^_=/-]{1,32}$")
+
+CACHE_TTL_SEC = 60.0
+_cache: dict[str, Any] = {}
 
 
 def normalize_symbol(symbol: str) -> str:
@@ -69,7 +73,6 @@ def _fmt_time(idx: Any, *, with_clock: bool) -> str:
 def _bars_from_df(df: pd.DataFrame, *, with_clock: bool) -> list[dict[str, Any]]:
     if df is None or df.empty:
         return []
-    # flatten possible MultiIndex columns from download quirks
     if isinstance(df.columns, pd.MultiIndex):
         df = df.copy()
         df.columns = [c[-1] if isinstance(c, tuple) else c for c in df.columns]
@@ -91,78 +94,102 @@ def _bars_from_df(df: pd.DataFrame, *, with_clock: bool) -> list[dict[str, Any]]
                 vol = float(row["Volume"])
             except (TypeError, ValueError):
                 vol = None
-        avg = None
-        if with_clock and vol is not None and vol > 0:
-            # approximate VWAP-ish running avg not available; skip
-            avg = None
-        bars.append(_bar(_fmt_time(idx, with_clock=with_clock), o, h, l, c, vol, avg))
+        bars.append(_bar(_fmt_time(idx, with_clock=with_clock), o, h, l, c, vol, None))
     return bars
 
 
-def _resolve_name(ticker: Any, symbol: str) -> str:
-    try:
-        fi = getattr(ticker, "fast_info", None)
-        if fi is not None:
-            for key in ("shortName", "longName", "name"):
-                try:
-                    val = fi[key] if hasattr(fi, "__getitem__") else getattr(fi, key, None)
-                except Exception:
-                    val = getattr(fi, key, None) if hasattr(fi, key) else None
-                if val:
-                    return str(val)
-    except Exception:
-        pass
-    try:
-        info = getattr(ticker, "info", None) or {}
-        if isinstance(info, dict):
-            for key in ("shortName", "longName", "symbol"):
-                val = info.get(key)
-                if val:
-                    return str(val)
-    except Exception:
-        pass
-    return symbol
+def _is_rate_limit(exc: BaseException) -> bool:
+    name = type(exc).__name__
+    msg = str(exc)
+    return "RateLimit" in name or "Too Many Requests" in msg or "rate limited" in msg.lower()
 
 
-def get_kline(symbol: str, range_: str) -> dict[str, Any]:
+def _flatten_download(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    if isinstance(df.columns, pd.MultiIndex):
+        level0 = list(df.columns.get_level_values(0))
+        if symbol in level0:
+            return df[symbol].dropna(how="all")
+        # single-ticker download sometimes uses Price as top level
+        if "Open" in level0 or "Close" in level0:
+            flat = df.copy()
+            flat.columns = [c[-1] if isinstance(c, tuple) else c for c in flat.columns]
+            return flat.dropna(how="all")
+        # only one ticker group
+        tickers = sorted(set(level0))
+        if len(tickers) == 1:
+            return df[tickers[0]].dropna(how="all")
+        return pd.DataFrame()
+    return df.dropna(how="all")
+
+
+def _fetch_history(symbol: str, period: str, interval: str) -> pd.DataFrame:
+    """Prefer download() to avoid extra Ticker.info/tz round-trips when possible."""
     import yfinance as yf
 
-    symbol = normalize_symbol(symbol)
-    if range_ not in VALID_RANGES:
-        raise ValueError(f"range 无效，可选: {', '.join(VALID_RANGES)}")
-
-    period, interval, chart_type = _RANGE_SPEC[range_]
-    with_clock = range_ in ("realtime", "5d")
-
-    ticker = yf.Ticker(symbol)
     try:
-        df = ticker.history(
+        raw = yf.download(
+            symbol,
+            period=period,
+            interval=interval,
+            auto_adjust=False,
+            progress=False,
+            threads=False,
+            group_by="ticker",
+        )
+    except Exception as exc:
+        if _is_rate_limit(exc):
+            raise RuntimeError("Yahoo Finance 限流，请稍后再试") from exc
+        raise RuntimeError(f"{type(exc).__name__}: {exc}") from exc
+
+    df = _flatten_download(raw, symbol)
+    if df is not None and not df.empty:
+        return df
+
+    # fallback: Ticker.history (some intervals behave better)
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(
             period=period,
             interval=interval,
             auto_adjust=False,
             actions=False,
         )
     except Exception as exc:
-        msg = str(exc)
-        if "Rate" in type(exc).__name__ or "Too Many Requests" in msg:
+        if _is_rate_limit(exc):
             raise RuntimeError("Yahoo Finance 限流，请稍后再试") from exc
         raise RuntimeError(f"{type(exc).__name__}: {exc}") from exc
+    return hist if hist is not None else pd.DataFrame()
 
-    # 1m sometimes empty outside US hours → fall back to 5m for realtime
+
+def get_kline(symbol: str, range_: str) -> dict[str, Any]:
+    symbol = normalize_symbol(symbol)
+    if range_ not in VALID_RANGES:
+        raise ValueError(f"range 无效，可选: {', '.join(VALID_RANGES)}")
+
+    cache_key = f"{symbol}:{range_}"
+    now = time.monotonic()
+    hit = _cache.get(cache_key)
+    if hit and (now - float(hit.get("ts") or 0.0)) < CACHE_TTL_SEC:
+        return hit["payload"]
+
+    period, interval, chart_type = _RANGE_SPEC[range_]
+    with_clock = range_ in ("realtime", "5d")
+
+    df = _fetch_history(symbol, period, interval)
+
+    # 1m empty outside US hours → fall back to last-session 5m
     if (df is None or df.empty) and range_ == "realtime":
         try:
-            df = ticker.history(
-                period="5d",
-                interval="5m",
-                auto_adjust=False,
-                actions=False,
-            )
-            if df is not None and not df.empty:
-                # keep last session only
-                last_day = pd.Timestamp(df.index[-1]).strftime("%Y-%m-%d")
-                df = df[[pd.Timestamp(i).strftime("%Y-%m-%d") == last_day for i in df.index]]
+            df5 = _fetch_history(symbol, "5d", "5m")
+            if df5 is not None and not df5.empty:
+                last_day = pd.Timestamp(df5.index[-1]).strftime("%Y-%m-%d")
+                df = df5[
+                    [pd.Timestamp(i).strftime("%Y-%m-%d") == last_day for i in df5.index]
+                ]
                 interval = "5m"
-        except Exception:
+        except RuntimeError:
             pass
 
     bars = _bars_from_df(df, with_clock=with_clock)
@@ -170,15 +197,18 @@ def get_kline(symbol: str, range_: str) -> dict[str, Any]:
         bars = bars[-320:]
 
     if not bars:
-        raise RuntimeError("未获取到 K 线数据，请稍后重试或检查代码是否正确")
+        raise RuntimeError(
+            "未获取到 K 线数据（Yahoo 可能限流或代码无效），请稍后再试"
+        )
 
-    name = _resolve_name(ticker, symbol)
+    # Avoid extra Yahoo calls for company name (fast_info/info worsen rate limits)
+    name = symbol
     pre_close: float | None = None
     if len(bars) >= 2:
         pre_close = float(bars[-2]["close"])
 
     last = bars[-1]
-    return {
+    payload = {
         "symbol": symbol,
         "name": name,
         "range": range_,
@@ -189,3 +219,5 @@ def get_kline(symbol: str, range_: str) -> dict[str, Any]:
         "last": last,
         "bars": bars,
     }
+    _cache[cache_key] = {"ts": now, "payload": payload}
+    return payload
