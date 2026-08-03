@@ -200,7 +200,10 @@ def market(source: str) -> dict[str, Any]:
 
 
 @app.get("/api/{source}/limit-up")
-def limit_up(source: str) -> dict[str, Any]:
+def limit_up(
+    source: str,
+    force: bool = Query(default=False, description="跳过短缓存强制重拉"),
+) -> dict[str, Any]:
     provider = _provider_or_404(source)
     if "limitup" not in provider.features:
         raise HTTPException(
@@ -211,7 +214,7 @@ def limit_up(source: str) -> dict[str, Any]:
     if get_limit_up is None:
         raise HTTPException(status_code=404, detail="打板接口未实现")
     try:
-        return get_limit_up()
+        return get_limit_up(force=force)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:

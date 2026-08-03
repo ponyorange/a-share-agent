@@ -178,6 +178,43 @@ describe('LimitUpPage', () => {
     expect(screen.getByText('浦发银行')).toBeInTheDocument()
   })
 
+  it('点击刷新会强制重拉并显示刷新中', async () => {
+    let resolveRefresh: ((v: api.LimitUpResponse) => void) | null = null
+    vi.mocked(api.fetchLimitUp)
+      .mockResolvedValueOnce(sample)
+      .mockImplementationOnce(
+        () =>
+          new Promise<api.LimitUpResponse>((resolve) => {
+            resolveRefresh = resolve
+          }),
+      )
+
+    render(
+      <MemoryRouter>
+        <LimitUpPage />
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '刷新' })).toBeEnabled()
+    })
+    expect(api.fetchLimitUp).toHaveBeenCalledWith('akshare', false)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '刷新' }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '刷新中…' })).toBeDisabled()
+    })
+    expect(api.fetchLimitUp).toHaveBeenLastCalledWith('akshare', true)
+
+    resolveRefresh?.({
+      ...sample,
+      as_of: '2026-07-31T10:00:05+08:00',
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '刷新' })).toBeEnabled()
+    })
+  })
+
   it('PC：连板在前；≥2 展开、1 连板与当天涨停默认折叠', async () => {
     setViewport(true)
     vi.mocked(api.fetchLimitUp).mockResolvedValue(sample)

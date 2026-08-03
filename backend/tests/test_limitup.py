@@ -167,3 +167,48 @@ def test_enrich_fund_flow_keeps_net_when_stock_fails(monkeypatch):
     assert out["000001"]["main_net_inflow"] == 1e6
     assert out["000001"]["main_inflow"] is None
     assert out["000001"]["main_outflow"] is None
+
+
+def test_get_limit_up_force_bypasses_cache(monkeypatch):
+    lim._cache["ts"] = 0.0
+    lim._cache["payload"] = None
+    calls = {"n": 0}
+
+    monkeypatch.setattr(
+        lim,
+        "_fetch_pools",
+        lambda date_yyyymmdd: (
+            [{"代码": "000001", "名称": "平安银行", "涨跌幅": 10, "连板数": 1}],
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        lim,
+        "enrich_fund_flow",
+        lambda symbols, force=False: {},
+    )
+
+    def fake_session():
+        return {"is_trading": False, "is_trading_day": True}
+
+    monkeypatch.setattr("app.quote.trading_session", fake_session)
+    monkeypatch.setattr(lim, "_pool_date_yyyymmdd", lambda: "20260803")
+
+    first = lim.get_limit_up()
+    calls["n"] = 0
+
+    def counting_fetch(date_yyyymmdd):
+        calls["n"] += 1
+        return (
+            [{"代码": "000002", "名称": "万科A", "涨跌幅": 10, "连板数": 1}],
+            [],
+        )
+
+    monkeypatch.setattr(lim, "_fetch_pools", counting_fetch)
+    cached = lim.get_limit_up(force=False)
+    assert calls["n"] == 0
+    assert cached["as_of"] == first["as_of"]
+
+    forced = lim.get_limit_up(force=True)
+    assert calls["n"] == 1
+    assert forced["today"][0]["symbol"] == "000002"

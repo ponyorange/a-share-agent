@@ -160,9 +160,10 @@ export default function LimitUpPage() {
   const [todayExpanded, setTodayExpanded] = useState(false)
   const [sentiment, setSentiment] = useState<RegimeSentiment | null>(null)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
+    setLoading(true)
     try {
-      const res = await fetchLimitUp()
+      const res = await fetchLimitUp('akshare', force)
       setData(res)
       setError(null)
     } catch (err) {
@@ -173,8 +174,7 @@ export default function LimitUpPage() {
   }, [])
 
   useEffect(() => {
-    setLoading(true)
-    void load()
+    void load(false)
   }, [load])
 
   useEffect(() => {
@@ -197,7 +197,7 @@ export default function LimitUpPage() {
 
     const tick = () => {
       if (document.visibilityState === 'hidden') return
-      void load()
+      void load(false)
     }
     const id = window.setInterval(tick, POLL_MS)
     const onVis = () => {
@@ -332,7 +332,7 @@ export default function LimitUpPage() {
             type="button"
             className="btn ghost"
             disabled={loading}
-            onClick={() => void load()}
+            onClick={() => void load(true)}
           >
             {loading ? '刷新中…' : '刷新'}
           </button>

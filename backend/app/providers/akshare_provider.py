@@ -107,6 +107,6 @@ class AkshareProvider:
         detail = fund_service.get_fund_detail(symbol)
         return {"source": self.id, **detail}
 
-    def get_limit_up(self) -> dict[str, Any]:
-        payload = limitup_service.get_limit_up()
+    def get_limit_up(self, *, force: bool = False) -> dict[str, Any]:
+        payload = limitup_service.get_limit_up(force=force)
         return {"source": self.id, **payload}

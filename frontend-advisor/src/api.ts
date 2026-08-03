@@ -1765,8 +1765,14 @@ export type LimitUpResponse = {
   ladder: LimitUpLadderTier[]
 }
 
-export function fetchLimitUp(source = 'akshare'): Promise<LimitUpResponse> {
-  return authFetch(`/api/${encodeURIComponent(source)}/limit-up`)
+export function fetchLimitUp(
+  source = 'akshare',
+  force = false,
+): Promise<LimitUpResponse> {
+  const q = new URLSearchParams()
+  if (force) q.set('force', 'true')
+  const suffix = q.toString() ? `?${q}` : ''
+  return authFetch(`/api/${encodeURIComponent(source)}/limit-up${suffix}`)
 }
 
 /** day_chg_pct 为小数比例（0.10 = 10%）。 */
