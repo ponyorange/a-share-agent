@@ -8,11 +8,13 @@ from .akshare_provider import AkshareProvider
 from .baostock_provider import BaostockProvider
 from .base import DataSource
 from .tushare_provider import TushareProvider
+from .yfinance_provider import YfinanceProvider
 
 _PROVIDERS: dict[str, DataSource] = {
     AkshareProvider.id: AkshareProvider(),
     TushareProvider.id: TushareProvider(),
     BaostockProvider.id: BaostockProvider(),
+    YfinanceProvider.id: YfinanceProvider(),
 }
 
 

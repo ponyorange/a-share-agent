@@ -20,11 +20,13 @@ function BoardPanel({
   rows,
   mode,
   source,
+  linkKline,
 }: {
   title: string
   rows: BoardStock[]
   mode: 'up' | 'down' | 'amount'
   source: string
+  linkKline: boolean
 }) {
   return (
     <section className={`market-board market-board-${mode}`}>
@@ -32,27 +34,36 @@ function BoardPanel({
       <ol className="market-board-list">
         {rows.map((row) => {
           const cls = trendClass(row.change_pct)
+          const body = (
+            <>
+              <span className="market-board-rank">{row.rank}</span>
+              <span className="market-board-name">
+                <strong>{row.name}</strong>
+                <code>{row.symbol}</code>
+              </span>
+              <span className={`market-board-price ${cls}`}>
+                {formatIndexPrice(row.price)}
+              </span>
+              {mode === 'amount' ? (
+                <span className="market-board-amt">{formatAmountYi(row.amount)}</span>
+              ) : null}
+              <span className={`market-board-pct ${cls}`}>
+                {formatPct(row.change_pct)}
+              </span>
+            </>
+          )
           return (
             <li key={`${mode}-${row.symbol}`}>
-              <Link
-                to={`/${source}/kline?symbol=${row.symbol}&range=daily`}
-                className="market-board-row"
-              >
-                <span className="market-board-rank">{row.rank}</span>
-                <span className="market-board-name">
-                  <strong>{row.name}</strong>
-                  <code>{row.symbol}</code>
-                </span>
-                <span className={`market-board-price ${cls}`}>
-                  {formatIndexPrice(row.price)}
-                </span>
-                {mode === 'amount' ? (
-                  <span className="market-board-amt">{formatAmountYi(row.amount)}</span>
-                ) : null}
-                <span className={`market-board-pct ${cls}`}>
-                  {formatPct(row.change_pct)}
-                </span>
-              </Link>
+              {linkKline ? (
+                <Link
+                  to={`/${source}/kline?symbol=${row.symbol}&range=daily`}
+                  className="market-board-row"
+                >
+                  {body}
+                </Link>
+              ) : (
+                <div className="market-board-row">{body}</div>
+              )}
             </li>
           )
         })}
@@ -135,6 +146,14 @@ export default function MarketPage() {
     ? new Date(data.updated_at).toLocaleString('zh-CN', { hour12: false })
     : null
 
+  const showAmountSummary = Boolean(
+    data &&
+      (data.summary.amount_sh != null ||
+        data.summary.amount_sz != null ||
+        data.summary.amount_total != null),
+  )
+  const linkKline = hasFeature(sourceMeta, 'kline')
+
   if (sourceMeta && !hasFeature(sourceMeta, 'market')) {
     return <Navigate to={`/${source}`} replace />
   }
@@ -154,20 +173,24 @@ export default function MarketPage() {
 
       <main className="market-main">
         <div className="market-toolbar">
-          <div className="market-summary">
-            <span>
-              沪市成交{' '}
-              <strong>{formatAmountYi(data?.summary.amount_sh)}</strong>
-            </span>
-            <span>
-              深市成交{' '}
-              <strong>{formatAmountYi(data?.summary.amount_sz)}</strong>
-            </span>
-            <span>
-              两市合计{' '}
-              <strong>{formatAmountYi(data?.summary.amount_total)}</strong>
-            </span>
-          </div>
+          {showAmountSummary ? (
+            <div className="market-summary">
+              <span>
+                沪市成交{' '}
+                <strong>{formatAmountYi(data?.summary.amount_sh)}</strong>
+              </span>
+              <span>
+                深市成交{' '}
+                <strong>{formatAmountYi(data?.summary.amount_sz)}</strong>
+              </span>
+              <span>
+                两市合计{' '}
+                <strong>{formatAmountYi(data?.summary.amount_total)}</strong>
+              </span>
+            </div>
+          ) : (
+            <div className="market-summary" />
+          )}
           <div className="market-toolbar-right">
             {updatedLabel ? (
               <span className="market-updated">更新于 {updatedLabel}</span>
@@ -207,18 +230,21 @@ export default function MarketPage() {
                 rows={data?.boards?.gainers ?? []}
                 mode="up"
                 source={source}
+                linkKline={linkKline}
               />
               <BoardPanel
                 title="跌幅榜"
                 rows={data?.boards?.losers ?? []}
                 mode="down"
                 source={source}
+                linkKline={linkKline}
               />
               <BoardPanel
                 title="成交额榜"
                 rows={data?.boards?.amount ?? []}
                 mode="amount"
                 source={source}
+                linkKline={linkKline}
               />
             </section>
 

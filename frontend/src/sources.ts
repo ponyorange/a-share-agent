@@ -39,6 +39,13 @@ export const FALLBACK_SOURCES: DataSourceInfo[] = [
     docs_url: 'http://baostock.com/baostock/index.php',
     ready: true,
   },
+  {
+    id: 'yfinance',
+    label: 'yfinance',
+    features: ['explorer', 'market'],
+    docs_url: 'https://github.com/ranaroussi/yfinance',
+    ready: true,
+  },
 ]
 
 export const DEFAULT_SOURCE = 'akshare'

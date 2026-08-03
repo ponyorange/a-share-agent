@@ -7,6 +7,7 @@
 | [AKShare](https://akshare.akfamily.xyz/) | ✓ | ✓ | ✓（含盘口） | ✓ |
 | [Tushare](https://tushare.pro/document/2) | ✓ | — | — | — |
 | [BaoStock](http://baostock.com) | ✓ | — | ✓ | — |
+| [yfinance](https://github.com/ranaroussi/yfinance) | ✓ | ✓（美股/全球） | — | — |
 
 - **后端**：FastAPI + 可插拔 Provider + 顾问（规则评分 / AKQuant 校验）
 - **前端（数据后台）**：`frontend/` · Vite + React · 端口 5173
