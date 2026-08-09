@@ -23,8 +23,6 @@ const ALL_RANGES: { id: KlineRange; label: string }[] = [
   { id: 'monthly', label: '月K' },
 ]
 
-const YF_SYMBOL_RE = /^[A-Z0-9.^_=/-]{1,32}$/
-
 /** BaoStock 无真·分时，实时用当日 5 分钟线近似 */
 function rangesForSource(source: string) {
   return ALL_RANGES.map((r) =>
@@ -34,23 +32,8 @@ function rangesForSource(source: string) {
   )
 }
 
-function defaultSymbol(source: string): string {
-  return source === 'yfinance' ? 'AAPL' : '000001'
-}
-
-function normalizeSymbolInput(source: string, raw: string): string {
-  if (source === 'yfinance') {
-    return raw.trim().toUpperCase().slice(0, 32)
-  }
-  return raw.replace(/\D/g, '').slice(0, 6)
-}
-
-function readInitial(sp: URLSearchParams, source: string) {
-  const fallback = defaultSymbol(source)
-  const fromUrl = sp.get('symbol')
-  const symbol = fromUrl
-    ? normalizeSymbolInput(source, fromUrl) || fallback
-    : fallback
+function readInitial(sp: URLSearchParams) {
+  const symbol = (sp.get('symbol') || '000001').replace(/\D/g, '').slice(0, 6) || '000001'
   const range = (sp.get('range') || 'daily') as KlineRange
   const ok = ALL_RANGES.some((r) => r.id === range)
   return { symbol, range: ok ? range : ('daily' as KlineRange) }
@@ -63,10 +46,7 @@ export default function KlinePage() {
   const sourceMeta = sources.find((s) => s.id === source)
   const ranges = useMemo(() => rangesForSource(source), [source])
   const [searchParams, setSearchParams] = useSearchParams()
-  const initial = useMemo(
-    () => readInitial(searchParams, source),
-    [searchParams, source],
-  )
+  const initial = useMemo(() => readInitial(searchParams), [searchParams])
   const [symbolInput, setSymbolInput] = useState(initial.symbol)
   const [symbol, setSymbol] = useState(initial.symbol)
   const [range, setRange] = useState<KlineRange>(initial.range)
@@ -77,11 +57,11 @@ export default function KlinePage() {
 
   // Sync from URL (back/forward or external link)
   useEffect(() => {
-    const next = readInitial(searchParams, source)
+    const next = readInitial(searchParams)
     setSymbolInput(next.symbol)
     setSymbol(next.symbol)
     setRange(next.range)
-  }, [searchParams, source])
+  }, [searchParams])
 
   const load = useCallback(async (sym: string, r: KlineRange) => {
     setLoading(true)
@@ -112,13 +92,8 @@ export default function KlinePage() {
   }, [range, symbol, load])
 
   const commit = (sym: string, r: KlineRange) => {
-    const clean = normalizeSymbolInput(source, sym)
-    if (source === 'yfinance') {
-      if (!YF_SYMBOL_RE.test(clean)) {
-        setError('请输入有效代码，例如 AAPL / MSFT / ^GSPC')
-        return
-      }
-    } else if (clean.length !== 6) {
+    const clean = sym.replace(/\D/g, '').slice(0, 6)
+    if (clean.length !== 6) {
       setError('请输入 6 位 A 股代码')
       return
     }
@@ -180,9 +155,7 @@ export default function KlinePage() {
             <p className="brand-sub">
               {source === 'baostock'
                 ? '分时(5分) · 5日 · 日K · 周K · 月K · 前复权'
-                : source === 'yfinance'
-                  ? '实时 · 5日 · 日K · 周K · 月K · Yahoo Finance'
-                  : '实时 · 5日 · 日K · 周K · 月K'}
+                : '实时 · 5日 · 日K · 周K · 月K'}
             </p>
           </div>
         </div>
@@ -196,11 +169,9 @@ export default function KlinePage() {
             <input
               value={symbolInput}
               onChange={(e) => setSymbolInput(e.target.value)}
-              placeholder={source === 'yfinance' ? 'AAPL' : '000001'}
-              maxLength={source === 'yfinance' ? 32 : 8}
-              inputMode={source === 'yfinance' ? 'text' : 'numeric'}
-              autoCapitalize="characters"
-              spellCheck={false}
+              placeholder="000001"
+              maxLength={8}
+              inputMode="numeric"
             />
           </label>
           <div className="range-tabs" role="tablist" aria-label="周期">
