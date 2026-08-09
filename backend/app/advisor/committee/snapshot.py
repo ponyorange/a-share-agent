@@ -690,6 +690,44 @@ def default_collector_specs(
         content = fetch_macro_china_snapshot()
         return _noncritical_result(content, as_of=as_of)
 
+    def signal_graph(*, as_of: datetime, universe: tuple[str, ...], **_kwargs: Any):
+        from ..signal_graph.service import generate_signal, signal_graph_config
+
+        cfg = signal_graph_config()
+        if not cfg.get("enabled"):
+            return _noncritical_result(
+                {"enabled": False, "items": []},
+                as_of=as_of,
+            )
+        day = as_of.date().isoformat()
+        items: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for symbol in universe:
+            try:
+                payload = generate_signal(symbol, trade_date=day, persist=True)
+                items.append(
+                    {
+                        "symbol": payload.get("symbol"),
+                        "action": payload.get("action"),
+                        "scores": payload.get("scores"),
+                        "margin": payload.get("margin"),
+                        "prediction_id": payload.get("prediction_id"),
+                        "blocked_reason": payload.get("blocked_reason"),
+                        "market_regime": payload.get("market_regime"),
+                        "patterns": payload.get("patterns"),
+                    }
+                )
+            except Exception as exc:
+                errors.append({"symbol": symbol, "error": str(exc)})
+        content = {
+            "enabled": True,
+            "trade_date": day,
+            "horizon_days": cfg.get("horizon_days"),
+            "items": items,
+            "errors": errors,
+        }
+        return _noncritical_result(content, as_of=as_of)
+
     def portfolio_account(
         *,
         as_of: datetime,
@@ -758,6 +796,11 @@ def default_collector_specs(
         CollectorSpec("news", "advisor.agent.unstructured", news),
         CollectorSpec(
             "fundamentals", "advisor.agent.unstructured", fundamentals
+        ),
+        CollectorSpec(
+            "signal_graph",
+            "advisor.signal_graph",
+            signal_graph,
         ),
         CollectorSpec(
             "portfolio_account",

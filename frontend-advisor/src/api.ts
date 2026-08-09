@@ -1999,3 +1999,122 @@ export function statusLabel(status: LimitUpStatus): string {
   return status === 'sealed' ? '当前涨停' : '曾涨停'
 }
 
+
+export type GraphSignalEvidence = {
+  src?: string
+  dst?: string
+  layer?: string
+  action?: string
+  decayed_confidence?: number
+  reliability?: number
+  contribution?: number
+  scope_id?: string
+}
+
+export type GraphSignalItem = {
+  symbol: string
+  name?: string
+  trade_date?: string
+  trade_tick?: number
+  action?: string
+  raw_action?: string
+  scores?: Record<string, number>
+  margin?: number
+  prediction_id?: string | null
+  blocked_reason?: string | null
+  market_regime?: string
+  patterns?: string[]
+  evidence?: GraphSignalEvidence[]
+  error?: string
+}
+
+export type SignalGraphSummary = {
+  owner?: string
+  pending_count?: number
+  unsettled_count?: number
+  unresolved_count?: number
+  settled_count?: number
+  edge_count?: number
+  node_count?: number
+  latest_trade_date?: string | null
+  latest_trade_tick?: number | null
+  config?: Record<string, unknown>
+}
+
+export function fetchSignalGraphSummary(): Promise<SignalGraphSummary> {
+  return authFetch('/api/advisor/signal-graph/summary')
+}
+
+export function fetchGraphSignal(
+  symbol: string,
+  tradeDate?: string,
+): Promise<GraphSignalItem> {
+  const q = new URLSearchParams({ symbol })
+  if (tradeDate) q.set('trade_date', tradeDate)
+  return authFetch(`/api/advisor/signal-graph/signal?${q}`)
+}
+
+export function postGraphSignals(body: {
+  symbols: string[]
+  trade_date?: string
+  persist?: boolean
+}): Promise<{
+  trade_date: string
+  count: number
+  items: GraphSignalItem[]
+  errors: { symbol: string; error?: string }[]
+  summary?: SignalGraphSummary
+}> {
+  return authFetch('/api/advisor/signal-graph/signals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+export function postSignalGraphSettle(body?: {
+  trade_date?: string
+  limit?: number
+}): Promise<{
+  trade_date: string
+  current_tick: number
+  settled: Record<string, unknown>[]
+  unresolved: Record<string, unknown>[]
+  skipped: Record<string, unknown>[]
+  summary?: SignalGraphSummary
+}> {
+  return authFetch('/api/advisor/signal-graph/settle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  })
+}
+
+export function fetchSignalGraphPending(limit = 50): Promise<{
+  count: number
+  items: Record<string, unknown>[]
+  summary?: SignalGraphSummary
+}> {
+  const q = new URLSearchParams({ limit: String(limit) })
+  return authFetch(`/api/advisor/signal-graph/pending?${q}`)
+}
+
+export function fetchSignalGraphSettled(limit = 50): Promise<{
+  count: number
+  items: Record<string, unknown>[]
+  summary?: SignalGraphSummary
+}> {
+  const q = new URLSearchParams({ limit: String(limit) })
+  return authFetch(`/api/advisor/signal-graph/settled?${q}`)
+}
+
+export function postSignalGraphSynthetic(body?: {
+  seed?: number
+  days?: number
+}): Promise<Record<string, unknown>> {
+  return authFetch('/api/advisor/signal-graph/synthetic', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || { seed: 7, days: 60 }),
+  })
+}

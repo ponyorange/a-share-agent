@@ -211,6 +211,19 @@ agent_web:
     allowed_ports: [80, 443]
     max_calls_per_turn: 8
 
+# ---------- 图学习信号（A 股日频 SignalGraph）----------
+signal_graph:
+  enabled: true
+  # 并行挂到今日关注 / 诊断响应（不改多因子判决）
+  attach_to_recommendations: true
+  attach_to_advice: true
+  # 打板晋级可选 evidence
+  promote_evidence: true
+  horizon_days: 5
+  owner: default
+  # >0 时预留与多因子加权；当前默认 0 = 仅并列展示
+  weight: 0.0
+
 regime:
   use_for_market_score: true
   position_cap:

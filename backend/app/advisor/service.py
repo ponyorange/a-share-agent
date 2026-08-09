@@ -25,6 +25,27 @@ from .market_context import (
 )
 from .regime import get_regime_for_gate
 from .regime.gate import apply_regime_gate
+from .signal_graph.service import attach_graph_fields, signal_graph_config
+
+
+def _maybe_attach_graph(
+    row: dict[str, Any],
+    *,
+    for_recommendations: bool = False,
+    for_advice: bool = False,
+) -> dict[str, Any]:
+    cfg = signal_graph_config()
+    if not cfg.get("enabled"):
+        return row
+    if for_recommendations and not cfg.get("attach_to_recommendations"):
+        return row
+    if for_advice and not cfg.get("attach_to_advice"):
+        return row
+    try:
+        return attach_graph_fields(row, persist=True)
+    except Exception as exc:
+        row["graph_signal"] = {"error": str(exc)}
+        return row
 
 
 def _analyze_symbol(
@@ -114,7 +135,7 @@ def get_advice(symbol: str, as_of: str | None = None) -> dict[str, Any]:
         result["hit_rate"] = hit_rate_for_symbol(result["symbol"], bench)
     except Exception:
         result["hit_rate"] = None
-    return result
+    return _maybe_attach_graph(result, for_advice=True)
 
 
 def _enrich_pnl(row: dict[str, Any]) -> dict[str, Any]:
@@ -191,6 +212,7 @@ def get_portfolio_advice(
             row["position"] = pos
             row["has_position"] = True
             _enrich_pnl(row)
+            _maybe_attach_graph(row, for_advice=True)
         return row
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -393,6 +415,7 @@ def get_recommendations(
             picks = ranked[:top]
         for p in picks:
             p["hit_rate"] = hit_map.get(p["symbol"])
+            _maybe_attach_graph(p, for_recommendations=True)
 
         boards_out[bid] = {
             "id": bid,

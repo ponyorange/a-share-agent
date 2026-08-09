@@ -87,6 +87,7 @@ def save_snapshot(
                     "rationale": it.get("rationale"),
                     "layer_scores": it.get("layer_scores"),
                     "industry": it.get("industry"),
+                    "graph_signal": it.get("graph_signal"),
                 }
             )
         slim_boards[bid] = {

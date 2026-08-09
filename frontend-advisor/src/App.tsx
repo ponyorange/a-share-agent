@@ -27,6 +27,7 @@ import PerformancePage from './pages/PerformancePage'
 import PortfolioPage from './pages/PortfolioPage'
 import RecommendationsPage from './pages/RecommendationsPage'
 import RegimePage from './pages/RegimePage'
+import SignalGraphPage from './pages/SignalGraphPage'
 import WatchlistPage from './pages/WatchlistPage'
 import MonitorJobsPage from './pages/MonitorJobsPage'
 import LimitUpPromotePage from './pages/LimitUpPromotePage'
@@ -190,6 +191,7 @@ export default function App() {
             <Route path="/paper" element={<PaperPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
             <Route path="/regime" element={<RegimePage />} />
+            <Route path="/signal-graph" element={<SignalGraphPage />} />
             <Route path="/limitup" element={<LimitUpPage />} />
             <Route path="/performance" element={<PerformancePage />} />
             <Route path="/strategy" element={<StrategyPage />} />

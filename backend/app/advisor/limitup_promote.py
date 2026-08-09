@@ -284,6 +284,47 @@ def _reasoning_delta(chunk: Any) -> str:
     return ""
 
 
+def _attach_graph_evidence(
+    picks: list[dict[str, Any]],
+    *,
+    trade_date: str | None,
+) -> list[dict[str, Any]]:
+    """Best-effort attach short-horizon SignalGraph evidence; never raises."""
+    try:
+        from .signal_graph.service import generate_signal, signal_graph_config
+
+        cfg = signal_graph_config()
+        if not cfg.get("enabled") or not cfg.get("promote_evidence"):
+            return picks
+    except Exception:
+        return picks
+
+    out: list[dict[str, Any]] = []
+    for pick in picks:
+        row = dict(pick)
+        symbol = str(row.get("symbol") or "").strip()
+        if not symbol:
+            out.append(row)
+            continue
+        try:
+            signal = generate_signal(symbol, trade_date=trade_date, persist=True)
+            row["graph_signal"] = {
+                "action": signal.get("action"),
+                "scores": signal.get("scores"),
+                "margin": signal.get("margin"),
+                "prediction_id": signal.get("prediction_id"),
+                "blocked_reason": signal.get("blocked_reason"),
+                "market_regime": signal.get("market_regime"),
+                "patterns": signal.get("patterns"),
+                "evidence": (signal.get("evidence") or [])[:6],
+            }
+        except Exception as exc:
+            logger.warning("promote graph evidence skipped for %s: %s", symbol, exc)
+            row["graph_signal"] = {"error": str(exc)}
+        out.append(row)
+    return out
+
+
 def iter_promote_events(
     user_id: str,
     *,
@@ -389,6 +430,7 @@ def iter_promote_events(
     }
     parsed = _parse_promote_json(text)
     picks = filter_picks_against_context(list(parsed.get("picks") or []), candidates)
+    picks = _attach_graph_evidence(picks, trade_date=trade_date)
     summary = str(parsed.get("summary") or "").strip()[:200]
     if not summary:
         summary = f"从 {len(candidates)} 只封板摘要中选出 {len(picks)} 只晋级关注候选。"

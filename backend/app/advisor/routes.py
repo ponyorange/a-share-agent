@@ -81,7 +81,10 @@ from .agent_recs import (
     list_agent_snapshot_dates,
 )
 
+from .signal_graph.routes import router as signal_graph_router
+
 router = APIRouter(prefix="/api/advisor", tags=["advisor"])
+router.include_router(signal_graph_router)
 
 
 def _sse(event: str, data: Any) -> str:

@@ -17,6 +17,7 @@ export const BASE_NAV_LINKS: TopbarNavLink[] = [
   { to: '/paper', label: '模拟盘' },
   { to: '/leaderboard', label: '龙虎榜' },
   { to: '/regime', label: '今日闸门' },
+  { to: '/signal-graph', label: '图学习' },
   { to: '/limitup', label: '打板' },
   { to: '/performance', label: '策略表现' },
   { to: '/strategy', label: '我的策略' },

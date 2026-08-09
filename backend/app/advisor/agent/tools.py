@@ -622,6 +622,182 @@ def build_tools(
         )
 
     @tool
+    def get_graph_signal(symbol: str, trade_date: str = "") -> str:
+        """查询 A 股日频图学习信号（BUY/HOLD/SELL、分层证据、prediction_id）。
+        分数由图内核计算，不要改写 action/scores；可结合规则诊断一并解读。
+        symbol 为 6 位代码；trade_date 可选 YYYY-MM-DD。
+        """
+        _bind()
+        from ..signal_graph.service import get_signal_view
+
+        try:
+            payload = get_signal_view(
+                symbol.strip(),
+                trade_date=(trade_date or "").strip()[:10] or None,
+            )
+        except Exception as exc:
+            return json.dumps(
+                {"symbol": symbol, "error": f"{type(exc).__name__}: {exc}"},
+                ensure_ascii=False,
+            )
+        evidence = payload.get("evidence") or []
+        return json.dumps(
+            {
+                "symbol": payload.get("symbol"),
+                "name": payload.get("name"),
+                "trade_date": payload.get("trade_date"),
+                "action": payload.get("action"),
+                "raw_action": payload.get("raw_action"),
+                "scores": payload.get("scores"),
+                "margin": payload.get("margin"),
+                "prediction_id": payload.get("prediction_id"),
+                "blocked_reason": payload.get("blocked_reason"),
+                "market_regime": payload.get("market_regime"),
+                "patterns": payload.get("patterns"),
+                "horizon_days": payload.get("horizon_days"),
+                "evidence": evidence[:8],
+                "note": "action/scores 来自 SignalGraph，请原样引用",
+            },
+            ensure_ascii=False,
+            default=str,
+        )
+
+    @tool
+    def run_graph_signals(
+        symbols: str,
+        trade_date: str = "",
+        persist: bool = True,
+    ) -> str:
+        """批量跑图学习信号并写入图（默认 persist=true）。
+        symbols 用逗号/空格/换行分隔，最多 30 只；trade_date 可选 YYYY-MM-DD。
+        返回每只 action/scores/prediction_id；不要改写图分。
+        """
+        _bind()
+        from ..signal_graph.service import generate_signals_batch
+
+        parts = [
+            p.strip()
+            for p in symbols.replace("，", ",").replace("\n", ",").replace(" ", ",").split(",")
+            if p.strip()
+        ]
+        # dedupe preserve order
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for p in parts:
+            if p not in seen:
+                seen.add(p)
+                ordered.append(p)
+        if not ordered:
+            return json.dumps(
+                {"ok": False, "error": "symbols 不能为空"},
+                ensure_ascii=False,
+            )
+        if len(ordered) > 30:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": f"一次最多 30 只，当前 {len(ordered)}；请拆批调用",
+                    "count": len(ordered),
+                },
+                ensure_ascii=False,
+            )
+        try:
+            result = generate_signals_batch(
+                ordered,
+                trade_date=(trade_date or "").strip()[:10] or None,
+                persist=bool(persist),
+            )
+        except Exception as exc:
+            return json.dumps(
+                {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                ensure_ascii=False,
+            )
+        items = []
+        for row in result.get("items") or []:
+            items.append(
+                {
+                    "symbol": row.get("symbol"),
+                    "name": row.get("name"),
+                    "action": row.get("action"),
+                    "raw_action": row.get("raw_action"),
+                    "scores": row.get("scores"),
+                    "margin": row.get("margin"),
+                    "prediction_id": row.get("prediction_id"),
+                    "blocked_reason": row.get("blocked_reason"),
+                    "market_regime": row.get("market_regime"),
+                    "patterns": row.get("patterns"),
+                }
+            )
+        return json.dumps(
+            {
+                "ok": True,
+                "trade_date": result.get("trade_date"),
+                "count": result.get("count"),
+                "items": items,
+                "errors": result.get("errors") or [],
+                "summary": result.get("summary"),
+                "note": "action/scores 来自 SignalGraph，请原样引用",
+            },
+            ensure_ascii=False,
+            default=str,
+        )
+
+    @tool
+    def settle_graph(trade_date: str = "", limit: int = 200) -> str:
+        """结算图学习中已到期的预测（用到期日股价相对基准超额收益更新边）。
+        trade_date 可选 YYYY-MM-DD（默认最近交易日）；limit 默认 200。
+        """
+        _bind()
+        from ..signal_graph.service import settle_due
+
+        lim = max(1, min(int(limit or 200), 500))
+        try:
+            result = settle_due(
+                trade_date=(trade_date or "").strip()[:10] or None,
+                limit=lim,
+            )
+        except Exception as exc:
+            return json.dumps(
+                {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                ensure_ascii=False,
+            )
+        settled = result.get("settled") or []
+        unresolved = result.get("unresolved") or []
+        return json.dumps(
+            {
+                "ok": True,
+                "trade_date": result.get("trade_date"),
+                "current_tick": result.get("current_tick"),
+                "settled_count": len(settled),
+                "unresolved_count": len(unresolved),
+                "settled": settled[:40],
+                "unresolved": unresolved[:20],
+                "skipped": (result.get("skipped") or [])[:10],
+                "summary": result.get("summary"),
+            },
+            ensure_ascii=False,
+            default=str,
+        )
+
+    @tool
+    def get_graph_summary() -> str:
+        """查看图学习内核状态：边/节点数、待结算与已结算数量、最近交易日与配置开关。"""
+        _bind()
+        from ..signal_graph.service import get_summary
+
+        try:
+            return json.dumps(
+                {"ok": True, **get_summary()},
+                ensure_ascii=False,
+                default=str,
+            )
+        except Exception as exc:
+            return json.dumps(
+                {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                ensure_ascii=False,
+            )
+
+    @tool
     def get_symbol_advice(symbol: str) -> str:
         """对单个股票/ETF 做规则诊断摘要。symbol 为 6 位代码。
         day_chg_pct 为小数比例（0.19=涨19%）；对用户展示涨跌幅时必须用 day_chg 字段，勿把 0.19 写成 0.19%。
@@ -1800,6 +1976,10 @@ def build_tools(
         paper_reset_account,
         paper_delete_position,
         get_symbol_advice,
+        get_graph_signal,
+        run_graph_signals,
+        settle_graph,
+        get_graph_summary,
         get_user_strategy_config,
         propose_strategy_patch,
         apply_strategy_patch,
