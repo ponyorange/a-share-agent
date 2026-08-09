@@ -35,6 +35,7 @@ from .portfolio import PortfolioPayload, load_portfolio, save_portfolio
 from .home_market import list_hot_sectors
 from .home_news import get_or_build_home_news
 from .home_news_brief import get_home_news_brief, start_home_news_brief_refresh
+from .limitup_promote import generate_promote_picks, iter_promote_events
 from .regime import get_regime_for_gate
 from .regime.gate import apply_regime_gate
 from .service import get_advice, get_portfolio_advice, get_recommendations
@@ -62,6 +63,7 @@ from .llm_settings import (
     clear_llm_settings,
     clear_tavily_settings,
     public_llm_settings,
+    resolve_llm_credentials,
     update_llm_settings,
 )
 from .ui_settings import get_ui_settings, save_ui_settings
@@ -169,6 +171,78 @@ def home_news_brief_refresh(user: dict[str, Any] = Depends(_user)) -> dict[str, 
         return start_home_news_brief_refresh(str(user["id"]))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/limitup/promote")
+def limitup_promote_get(
+    force: bool = Query(False),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    """打板晋级：LLM 从当日封板池中挑选次日更可能继续涨停的候选。"""
+    uid = _bind(user)
+    try:
+        return generate_promote_picks(uid, force=force)
+    except ValueError as exc:
+        detail = str(exc)
+        if "DeepSeek" in detail or "API Key" in detail:
+            raise HTTPException(status_code=403, detail="请先配置 DeepSeek API Key") from exc
+        raise HTTPException(status_code=400, detail=detail) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"晋级研判失败: {type(exc).__name__}: {exc}",
+        ) from exc
+
+
+@router.post("/limitup/promote")
+def limitup_promote_post(
+    force: bool = Query(True),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    """强制刷新打板晋级研判（默认 force=true）。"""
+    return limitup_promote_get(force=force, user=user)
+
+
+@router.get("/limitup/promote/stream")
+def limitup_promote_stream(
+    force: bool = Query(False),
+    user: dict[str, Any] = Depends(_user),
+):
+    """SSE：progress* → thinking* → token* → done。未配置 DeepSeek 时 403。"""
+    uid = _bind(user)
+    try:
+        resolve_llm_credentials(uid)
+    except ValueError as exc:
+        detail = str(exc)
+        if "DeepSeek" in detail or "API Key" in detail:
+            raise HTTPException(status_code=403, detail="请先配置 DeepSeek API Key") from exc
+        raise HTTPException(status_code=400, detail=detail) from exc
+
+    def gen():
+        try:
+            for ev in iter_promote_events(uid, force=force):
+                yield _sse(ev["event"], ev.get("data") or {})
+        except ValueError as exc:
+            detail = str(exc)
+            if "DeepSeek" in detail or "API Key" in detail:
+                yield _sse("error", {"detail": "请先配置 DeepSeek API Key"})
+            else:
+                yield _sse("error", {"detail": detail})
+        except Exception as exc:
+            yield _sse(
+                "error",
+                {"detail": f"晋级研判失败: {type(exc).__name__}: {exc}"},
+            )
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 class StrategyUpdateBody(BaseModel):

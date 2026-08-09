@@ -713,6 +713,29 @@ export function fetchMonitorJobs(): Promise<MonitorJobsResponse> {
   return authFetch('/api/advisor/monitor/jobs')
 }
 
+export type LimitUpPromotePick = {
+  symbol: string
+  name: string
+  board_count: number
+  score: number
+  reason: string
+}
+
+export type LimitUpPromoteResponse = {
+  date: string
+  as_of?: string | null
+  session?: Record<string, unknown>
+  summary: string
+  picks: LimitUpPromotePick[]
+  candidate_count: number
+  from_cache?: boolean
+}
+
+export function fetchLimitUpPromote(force = false): Promise<LimitUpPromoteResponse> {
+  const q = force ? '?force=true' : ''
+  return authFetch(`/api/advisor/limitup/promote${q}`)
+}
+
 export function fetchMonitorJobLogs(
   jobId: string,
   opts?: { after_ts?: string; limit?: number },
@@ -1774,6 +1797,173 @@ export function fetchLimitUp(
   if (force) q.set('force', 'true')
   const suffix = q.toString() ? `?${q}` : ''
   return authFetch(`/api/${encodeURIComponent(source)}/limit-up${suffix}`)
+}
+
+/** SSE：打板拉取。meta → progress* → done。 */
+export async function streamLimitUp(
+  force: boolean,
+  handlers: {
+    onMeta?: (meta: {
+      force?: boolean
+      cached?: boolean
+      date?: string
+    }) => void
+    onProgress?: (row: {
+      phase?: string
+      message?: string
+      done?: number
+      total?: number
+    }) => void
+    onDone?: (data: LimitUpResponse) => void
+    onError?: (detail: string) => void
+  },
+  signal?: AbortSignal,
+  source = 'akshare',
+): Promise<void> {
+  const q = new URLSearchParams({ force: force ? 'true' : 'false' })
+  const token = getToken()
+  const res = await fetch(
+    `/api/${encodeURIComponent(source)}/limit-up/stream?${q}`,
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal,
+    },
+  )
+  if (res.status === 401) {
+    handlers.onError?.('请先登录')
+    return
+  }
+  if (!res.ok || !res.body) {
+    let detail = `HTTP ${res.status}`
+    try {
+      const body = (await res.json()) as { detail?: string }
+      if (body.detail) detail = String(body.detail)
+    } catch {
+      /* ignore */
+    }
+    handlers.onError?.(detail)
+    return
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const parts = buf.split('\n\n')
+    buf = parts.pop() || ''
+    for (const chunk of parts) {
+      let eventName = 'message'
+      let dataLine = ''
+      for (const line of chunk.split('\n')) {
+        if (line.startsWith('event:')) eventName = line.slice(6).trim()
+        else if (line.startsWith('data:')) dataLine += line.slice(5).trim()
+      }
+      if (!dataLine) continue
+      let data: Record<string, unknown>
+      try {
+        data = JSON.parse(dataLine) as Record<string, unknown>
+      } catch {
+        continue
+      }
+      if (eventName === 'meta') {
+        handlers.onMeta?.(
+          data as { force?: boolean; cached?: boolean; date?: string },
+        )
+      } else if (eventName === 'progress') {
+        handlers.onProgress?.(
+          data as {
+            phase?: string
+            message?: string
+            done?: number
+            total?: number
+          },
+        )
+      } else if (eventName === 'done') {
+        handlers.onDone?.(data as LimitUpResponse)
+      } else if (eventName === 'error') {
+        handlers.onError?.(String(data.detail || '打板数据获取失败'))
+      }
+    }
+  }
+}
+
+/** SSE：打板晋级。progress* → thinking* → token* → done。 */
+export async function streamLimitUpPromote(
+  force: boolean,
+  handlers: {
+    onProgress?: (row: { phase?: string; message?: string }) => void
+    onThinking?: (delta: string) => void
+    onToken?: (delta: string) => void
+    onDone?: (data: LimitUpPromoteResponse) => void
+    onError?: (detail: string) => void
+  },
+  signal?: AbortSignal,
+): Promise<void> {
+  const q = new URLSearchParams({ force: force ? 'true' : 'false' })
+  const token = getToken()
+  const res = await fetch(`/api/advisor/limitup/promote/stream?${q}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    signal,
+  })
+  if (res.status === 401) {
+    handlers.onError?.('请先登录')
+    return
+  }
+  if (!res.ok || !res.body) {
+    let detail = `HTTP ${res.status}`
+    try {
+      const body = (await res.json()) as { detail?: string }
+      if (body.detail) detail = String(body.detail)
+    } catch {
+      /* ignore */
+    }
+    handlers.onError?.(detail)
+    return
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const parts = buf.split('\n\n')
+    buf = parts.pop() || ''
+    for (const chunk of parts) {
+      let eventName = 'message'
+      let dataLine = ''
+      for (const line of chunk.split('\n')) {
+        if (line.startsWith('event:')) eventName = line.slice(6).trim()
+        else if (line.startsWith('data:')) dataLine += line.slice(5).trim()
+      }
+      if (!dataLine) continue
+      let data: Record<string, unknown>
+      try {
+        data = JSON.parse(dataLine) as Record<string, unknown>
+      } catch {
+        continue
+      }
+      if (eventName === 'progress') {
+        handlers.onProgress?.(
+          data as { phase?: string; message?: string },
+        )
+      } else if (eventName === 'thinking') {
+        handlers.onThinking?.(String(data.delta || ''))
+      } else if (eventName === 'token') {
+        handlers.onToken?.(String(data.delta || ''))
+      } else if (eventName === 'done') {
+        handlers.onDone?.(data as LimitUpPromoteResponse)
+      } else if (eventName === 'error') {
+        handlers.onError?.(String(data.detail || '晋级研判失败'))
+      }
+    }
+  }
 }
 
 /** day_chg_pct 为小数比例（0.10 = 10%）。 */

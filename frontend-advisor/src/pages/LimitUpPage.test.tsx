@@ -11,9 +11,20 @@ vi.mock('../api', async () => {
   return {
     ...actual,
     fetchLimitUp: vi.fn(),
+    streamLimitUp: vi.fn(),
     fetchRegimeSentiment: vi.fn(),
   }
 })
+
+function mockStreamDone(payload: api.LimitUpResponse = sample) {
+  vi.mocked(api.streamLimitUp).mockImplementation(async (_force, handlers) => {
+    handlers.onProgress?.({
+      phase: 'pool',
+      message: '正在拉取涨停池 / 炸板池…',
+    })
+    handlers.onDone?.(payload)
+  })
+}
 
 const sample: api.LimitUpResponse = {
   source: 'akshare',
@@ -88,16 +99,18 @@ function setViewport(pc: boolean) {
 describe('LimitUpPage', () => {
   beforeEach(() => {
     vi.mocked(api.fetchLimitUp).mockReset()
+    vi.mocked(api.streamLimitUp).mockReset()
     vi.mocked(api.fetchRegimeSentiment).mockReset()
     vi.mocked(api.fetchRegimeSentiment).mockResolvedValue({
       sentiment_cycle: 'repair',
       metrics: { sentiment_score: 0.42 },
     })
+    mockStreamDone()
     setViewport(false)
   })
 
   it('窄屏：交易时段展示当天涨停与连板，顺序为当天在前', async () => {
-    vi.mocked(api.fetchLimitUp).mockResolvedValue(sample)
+    mockStreamDone(sample)
     render(
       <MemoryRouter>
         <LimitUpPage />
@@ -118,7 +131,6 @@ describe('LimitUpPage', () => {
   })
 
   it('展示市场情绪周期与分数，并链接到今日闸门页', async () => {
-    vi.mocked(api.fetchLimitUp).mockResolvedValue(sample)
     vi.mocked(api.fetchRegimeSentiment).mockResolvedValue({
       sentiment_cycle: 'strengthen',
       metrics: { sentiment_score: 0.876 },
@@ -142,7 +154,6 @@ describe('LimitUpPage', () => {
   })
 
   it('情绪未返回时不阻塞涨停表格渲染', async () => {
-    vi.mocked(api.fetchLimitUp).mockResolvedValue(sample)
     vi.mocked(api.fetchRegimeSentiment).mockImplementation(
       () => new Promise(() => {}),
     )
@@ -161,8 +172,36 @@ describe('LimitUpPage', () => {
     expect(screen.queryByText('增强')).not.toBeInTheDocument()
   })
 
+  it('加载时展示阶段进度文案', async () => {
+    let finish: (() => void) | null = null
+    vi.mocked(api.streamLimitUp).mockImplementation(async (_force, handlers) => {
+      handlers.onProgress?.({
+        phase: 'fund_flow',
+        message: '正在补充主力资金流…',
+        done: 3,
+        total: 10,
+      })
+      await new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      handlers.onDone?.(sample)
+    })
+    render(
+      <MemoryRouter>
+        <LimitUpPage />
+      </MemoryRouter>,
+    )
+    expect(
+      await screen.findByTestId('limitup-progress'),
+    ).toHaveTextContent('正在补充主力资金流…（3/10）')
+    finish?.()
+    await waitFor(() => {
+      expect(screen.getByText('浦发银行')).toBeInTheDocument()
+    })
+  })
+
   it('非交易时段隐藏当天涨停明细', async () => {
-    vi.mocked(api.fetchLimitUp).mockResolvedValue({
+    mockStreamDone({
       ...sample,
       session: { is_trading: false, is_trading_day: true },
     })
@@ -179,15 +218,21 @@ describe('LimitUpPage', () => {
   })
 
   it('点击刷新会强制重拉并显示刷新中', async () => {
-    let resolveRefresh: ((v: api.LimitUpResponse) => void) | null = null
-    vi.mocked(api.fetchLimitUp)
-      .mockResolvedValueOnce(sample)
-      .mockImplementationOnce(
-        () =>
-          new Promise<api.LimitUpResponse>((resolve) => {
-            resolveRefresh = resolve
-          }),
-      )
+    let resolveRefresh: (() => void) | null = null
+    vi.mocked(api.streamLimitUp)
+      .mockImplementationOnce(async (_force, handlers) => {
+        handlers.onDone?.(sample)
+      })
+      .mockImplementationOnce(async (force, handlers) => {
+        expect(force).toBe(true)
+        await new Promise<void>((resolve) => {
+          resolveRefresh = resolve
+        })
+        handlers.onDone?.({
+          ...sample,
+          as_of: '2026-07-31T10:00:05+08:00',
+        })
+      })
 
     render(
       <MemoryRouter>
@@ -197,19 +242,20 @@ describe('LimitUpPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '刷新' })).toBeEnabled()
     })
-    expect(api.fetchLimitUp).toHaveBeenCalledWith('akshare', false)
+    expect(api.streamLimitUp).toHaveBeenCalled()
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: '刷新' }))
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '刷新中…' })).toBeDisabled()
     })
-    expect(api.fetchLimitUp).toHaveBeenLastCalledWith('akshare', true)
+    expect(api.streamLimitUp).toHaveBeenLastCalledWith(
+      true,
+      expect.any(Object),
+      expect.any(AbortSignal),
+    )
 
-    resolveRefresh?.({
-      ...sample,
-      as_of: '2026-07-31T10:00:05+08:00',
-    })
+    resolveRefresh?.()
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '刷新' })).toBeEnabled()
     })
@@ -217,7 +263,7 @@ describe('LimitUpPage', () => {
 
   it('PC：连板在前；≥2 展开、1 连板与当天涨停默认折叠', async () => {
     setViewport(true)
-    vi.mocked(api.fetchLimitUp).mockResolvedValue(sample)
+    mockStreamDone(sample)
     render(
       <MemoryRouter>
         <LimitUpPage />

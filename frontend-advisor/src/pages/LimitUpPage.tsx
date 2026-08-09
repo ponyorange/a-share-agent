@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   fetchLimitUp,
@@ -7,6 +7,7 @@ import {
   formatLimitUpMoney,
   shouldShowTodayTable,
   statusLabel,
+  streamLimitUp,
   type LimitUpLadderTier,
   type LimitUpResponse,
   type LimitUpTodayItem,
@@ -156,25 +157,72 @@ export default function LimitUpPage() {
   const [data, setData] = useState<LimitUpResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
   const [tierOpen, setTierOpen] = useState<Record<number, boolean>>({})
   const [todayExpanded, setTodayExpanded] = useState(false)
   const [sentiment, setSentiment] = useState<RegimeSentiment | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const reqIdRef = useRef(0)
 
   const load = useCallback(async (force = false) => {
+    const reqId = ++reqIdRef.current
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
     setLoading(true)
+    setError(null)
+    setStatus(force ? '正在强制刷新涨停数据…' : '正在拉取涨停数据…')
     try {
-      const res = await fetchLimitUp('akshare', force)
-      setData(res)
-      setError(null)
+      await streamLimitUp(
+        force,
+        {
+          onMeta: (meta) => {
+            if (reqId !== reqIdRef.current) return
+            if (meta.cached) setStatus('命中短缓存…')
+          },
+          onProgress: (row) => {
+            if (reqId !== reqIdRef.current) return
+            const base = row.message || '加载中…'
+            if (
+              row.phase === 'fund_flow' &&
+              row.total != null &&
+              row.total > 0 &&
+              row.done != null
+            ) {
+              setStatus(`${base}（${row.done}/${row.total}）`)
+            } else {
+              setStatus(base)
+            }
+          },
+          onDone: (payload) => {
+            if (reqId !== reqIdRef.current) return
+            setData(payload)
+            setError(null)
+            setStatus(null)
+          },
+          onError: (detail) => {
+            if (reqId !== reqIdRef.current) return
+            setError(detail)
+            setStatus(null)
+          },
+        },
+        ac.signal,
+      )
     } catch (err) {
+      if (reqId !== reqIdRef.current) return
+      if ((err as { name?: string })?.name === 'AbortError') return
       setError(err instanceof Error ? err.message : String(err))
+      setStatus(null)
     } finally {
-      setLoading(false)
+      if (reqId === reqIdRef.current) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
     void load(false)
+    return () => {
+      abortRef.current?.abort()
+    }
   }, [load])
 
   useEffect(() => {
@@ -197,7 +245,14 @@ export default function LimitUpPage() {
 
     const tick = () => {
       if (document.visibilityState === 'hidden') return
-      void load(false)
+      void fetchLimitUp('akshare', false)
+        .then((res) => {
+          setData(res)
+          setError(null)
+        })
+        .catch(() => {
+          /* keep last good snapshot during quiet poll */
+        })
     }
     const id = window.setInterval(tick, POLL_MS)
     const onVis = () => {
@@ -208,7 +263,7 @@ export default function LimitUpPage() {
       window.clearInterval(id)
       document.removeEventListener('visibilitychange', onVis)
     }
-  }, [data?.session, load])
+  }, [data?.session])
 
   const isTrading = shouldShowTodayTable(data?.session)
   const today = data?.today ?? []
@@ -362,7 +417,14 @@ export default function LimitUpPage() {
           </Link>
         </div>
         {error ? <p className="status error">{error}</p> : null}
-        {loading && !data ? <p className="status">正在拉取涨停数据…</p> : null}
+        {status ? (
+          <p className="status" role="status" data-testid="limitup-progress">
+            {status}
+          </p>
+        ) : null}
+        {loading && !data && !status ? (
+          <p className="status">正在拉取涨停数据…</p>
+        ) : null}
 
         {data ? (
           isPc ? (

@@ -185,7 +185,7 @@ def test_get_limit_up_force_bypasses_cache(monkeypatch):
     monkeypatch.setattr(
         lim,
         "enrich_fund_flow",
-        lambda symbols, force=False: {},
+        lambda symbols, force=False, on_progress=None: {},
     )
 
     def fake_session():
@@ -212,3 +212,59 @@ def test_get_limit_up_force_bypasses_cache(monkeypatch):
     forced = lim.get_limit_up(force=True)
     assert calls["n"] == 1
     assert forced["today"][0]["symbol"] == "000002"
+
+
+def test_iter_limit_up_events_progress_and_cache(monkeypatch):
+    lim._cache["ts"] = 0.0
+    lim._cache["payload"] = None
+    fetch_calls = {"n": 0}
+
+    monkeypatch.setattr(
+        lim,
+        "_fetch_pools",
+        lambda date_yyyymmdd: (
+            fetch_calls.__setitem__("n", fetch_calls["n"] + 1)
+            or (
+                [{"代码": "000001", "名称": "平安银行", "涨跌幅": 10, "连板数": 1}],
+                [],
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        lim,
+        "enrich_fund_flow",
+        lambda symbols, force=False, on_progress=None: (
+            on_progress(len(symbols), len(symbols)) if on_progress and symbols else None
+        )
+        or {},
+    )
+    monkeypatch.setattr(
+        "app.quote.trading_session",
+        lambda: {"is_trading": False, "is_trading_day": True},
+    )
+    monkeypatch.setattr(lim, "_pool_date_yyyymmdd", lambda: "20260803")
+
+    events = list(lim.iter_limit_up_events(force=True))
+    phases = [
+        e["data"].get("phase")
+        for e in events
+        if e["event"] == "progress"
+    ]
+    assert phases[:3] == ["pool", "fund_flow", "fund_flow"] or phases[:2] == [
+        "pool",
+        "fund_flow",
+    ]
+    assert "build" in phases
+    assert events[-1]["event"] == "done"
+    assert events[-1]["data"]["today"][0]["symbol"] == "000001"
+    assert fetch_calls["n"] == 1
+
+    fetch_calls["n"] = 0
+    cached_events = list(lim.iter_limit_up_events(force=False))
+    assert fetch_calls["n"] == 0
+    assert cached_events[0]["data"].get("cached") is True
+    assert any(
+        e["event"] == "progress" and e["data"].get("phase") == "cache"
+        for e in cached_events
+    )
+    assert cached_events[-1]["event"] == "done"

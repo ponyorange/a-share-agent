@@ -43,7 +43,7 @@ it('横向展示模块，并可用全部菜单切换', async () => {
   ).toHaveAttribute('href', '/portfolio')
 })
 
-it('Agent 导航包含定时任务入口', () => {
+it('Agent 导航包含定时任务与打板晋级入口', () => {
   render(
     <MemoryRouter initialEntries={['/agent/jobs']}>
       <TopbarNav links={AGENT_NAV_LINKS} ariaLabel="Agent 导航" />
@@ -52,5 +52,9 @@ it('Agent 导航包含定时任务入口', () => {
   expect(screen.getByRole('link', { name: '定时任务' })).toHaveAttribute(
     'href',
     '/agent/jobs',
+  )
+  expect(screen.getByRole('link', { name: '打板晋级' })).toHaveAttribute(
+    'href',
+    '/agent/limitup-promote',
   )
 })

@@ -14,9 +14,11 @@ from .proxy_fix import apply_network_fixes
 load_env()
 apply_network_fixes()
 
+import json
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -205,6 +207,10 @@ def market(source: str) -> dict[str, Any]:
         ) from exc
 
 
+def _limit_up_sse(event: str, data: Any) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+
+
 @app.get("/api/{source}/limit-up")
 def limit_up(
     source: str,
@@ -227,6 +233,42 @@ def limit_up(
         raise HTTPException(
             status_code=502, detail=f"打板数据获取失败: {type(exc).__name__}"
         ) from exc
+
+
+@app.get("/api/{source}/limit-up/stream")
+def limit_up_stream(
+    source: str,
+    force: bool = Query(default=False, description="跳过短缓存强制重拉"),
+):
+    """SSE：meta → progress* → done。首屏/手动刷新用；轮询仍走 GET /limit-up。"""
+    provider = _provider_or_404(source)
+    if "limitup" not in provider.features:
+        raise HTTPException(
+            status_code=404,
+            detail=f"数据源 {source} 暂不支持打板（features={list(provider.features)}）",
+        )
+    del provider
+    from . import limitup as limitup_service
+
+    def gen():
+        try:
+            for ev in limitup_service.iter_limit_up_events(force=force):
+                yield _limit_up_sse(ev["event"], ev.get("data") or {})
+        except Exception as exc:
+            yield _limit_up_sse(
+                "error",
+                {"detail": f"{type(exc).__name__}: {exc}"},
+            )
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/{source}/fund/search")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any
@@ -84,6 +85,44 @@ def _as_limit_price(row: dict[str, Any]) -> float | None:
     return None
 
 
+def _as_money(row: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        if key in row and row.get(key) not in (None, "", "-"):
+            try:
+                return float(row[key])
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _as_int_field(row: dict[str, Any], *keys: str) -> int | None:
+    for key in keys:
+        if key in row and row.get(key) not in (None, "", "-"):
+            try:
+                return int(float(row[key]))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _as_seal_time(row: dict[str, Any], *keys: str) -> str | None:
+    """Normalize Eastmoney HHMMSS / HH:MM:SS → HH:MM:SS."""
+    for key in keys:
+        raw = row.get(key)
+        if raw in (None, "", "-"):
+            continue
+        text = str(raw).strip()
+        digits = "".join(ch for ch in text if ch.isdigit())
+        if len(digits) >= 6:
+            hh, mm, ss = digits[:2], digits[2:4], digits[4:6]
+            return f"{hh}:{mm}:{ss}"
+        if len(digits) == 4:
+            return f"{digits[:2]}:{digits[2:4]}:00"
+        if ":" in text:
+            return text[:8]
+    return None
+
+
 def normalize_pool_row(row: dict[str, Any], *, status: str) -> dict[str, Any] | None:
     symbol = _as_symbol(
         row.get("代码") or row.get("股票代码") or row.get("证券代码")
@@ -91,6 +130,7 @@ def normalize_pool_row(row: dict[str, Any], *, status: str) -> dict[str, Any] | 
     if not symbol:
         return None
     name = str(row.get("名称") or row.get("股票简称") or symbol).strip()
+    industry = str(row.get("所属行业") or "").strip() or None
     return {
         "symbol": symbol,
         "name": name,
@@ -98,6 +138,12 @@ def normalize_pool_row(row: dict[str, Any], *, status: str) -> dict[str, Any] | 
         "board_count": _as_board_count(row),
         "status": status,
         "limit_up_price": _as_limit_price(row),
+        "seal_funds": _as_money(row, "封板资金"),
+        "first_seal_time": _as_seal_time(row, "首次封板时间"),
+        "last_seal_time": _as_seal_time(row, "最后封板时间"),
+        "break_count": _as_int_field(row, "炸板次数"),
+        "turnover_pct": parse_flow_num(row.get("换手率")),
+        "industry": industry,
         "main_inflow": None,
         "main_outflow": None,
         "main_net_inflow": None,
@@ -232,6 +278,7 @@ def enrich_fund_flow(
     symbols: list[str],
     *,
     force: bool = False,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Return per-symbol main_inflow / main_outflow / main_net_inflow (yuan)."""
     uniq = sorted({_as_symbol(s) for s in symbols if _as_symbol(s)})
@@ -243,6 +290,8 @@ def enrich_fund_flow(
         and (now_mono - float(_flow_cache.get("ts") or 0.0)) < FLOW_CACHE_TTL_SEC
         and all(s in cached for s in uniq)
     ):
+        if on_progress and uniq:
+            on_progress(len(uniq), len(uniq))
         return {s: dict(cached[s]) for s in uniq}
 
     out: dict[str, dict[str, Any]] = {
@@ -253,6 +302,9 @@ def enrich_fund_flow(
         }
         for s in uniq
     }
+    total = len(uniq)
+    if on_progress and total:
+        on_progress(0, total)
     try:
         nets = _fetch_ulist_net(uniq)
         for sym, payload in nets.items():
@@ -262,14 +314,19 @@ def enrich_fund_flow(
         logger.warning("limitup ulist enrichment failed: %s", exc)
 
     if uniq:
+        step = max(1, total // 10) if total else 1
+        done = 0
         with ThreadPoolExecutor(max_workers=STOCK_FLOW_WORKERS) as pool:
             futs = {pool.submit(_fetch_stock_flow, s): s for s in uniq}
             for fut in as_completed(futs):
                 sym = futs[fut]
+                done += 1
                 try:
                     payload = fut.result()
                 except Exception as exc:
                     logger.debug("limitup stock flow %s failed: %s", sym, exc)
+                    if on_progress and (done == total or done % step == 0):
+                        on_progress(done, total)
                     continue
                 row = out[sym]
                 if payload.get("main_inflow") is not None:
@@ -279,6 +336,8 @@ def enrich_fund_flow(
                 # Prefer stock/get net when present; else keep ulist
                 if payload.get("main_net_inflow") is not None:
                     row["main_net_inflow"] = payload["main_net_inflow"]
+                if on_progress and (done == total or done % step == 0):
+                    on_progress(done, total)
 
     _flow_cache["ts"] = now_mono
     merged = dict(cached)
@@ -320,8 +379,8 @@ def _fetch_pools(date_yyyymmdd: str) -> tuple[list[dict[str, Any]], list[dict[st
     return _records_from_df(zt), _records_from_df(zbgc)
 
 
-def get_limit_up(*, force: bool = False) -> dict[str, Any]:
-    """Build limit-up board payload (cached briefly for polling clients)."""
+def iter_limit_up_events(*, force: bool = False) -> Iterator[dict[str, Any]]:
+    """Yield SSE-ready events: meta → progress* → done | error."""
     now_mono = time.monotonic()
     cached = _cache.get("payload")
     if (
@@ -329,49 +388,137 @@ def get_limit_up(*, force: bool = False) -> dict[str, Any]:
         and cached is not None
         and (now_mono - float(_cache.get("ts") or 0.0)) < CACHE_TTL_SEC
     ):
-        return cached
+        yield {
+            "event": "meta",
+            "data": {
+                "force": force,
+                "cached": True,
+                "date": cached.get("date"),
+            },
+        }
+        yield {
+            "event": "progress",
+            "data": {"phase": "cache", "message": "命中短缓存…"},
+        }
+        yield {"event": "done", "data": cached}
+        return
 
-    from .quote import trading_session
-
-    session = trading_session()
     date_key = _pool_date_yyyymmdd()
-    zt_rows, zbgc_rows = _fetch_pools(date_key)
-
-    sealed: list[dict[str, Any]] = []
-    for raw in zt_rows:
-        if not isinstance(raw, dict):
-            continue
-        item = normalize_pool_row(raw, status="sealed")
-        if item:
-            sealed.append(item)
-
-    broken: list[dict[str, Any]] = []
-    for raw in zbgc_rows:
-        if not isinstance(raw, dict):
-            continue
-        item = normalize_pool_row(raw, status="broken")
-        if item:
-            broken.append(item)
-
-    today = merge_today_rows(sealed, broken)
-    try:
-        flow = enrich_fund_flow([r["symbol"] for r in today], force=force)
-        apply_fund_flow(today, flow)
-    except Exception as exc:
-        logger.warning("limitup fund enrich skipped: %s", exc)
-
-    ladder = build_ladder(today)
-    as_of = datetime.now(SH).isoformat(timespec="seconds")
-    payload = {
-        "as_of": as_of,
-        "date": f"{date_key[:4]}-{date_key[4:6]}-{date_key[6:8]}",
-        "session": {
-            "is_trading": bool(session.get("is_trading")),
-            "is_trading_day": bool(session.get("is_trading_day")),
-        },
-        "today": today,
-        "ladder": ladder,
+    date_fmt = f"{date_key[:4]}-{date_key[4:6]}-{date_key[6:8]}"
+    yield {
+        "event": "meta",
+        "data": {"force": force, "cached": False, "date": date_fmt},
     }
-    _cache["ts"] = now_mono
-    _cache["payload"] = payload
-    return payload
+    try:
+        from .quote import trading_session
+
+        session = trading_session()
+        yield {
+            "event": "progress",
+            "data": {
+                "phase": "pool",
+                "message": "正在拉取涨停池 / 炸板池…",
+            },
+        }
+        zt_rows, zbgc_rows = _fetch_pools(date_key)
+
+        sealed: list[dict[str, Any]] = []
+        for raw in zt_rows:
+            if not isinstance(raw, dict):
+                continue
+            item = normalize_pool_row(raw, status="sealed")
+            if item:
+                sealed.append(item)
+
+        broken: list[dict[str, Any]] = []
+        for raw in zbgc_rows:
+            if not isinstance(raw, dict):
+                continue
+            item = normalize_pool_row(raw, status="broken")
+            if item:
+                broken.append(item)
+
+        today = merge_today_rows(sealed, broken)
+        symbols = [r["symbol"] for r in today]
+        flow_state: dict[str, int] = {"done": 0, "total": len(symbols)}
+
+        def _flow_progress(done: int, total: int) -> None:
+            flow_state["done"] = done
+            flow_state["total"] = total
+
+        yield {
+            "event": "progress",
+            "data": {
+                "phase": "fund_flow",
+                "message": "正在补充主力资金流…",
+                "done": 0,
+                "total": len(symbols),
+            },
+        }
+        try:
+            flow = enrich_fund_flow(
+                symbols,
+                force=force,
+                on_progress=_flow_progress,
+            )
+            apply_fund_flow(today, flow)
+            if symbols:
+                yield {
+                    "event": "progress",
+                    "data": {
+                        "phase": "fund_flow",
+                        "message": "主力资金流补充完成",
+                        "done": flow_state["done"] or len(symbols),
+                        "total": flow_state["total"] or len(symbols),
+                    },
+                }
+        except Exception as exc:
+            logger.warning("limitup fund enrich skipped: %s", exc)
+            yield {
+                "event": "progress",
+                "data": {
+                    "phase": "fund_flow",
+                    "message": "主力资金流补充跳过（部分失败）",
+                    "done": flow_state["done"],
+                    "total": flow_state["total"] or len(symbols),
+                },
+            }
+
+        yield {
+            "event": "progress",
+            "data": {"phase": "build", "message": "正在组装连板天梯…"},
+        }
+        ladder = build_ladder(today)
+        as_of = datetime.now(SH).isoformat(timespec="seconds")
+        payload = {
+            "as_of": as_of,
+            "date": date_fmt,
+            "session": {
+                "is_trading": bool(session.get("is_trading")),
+                "is_trading_day": bool(session.get("is_trading_day")),
+            },
+            "today": today,
+            "ladder": ladder,
+        }
+        _cache["ts"] = time.monotonic()
+        _cache["payload"] = payload
+        yield {"event": "done", "data": payload}
+    except Exception as exc:
+        yield {
+            "event": "error",
+            "data": {"detail": f"{type(exc).__name__}: {exc}"},
+        }
+
+
+def get_limit_up(*, force: bool = False) -> dict[str, Any]:
+    """Build limit-up board payload (cached briefly for polling clients)."""
+    last_error: str | None = None
+    for ev in iter_limit_up_events(force=force):
+        if ev.get("event") == "done":
+            data = ev.get("data")
+            if isinstance(data, dict):
+                return data
+        if ev.get("event") == "error":
+            detail = (ev.get("data") or {}).get("detail")
+            last_error = str(detail or "打板数据获取失败")
+    raise RuntimeError(last_error or "打板数据获取失败")

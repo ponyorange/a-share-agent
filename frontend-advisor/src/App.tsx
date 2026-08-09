@@ -29,6 +29,7 @@ import RecommendationsPage from './pages/RecommendationsPage'
 import RegimePage from './pages/RegimePage'
 import WatchlistPage from './pages/WatchlistPage'
 import MonitorJobsPage from './pages/MonitorJobsPage'
+import LimitUpPromotePage from './pages/LimitUpPromotePage'
 import SettingsPage from './pages/SettingsPage'
 import StrategyPage from './pages/StrategyPage'
 import { ThemeProvider } from './theme/ThemeProvider'
@@ -196,6 +197,7 @@ export default function App() {
             <Route path="/account" element={<AccountPage />} />
             <Route path="/agent" element={<AgentChatPage />} />
             <Route path="/agent/jobs" element={<MonitorJobsPage />} />
+            <Route path="/agent/limitup-promote" element={<LimitUpPromotePage />} />
             <Route path="/agent/committee" element={<CommitteePage />} />
             <Route path="/agent/config" element={<KnowledgePage />} />
             <Route
