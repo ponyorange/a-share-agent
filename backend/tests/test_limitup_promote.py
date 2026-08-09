@@ -63,6 +63,16 @@ def test_generate_promote_picks_uses_cache(monkeypatch):
             )
 
     monkeypatch.setattr(promote, "build_chat_model", lambda *a, **k: _Model())
+    monkeypatch.setattr(
+        promote,
+        "build_theme_context",
+        lambda uid: {
+            "news_groups": {},
+            "hot_sectors": [],
+            "brief": None,
+            "used": {"news": False, "hot_sectors": False, "brief": False},
+        },
+    )
 
     first = promote.generate_promote_picks("u1", force=False)
     second = promote.generate_promote_picks("u1", force=False)
@@ -107,9 +117,22 @@ def test_iter_promote_events_streams_thinking(monkeypatch):
             "context_count": 1,
         },
     )
+    monkeypatch.setattr(
+        promote,
+        "build_theme_context",
+        lambda uid: {
+            "news_groups": {"联播": ["某政策加码"]},
+            "hot_sectors": [{"name": "银行", "change_pct": 2.1}],
+            "brief": {"summary": "银行偏强", "bullets": [], "sectors": []},
+            "used": {"news": True, "hot_sectors": True, "brief": True},
+        },
+    )
+
+    captured: dict[str, str] = {}
 
     class _Model:
-        def stream(self, _msgs):
+        def stream(self, msgs):
+            captured["human"] = str(msgs[1].content)
             yield SimpleNamespace(
                 content="",
                 additional_kwargs={"reasoning_content": "先看连板"},
@@ -127,8 +150,59 @@ def test_iter_promote_events_streams_thinking(monkeypatch):
         e["data"]["delta"] for e in events if e["event"] == "thinking"
     )
     assert "先看连板" in thinking
+    assert "某政策加码" in captured["human"]
+    assert "银行" in captured["human"]
     done = next(e for e in events if e["event"] == "done")
     assert done["data"]["picks"][0]["symbol"] == "000001"
+    assert done["data"]["theme_used"] == {
+        "news": True,
+        "hot_sectors": True,
+        "brief": True,
+    }
+
+
+def test_build_theme_context_compacts_sources(monkeypatch):
+    monkeypatch.setattr(
+        promote,
+        "get_or_build_home_news",
+        lambda: {
+            "groups": {
+                "cctv": {
+                    "ok": True,
+                    "items": [{"title": "联播一条很长的标题" + "x" * 100}],
+                },
+                "macro": {"ok": True, "items": [{"title": "宏观政策要点"}]},
+                "index_sentiment": {"ok": False, "items": []},
+                "sectors": {"ok": True, "items": [{"title": "题材A"}]},
+                "web": {"ok": False, "items": []},
+            }
+        },
+    )
+    monkeypatch.setattr(
+        promote,
+        "list_hot_sectors",
+        lambda top=8: {
+            "items": [{"name": "半导体", "change_pct": 3.2}],
+        },
+    )
+    monkeypatch.setattr(
+        promote,
+        "get_home_news_brief",
+        lambda uid: {
+            "status": "ready",
+            "summary": "情绪修复",
+            "bullets": ["政策托底"],
+            "sectors": [{"name": "半导体", "reason": "景气"}],
+        },
+    )
+    theme = promote.build_theme_context("u1")
+    assert theme["used"]["news"] is True
+    assert theme["used"]["hot_sectors"] is True
+    assert theme["used"]["brief"] is True
+    assert "联播" in theme["news_groups"]
+    assert len(theme["news_groups"]["联播"][0]) <= 80
+    assert theme["hot_sectors"][0]["name"] == "半导体"
+    assert theme["brief"]["summary"] == "情绪修复"
 
 
 def test_normalize_exposes_seal_fields():

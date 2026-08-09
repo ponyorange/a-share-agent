@@ -21,6 +21,7 @@ const sample = {
   summary: '高连板封单相对更稳，优先观察龙头。',
   candidate_count: 12,
   from_cache: false,
+  theme_used: { news: true, hot_sectors: true, brief: false },
   picks: [
     {
       symbol: '600000',
@@ -61,6 +62,9 @@ it('renders picks and thinking from stream', async () => {
   expect(screen.getByText('600000')).toBeInTheDocument()
   expect(screen.getByTestId('promote-thinking')).toHaveTextContent('先看连板高度')
   expect(screen.getByTestId('promote-summary')).toHaveTextContent(/高连板/)
+  expect(screen.getByTestId('promote-theme')).toHaveTextContent(
+    /今日资讯\/政策/,
+  )
   expect(streamLimitUpPromote).toHaveBeenCalledWith(
     false,
     expect.any(Object),

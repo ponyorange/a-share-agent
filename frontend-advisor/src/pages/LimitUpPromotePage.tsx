@@ -22,6 +22,21 @@ function isMissingKeyError(message: string): boolean {
   return /DeepSeek|API Key/i.test(message)
 }
 
+function themeUsedLabel(used?: {
+  news?: boolean
+  hot_sectors?: boolean
+  brief?: boolean
+} | null): string {
+  const parts = [
+    used?.news ? '今日资讯/政策' : null,
+    used?.hot_sectors ? '热点板块' : null,
+    used?.brief ? 'Agent 解读' : null,
+  ].filter(Boolean)
+  return parts.length
+    ? `已结合：${parts.join(' · ')}`
+    : '未取到资讯/热点（仍按封板池研判）'
+}
+
 export default function LimitUpPromotePage() {
   const [data, setData] = useState<LimitUpPromoteResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -169,6 +184,9 @@ export default function LimitUpPromotePage() {
               {' · '}
               研判时间 {data.as_of || '—'}
               {data.from_cache ? ' · 缓存结果' : ''}
+            </p>
+            <p className="muted" data-testid="promote-theme">
+              {themeUsedLabel(data.theme_used)}
             </p>
             {data.summary ? (
               <p data-testid="promote-summary">{data.summary}</p>

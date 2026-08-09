@@ -13,6 +13,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from ..limitup import get_limit_up
 from .agent.llm import build_chat_model
+from .home_market import list_hot_sectors
+from .home_news import get_or_build_home_news
+from .home_news_brief import get_home_news_brief
 from .llm_settings import resolve_llm_credentials
 
 logger = logging.getLogger(__name__)
@@ -20,19 +23,32 @@ logger = logging.getLogger(__name__)
 CONTEXT_MAX = 60
 PICKS_MAX = 8
 CACHE_TTL_SEC = 12 * 60
+NEWS_TITLES_PER_GROUP = 5
+HOT_SECTORS_TOP = 8
 
 _cache: dict[str, Any] = {}  # key -> {ts, payload}
 
 SYSTEM_PROMPT = (
-    "你是A股短线打板研究助手。根据当日「仍封板」涨停池摘要，推断次一交易日"
-    "更可能继续涨停（晋级）的标的。"
+    "你是A股短线打板研究助手。根据当日「仍封板」涨停池摘要，并结合提供的"
+    "今日资讯（联播/宏观政策/题材）、热点板块与（若有）Agent 市场解读，"
+    "推断次一交易日更可能继续涨停（晋级）的标的。"
+    "优先关注：封板质量（时间/资金/炸板）与题材/政策/热点共振；"
+    "热点缺失时仍可仅依据封板池研判。"
     "只用中文输出 JSON（不要 Markdown 围栏），格式："
     '{"summary":"一句话总览","picks":[{"symbol":"六位代码","name":"名称",'
     '"board_count":连板数整数,"score":1到5整数,"reason":"简短理由"}]}。'
     "要求：picks≤8；score 越高表示晋级相对更值得关注；"
-    "只能从提供的候选里选，禁止编造代码；"
+    "只能从提供的候选里选，禁止编造代码；reason 可点明是否蹭到热点/政策；"
     "表述为研究观察，不保证次日涨停，非投资建议与下单指令。"
 )
+
+_GROUP_LABELS = {
+    "cctv": "联播",
+    "macro": "宏观政策",
+    "index_sentiment": "指数情绪",
+    "sectors": "题材热点",
+    "web": "联网舆情",
+}
 
 
 def _cache_key(user_id: str, trade_date: str) -> str:
@@ -78,6 +94,91 @@ def build_promote_context(*, force_pool: bool = False) -> dict[str, Any]:
         "candidates": rows,
         "candidate_count": len(sealed),
         "context_count": len(rows),
+    }
+
+
+def _clip_title(raw: Any, limit: int = 80) -> str:
+    text = re.sub(r"\s+", " ", str(raw or "").strip())
+    return text[:limit]
+
+
+def build_theme_context(user_id: str) -> dict[str, Any]:
+    """Compact news / hot-sector / brief context for promote LLM (best-effort)."""
+    news_groups: dict[str, list[str]] = {}
+    news_ok = False
+    try:
+        pack = get_or_build_home_news()
+        groups = pack.get("groups") or {}
+        for key, label in _GROUP_LABELS.items():
+            g = groups.get(key) or {}
+            if not g.get("ok"):
+                continue
+            titles: list[str] = []
+            for item in list(g.get("items") or [])[:NEWS_TITLES_PER_GROUP]:
+                if not isinstance(item, dict):
+                    continue
+                title = _clip_title(item.get("title"))
+                if title:
+                    titles.append(title)
+            if titles:
+                news_groups[label] = titles
+                news_ok = True
+    except Exception as exc:
+        logger.warning("promote theme news skipped: %s", exc)
+
+    hot_sectors: list[dict[str, Any]] = []
+    sectors_ok = False
+    try:
+        hot = list_hot_sectors(top=HOT_SECTORS_TOP)
+        for row in list(hot.get("items") or [])[:HOT_SECTORS_TOP]:
+            if not isinstance(row, dict) or not row.get("name"):
+                continue
+            item: dict[str, Any] = {"name": str(row.get("name"))[:40]}
+            if row.get("change_pct") is not None:
+                item["change_pct"] = row.get("change_pct")
+            elif row.get("strength") is not None:
+                item["strength"] = row.get("strength")
+            hot_sectors.append(item)
+        sectors_ok = bool(hot_sectors)
+    except Exception as exc:
+        logger.warning("promote theme sectors skipped: %s", exc)
+
+    brief: dict[str, Any] | None = None
+    brief_ok = False
+    try:
+        raw = get_home_news_brief(user_id)
+        if str(raw.get("status") or "") == "ready" and (
+            raw.get("summary") or raw.get("bullets") or raw.get("sectors")
+        ):
+            brief = {
+                "summary": _clip_title(raw.get("summary"), 160),
+                "bullets": [
+                    _clip_title(x, 100)
+                    for x in list(raw.get("bullets") or [])[:5]
+                    if str(x or "").strip()
+                ],
+                "sectors": [
+                    {
+                        "name": str(s.get("name") or "")[:40],
+                        "reason": _clip_title(s.get("reason"), 80),
+                    }
+                    for s in list(raw.get("sectors") or [])[:6]
+                    if isinstance(s, dict) and s.get("name")
+                ],
+            }
+            brief_ok = True
+    except Exception as exc:
+        logger.warning("promote theme brief skipped: %s", exc)
+
+    return {
+        "news_groups": news_groups,
+        "hot_sectors": hot_sectors,
+        "brief": brief,
+        "used": {
+            "news": news_ok,
+            "hot_sectors": sectors_ok,
+            "brief": brief_ok,
+        },
     }
 
 
@@ -225,6 +326,7 @@ def iter_promote_events(
             "picks": [],
             "candidate_count": 0,
             "from_cache": False,
+            "theme_used": {"news": False, "hot_sectors": False, "brief": False},
         }
         _cache[key] = {"ts": now, "payload": empty}
         yield {"event": "done", "data": empty}
@@ -233,8 +335,18 @@ def iter_promote_events(
     yield {
         "event": "progress",
         "data": {
+            "phase": "theme",
+            "message": "正在汇总资讯、政策与热点板块…",
+        },
+    }
+    theme = build_theme_context(user_id)
+    theme_used = dict(theme.get("used") or {})
+
+    yield {
+        "event": "progress",
+        "data": {
             "phase": "model",
-            "message": f"正在研判 {len(candidates)} 只封板摘要…",
+            "message": f"正在结合热点研判 {len(candidates)} 只封板摘要…",
         },
     }
     model = build_chat_model(user_id, temperature=0.2, streaming=True)
@@ -242,6 +354,12 @@ def iter_promote_events(
         f"池日期 {trade_date}；封板总数 {ctx.get('candidate_count')}；"
         f"以下为摘要候选（已按连板优先截断至 {len(candidates)} 只）：\n"
         + json.dumps(candidates, ensure_ascii=False)
+        + "\n\n今日资讯/政策/题材（标题摘要，可能不完整）：\n"
+        + json.dumps(theme.get("news_groups") or {}, ensure_ascii=False)
+        + "\n\n热点板块：\n"
+        + json.dumps(theme.get("hot_sectors") or [], ensure_ascii=False)
+        + "\n\n用户 Agent 市场解读（可能为空，status=ready 才有）：\n"
+        + json.dumps(theme.get("brief"), ensure_ascii=False)
     )
     messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=human)]
     text_parts: list[str] = []
@@ -282,6 +400,11 @@ def iter_promote_events(
         "picks": picks,
         "candidate_count": int(ctx.get("candidate_count") or 0),
         "from_cache": False,
+        "theme_used": {
+            "news": bool(theme_used.get("news")),
+            "hot_sectors": bool(theme_used.get("hot_sectors")),
+            "brief": bool(theme_used.get("brief")),
+        },
     }
     _cache[key] = {"ts": time.monotonic(), "payload": result}
     yield {"event": "done", "data": result}

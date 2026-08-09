@@ -729,6 +729,11 @@ export type LimitUpPromoteResponse = {
   picks: LimitUpPromotePick[]
   candidate_count: number
   from_cache?: boolean
+  theme_used?: {
+    news?: boolean
+    hot_sectors?: boolean
+    brief?: boolean
+  }
 }
 
 export function fetchLimitUpPromote(force = false): Promise<LimitUpPromoteResponse> {
