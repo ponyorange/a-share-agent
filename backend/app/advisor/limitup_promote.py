@@ -330,6 +330,7 @@ def iter_promote_events(
     *,
     force: bool = False,
     force_pool: bool = False,
+    use_memory_cache: bool = True,
 ) -> Iterator[dict[str, Any]]:
     """Yield SSE events: progress* → thinking* → token* → done | error."""
     resolve_llm_credentials(user_id)
@@ -343,7 +344,8 @@ def iter_promote_events(
     now = time.monotonic()
     hit = _cache.get(key)
     if (
-        not force
+        use_memory_cache
+        and not force
         and isinstance(hit, dict)
         and (now - float(hit.get("ts") or 0.0)) < CACHE_TTL_SEC
         and isinstance(hit.get("payload"), dict)
@@ -369,7 +371,8 @@ def iter_promote_events(
             "from_cache": False,
             "theme_used": {"news": False, "hot_sectors": False, "brief": False},
         }
-        _cache[key] = {"ts": now, "payload": empty}
+        if use_memory_cache:
+            _cache[key] = {"ts": now, "payload": empty}
         yield {"event": "done", "data": empty}
         return
 
@@ -448,7 +451,8 @@ def iter_promote_events(
             "brief": bool(theme_used.get("brief")),
         },
     }
-    _cache[key] = {"ts": time.monotonic(), "payload": result}
+    if use_memory_cache:
+        _cache[key] = {"ts": time.monotonic(), "payload": result}
     yield {"event": "done", "data": result}
 
 

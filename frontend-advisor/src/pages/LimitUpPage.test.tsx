@@ -173,7 +173,7 @@ describe('LimitUpPage', () => {
   })
 
   it('加载时展示阶段进度文案', async () => {
-    let finish: (() => void) | null = null
+    const gate = { finish: null as (() => void) | null }
     vi.mocked(api.streamLimitUp).mockImplementation(async (_force, handlers) => {
       handlers.onProgress?.({
         phase: 'fund_flow',
@@ -182,7 +182,7 @@ describe('LimitUpPage', () => {
         total: 10,
       })
       await new Promise<void>((resolve) => {
-        finish = resolve
+        gate.finish = resolve
       })
       handlers.onDone?.(sample)
     })
@@ -194,7 +194,7 @@ describe('LimitUpPage', () => {
     expect(
       await screen.findByTestId('limitup-progress'),
     ).toHaveTextContent('正在补充主力资金流…（3/10）')
-    finish?.()
+    gate.finish?.()
     await waitFor(() => {
       expect(screen.getByText('浦发银行')).toBeInTheDocument()
     })
@@ -218,7 +218,7 @@ describe('LimitUpPage', () => {
   })
 
   it('点击刷新会强制重拉并显示刷新中', async () => {
-    let resolveRefresh: (() => void) | null = null
+    const gate = { resolveRefresh: null as (() => void) | null }
     vi.mocked(api.streamLimitUp)
       .mockImplementationOnce(async (_force, handlers) => {
         handlers.onDone?.(sample)
@@ -226,7 +226,7 @@ describe('LimitUpPage', () => {
       .mockImplementationOnce(async (force, handlers) => {
         expect(force).toBe(true)
         await new Promise<void>((resolve) => {
-          resolveRefresh = resolve
+          gate.resolveRefresh = resolve
         })
         handlers.onDone?.({
           ...sample,
@@ -255,7 +255,7 @@ describe('LimitUpPage', () => {
       expect.any(AbortSignal),
     )
 
-    resolveRefresh?.()
+    gate.resolveRefresh?.()
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '刷新' })).toBeEnabled()
     })

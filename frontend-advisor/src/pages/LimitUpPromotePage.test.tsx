@@ -5,22 +5,31 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import LimitUpPromotePage from './LimitUpPromotePage'
 
-const streamLimitUpPromote = vi.hoisted(() => vi.fn())
+const fetchLimitUpPromote = vi.hoisted(() => vi.fn())
+const refreshLimitUpPromote = vi.hoisted(() => vi.fn())
+const fetchLimitUpPromoteStatus = vi.hoisted(() => vi.fn())
+const fetchLimitUpPromoteHistory = vi.hoisted(() => vi.fn())
+const fetchLimitUpPromoteHistoryDay = vi.hoisted(() => vi.fn())
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
   return {
     ...actual,
-    streamLimitUpPromote,
+    fetchLimitUpPromote,
+    refreshLimitUpPromote,
+    fetchLimitUpPromoteStatus,
+    fetchLimitUpPromoteHistory,
+    fetchLimitUpPromoteHistoryDay,
   }
 })
 
 const sample = {
+  trade_date: '2026-07-31',
   date: '2026-07-31',
+  status: 'ready',
   as_of: '2026-07-31T14:30:00+08:00',
   summary: '高连板封单相对更稳，优先观察龙头。',
   candidate_count: 12,
-  from_cache: false,
   theme_used: { news: true, hot_sectors: true, brief: false },
   picks: [
     {
@@ -34,24 +43,27 @@ const sample = {
 }
 
 beforeEach(() => {
-  streamLimitUpPromote.mockReset()
-  streamLimitUpPromote.mockImplementation(
-    async (
-      _force: boolean,
-      handlers: {
-        onProgress?: (row: { message?: string }) => void
-        onThinking?: (delta: string) => void
-        onDone?: (data: typeof sample) => void
+  fetchLimitUpPromote.mockReset()
+  refreshLimitUpPromote.mockReset()
+  fetchLimitUpPromoteStatus.mockReset()
+  fetchLimitUpPromoteHistory.mockReset()
+  fetchLimitUpPromoteHistoryDay.mockReset()
+  fetchLimitUpPromote.mockResolvedValue(sample)
+  fetchLimitUpPromoteHistory.mockResolvedValue({
+    count: 1,
+    items: [
+      {
+        trade_date: '2026-07-30',
+        status: 'ready',
+        summary: '昨日样本',
+        candidate_count: 10,
+        pick_count: 2,
       },
-    ) => {
-      handlers.onProgress?.({ message: '正在获取当日封板池…' })
-      handlers.onThinking?.('先看连板高度')
-      handlers.onDone?.(sample)
-    },
-  )
+    ],
+  })
 })
 
-it('renders picks and thinking from stream', async () => {
+it('renders archived picks on enter', async () => {
   render(
     <MemoryRouter>
       <LimitUpPromotePage />
@@ -60,27 +72,16 @@ it('renders picks and thinking from stream', async () => {
 
   expect(await screen.findByText('浦发银行')).toBeInTheDocument()
   expect(screen.getByText('600000')).toBeInTheDocument()
-  expect(screen.getByTestId('promote-thinking')).toHaveTextContent('先看连板高度')
   expect(screen.getByTestId('promote-summary')).toHaveTextContent(/高连板/)
-  expect(screen.getByTestId('promote-theme')).toHaveTextContent(
-    /今日资讯\/政策/,
-  )
-  expect(streamLimitUpPromote).toHaveBeenCalledWith(
-    false,
-    expect.any(Object),
-    expect.any(AbortSignal),
+  expect(screen.getByTestId('promote-theme')).toHaveTextContent(/今日资讯\/政策/)
+  expect(fetchLimitUpPromote).toHaveBeenCalled()
+  expect(await screen.findByTestId('promote-history')).toHaveTextContent(
+    '2026-07-30',
   )
 })
 
 it('shows missing DeepSeek key guidance', async () => {
-  streamLimitUpPromote.mockImplementationOnce(
-    async (
-      _force: boolean,
-      handlers: { onError?: (detail: string) => void },
-    ) => {
-      handlers.onError?.('请先配置 DeepSeek API Key')
-    },
-  )
+  fetchLimitUpPromote.mockRejectedValueOnce(new Error('请先配置 DeepSeek API Key'))
   render(
     <MemoryRouter>
       <LimitUpPromotePage />
@@ -96,21 +97,22 @@ it('shows missing DeepSeek key guidance', async () => {
   )
 })
 
-it('refresh button forces reload and shows progress', async () => {
+it('refresh starts background job and polls status', async () => {
   const user = userEvent.setup()
-  let finish: (() => void) | null = null
-  streamLimitUpPromote
-    .mockImplementationOnce(async (_f, handlers) => {
-      handlers.onDone?.(sample)
+  refreshLimitUpPromote.mockResolvedValue({
+    ...sample,
+    status: 'running',
+    progress: { phase: 'model', message: '正在研判 12 只封板摘要…' },
+    picks: [],
+  })
+  fetchLimitUpPromoteStatus
+    .mockResolvedValueOnce({
+      ...sample,
+      status: 'running',
+      progress: { phase: 'model', message: '正在研判 12 只封板摘要…' },
+      picks: [],
     })
-    .mockImplementationOnce(async (force, handlers) => {
-      expect(force).toBe(true)
-      handlers.onProgress?.({ message: '正在研判 12 只封板摘要…' })
-      await new Promise<void>((resolve) => {
-        finish = resolve
-      })
-      handlers.onDone?.(sample)
-    })
+    .mockResolvedValue({ ...sample, status: 'ready' })
 
   render(
     <MemoryRouter>
@@ -120,10 +122,83 @@ it('refresh button forces reload and shows progress', async () => {
   await screen.findByText('浦发银行')
   await user.click(screen.getByRole('button', { name: '刷新研判' }))
   expect(await screen.findByTestId('promote-progress')).toHaveTextContent(
-    /正在研判/,
+    /后台|研判/,
   )
-  finish?.()
-  await waitFor(() => {
-    expect(screen.getByRole('button', { name: '刷新研判' })).toBeEnabled()
+  expect(refreshLimitUpPromote).toHaveBeenCalled()
+  await waitFor(
+    () => {
+      expect(fetchLimitUpPromoteStatus).toHaveBeenCalled()
+    },
+    { timeout: 4000 },
+  )
+})
+
+it('history day shows accuracy with broken badge', async () => {
+  const user = userEvent.setup()
+  fetchLimitUpPromoteHistoryDay.mockResolvedValue({
+    doc: {
+      ...sample,
+      date: '2026-07-30',
+      trade_date: '2026-07-30',
+      picks: [
+        {
+          symbol: '600000',
+          name: '浦发银行',
+          board_count: 2,
+          score: 4,
+          reason: '观察',
+        },
+      ],
+    },
+    accuracy: {
+      trade_date: '2026-07-30',
+      t1_date: '2026-07-31',
+      ok: true,
+      pick_count: 1,
+      hit_count: 1,
+      sealed_hit_count: 0,
+      broken_hit_count: 1,
+      miss_count: 0,
+      hit_rate: 1,
+      hits: [
+        {
+          symbol: '600000',
+          name: '浦发银行',
+          board_count: 2,
+          score: 4,
+          reason: '观察',
+          hit: true,
+          t1_status: 'broken',
+          broken: true,
+        },
+      ],
+      broken_hits: [
+        {
+          symbol: '600000',
+          name: '浦发银行',
+          board_count: 2,
+          score: 4,
+          reason: '观察',
+          hit: true,
+          t1_status: 'broken',
+          broken: true,
+        },
+      ],
+      misses: [],
+    },
   })
+
+  render(
+    <MemoryRouter>
+      <LimitUpPromotePage />
+    </MemoryRouter>,
+  )
+  await screen.findByText('浦发银行')
+  await user.click(screen.getByRole('button', { name: '2026-07-30' }))
+  expect(await screen.findByTestId('promote-accuracy')).toHaveTextContent(
+    /成功率/,
+  )
+  expect(await screen.findByTestId('promote-t1-600000')).toHaveTextContent(
+    '炸板',
+  )
 })

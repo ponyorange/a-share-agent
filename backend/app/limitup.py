@@ -510,6 +510,39 @@ def iter_limit_up_events(*, force: bool = False) -> Iterator[dict[str, Any]]:
         }
 
 
+def get_limit_up_status_map_for_date(trade_date: str) -> dict[str, str]:
+    """Return symbol -> sealed|broken for a historical trading day (no fund-flow).
+
+    Sealed wins over broken when a symbol appears in both pools.
+    """
+    raw = str(trade_date or "").strip()
+    if "-" in raw:
+        date_key = raw.replace("-", "")[:8]
+    else:
+        date_key = "".join(ch for ch in raw if ch.isdigit())[:8]
+    if len(date_key) != 8:
+        raise ValueError(f"invalid trade_date: {trade_date}")
+
+    zt_rows, zbgc_rows = _fetch_pools(date_key)
+    out: dict[str, str] = {}
+    for row in zt_rows:
+        if not isinstance(row, dict):
+            continue
+        item = normalize_pool_row(row, status="sealed")
+        if item:
+            out[str(item["symbol"])] = "sealed"
+    for row in zbgc_rows or []:
+        if not isinstance(row, dict):
+            continue
+        item = normalize_pool_row(row, status="broken")
+        if not item:
+            continue
+        symbol = str(item["symbol"])
+        if symbol not in out:
+            out[symbol] = "broken"
+    return out
+
+
 def get_limit_up(*, force: bool = False) -> dict[str, Any]:
     """Build limit-up board payload (cached briefly for polling clients)."""
     last_error: str | None = None

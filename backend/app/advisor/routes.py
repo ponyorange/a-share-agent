@@ -35,7 +35,7 @@ from .portfolio import PortfolioPayload, load_portfolio, save_portfolio
 from .home_market import list_hot_sectors
 from .home_news import get_or_build_home_news
 from .home_news_brief import get_home_news_brief, start_home_news_brief_refresh
-from .limitup_promote import generate_promote_picks, iter_promote_events
+from .limitup_promote import iter_promote_events
 from .regime import get_regime_for_gate
 from .regime.gate import apply_regime_gate
 from .service import get_advice, get_portfolio_advice, get_recommendations
@@ -178,13 +178,17 @@ def home_news_brief_refresh(user: dict[str, Any] = Depends(_user)) -> dict[str, 
 
 @router.get("/limitup/promote")
 def limitup_promote_get(
-    force: bool = Query(False),
+    trade_date: str | None = Query(default=None),
     user: dict[str, Any] = Depends(_user),
 ) -> dict[str, Any]:
-    """打板晋级：LLM 从当日封板池中挑选次日更可能继续涨停的候选。"""
+    """打板晋级：有当日归档则直接返回；否则后台刷新并返回 running 状态。"""
     uid = _bind(user)
+    from .limitup_promote_store import ensure_today, get_daily
+
     try:
-        return generate_promote_picks(uid, force=force)
+        if trade_date:
+            return get_daily(uid, trade_date[:10])
+        return ensure_today(uid)
     except ValueError as exc:
         detail = str(exc)
         if "DeepSeek" in detail or "API Key" in detail:
@@ -197,13 +201,96 @@ def limitup_promote_get(
         ) from exc
 
 
+@router.post("/limitup/promote/refresh")
+def limitup_promote_refresh(
+    force_pool: bool = Query(False),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    """强制后台刷新当日晋级（同日覆盖）；可离开页面，稍后轮询 status。"""
+    uid = _bind(user)
+    from .limitup_promote_store import start_refresh
+
+    try:
+        return start_refresh(uid, force=True, force_pool=force_pool)
+    except ValueError as exc:
+        detail = str(exc)
+        if "DeepSeek" in detail or "API Key" in detail:
+            raise HTTPException(status_code=403, detail="请先配置 DeepSeek API Key") from exc
+        raise HTTPException(status_code=400, detail=detail) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"晋级刷新失败: {type(exc).__name__}: {exc}",
+        ) from exc
+
+
+@router.get("/limitup/promote/status")
+def limitup_promote_status(
+    trade_date: str | None = Query(default=None),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    uid = _bind(user)
+    from .limitup_promote_store import get_daily
+
+    return get_daily(uid, trade_date)
+
+
+@router.get("/limitup/promote/history")
+def limitup_promote_history(
+    limit: int = Query(default=30, ge=1, le=366),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    uid = _bind(user)
+    from .limitup_promote_store import list_dates
+
+    items = list_dates(uid, limit=limit)
+    return {"count": len(items), "items": items}
+
+
+@router.get("/limitup/promote/history/{trade_date}")
+def limitup_promote_history_day(
+    trade_date: str,
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    uid = _bind(user)
+    from .limitup_promote_store import compute_accuracy, get_daily
+
+    day = trade_date[:10]
+    doc = get_daily(uid, day)
+    if doc.get("status") == "idle":
+        raise HTTPException(status_code=404, detail="该日无晋级归档")
+    accuracy = None
+    if doc.get("status") == "ready":
+        try:
+            accuracy = compute_accuracy(uid, day, persist=True)
+        except Exception as exc:
+            accuracy = {"ok": False, "error": str(exc)}
+    return {"doc": doc, "accuracy": accuracy}
+
+
+@router.get("/limitup/promote/accuracy")
+def limitup_promote_accuracy(
+    trade_date: str | None = Query(default=None),
+    limit: int = Query(default=30, ge=1, le=366),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    uid = _bind(user)
+    from .limitup_promote_store import accuracy_summary, compute_accuracy
+
+    if trade_date:
+        return compute_accuracy(uid, trade_date[:10], persist=True)
+    return accuracy_summary(uid, limit=limit)
+
+
 @router.post("/limitup/promote")
 def limitup_promote_post(
     force: bool = Query(True),
     user: dict[str, Any] = Depends(_user),
 ) -> dict[str, Any]:
-    """强制刷新打板晋级研判（默认 force=true）。"""
-    return limitup_promote_get(force=force, user=user)
+    """兼容旧客户端：force 时触发后台刷新。"""
+    if force:
+        return limitup_promote_refresh(force_pool=False, user=user)
+    return limitup_promote_get(trade_date=None, user=user)
 
 
 @router.get("/limitup/promote/stream")
@@ -211,7 +298,7 @@ def limitup_promote_stream(
     force: bool = Query(False),
     user: dict[str, Any] = Depends(_user),
 ):
-    """SSE：progress* → thinking* → token* → done。未配置 DeepSeek 时 403。"""
+    """SSE（兼容）：progress* → thinking* → token* → done。主路径推荐轮询 Mongo status。"""
     uid = _bind(user)
     try:
         resolve_llm_credentials(uid)
@@ -222,8 +309,41 @@ def limitup_promote_stream(
         raise HTTPException(status_code=400, detail=detail) from exc
 
     def gen():
+        from .limitup_promote_store import upsert_daily
+
         try:
-            for ev in iter_promote_events(uid, force=force):
+            for ev in iter_promote_events(uid, force=force, use_memory_cache=not force):
+                if ev.get("event") == "done":
+                    data = ev.get("data") if isinstance(ev.get("data"), dict) else {}
+                    day = str(data.get("date") or "")[:10]
+                    if day and not data.get("from_cache"):
+                        try:
+                            upsert_daily(
+                                uid,
+                                day,
+                                {
+                                    "status": "ready",
+                                    "summary": str(data.get("summary") or ""),
+                                    "picks": list(data.get("picks") or []),
+                                    "candidate_count": int(
+                                        data.get("candidate_count") or 0
+                                    ),
+                                    "as_of": data.get("as_of"),
+                                    "session": data.get("session") or {},
+                                    "theme_used": data.get("theme_used")
+                                    or {
+                                        "news": False,
+                                        "hot_sectors": False,
+                                        "brief": False,
+                                    },
+                                    "progress": None,
+                                    "error": None,
+                                    "outcome": None,
+                                    "date": day,
+                                },
+                            )
+                        except Exception:
+                            pass
                 yield _sse(ev["event"], ev.get("data") or {})
         except ValueError as exc:
             detail = str(exc)

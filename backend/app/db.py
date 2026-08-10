@@ -218,7 +218,18 @@ def ensure_indexes() -> None:
         )
     except Exception:
         pass
-
+    try:
+        db.limitup_promote_daily.create_index(
+            [("user_id", ASCENDING), ("trade_date", ASCENDING)],
+            unique=True,
+            name="user_trade_date_1",
+        )
+        db.limitup_promote_daily.create_index(
+            [("user_id", ASCENDING), ("trade_date", DESCENDING)],
+            name="user_trade_date_desc",
+        )
+    except Exception:
+        pass
 
 
 def ping() -> dict[str, Any]:

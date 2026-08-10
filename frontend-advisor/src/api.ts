@@ -719,16 +719,32 @@ export type LimitUpPromotePick = {
   board_count: number
   score: number
   reason: string
+  hit?: boolean
+  t1_status?: 'sealed' | 'broken' | 'miss' | string
+  broken?: boolean
 }
 
 export type LimitUpPromoteResponse = {
+  trade_date?: string
   date: string
+  status?: 'idle' | 'ready' | 'running' | 'error' | string
   as_of?: string | null
   session?: Record<string, unknown>
   summary: string
   picks: LimitUpPromotePick[]
   candidate_count: number
   from_cache?: boolean
+  progress?: { phase?: string; message?: string } | null
+  error?: string | null
+  updated_at?: string | null
+  outcome?: {
+    t1_date?: string
+    hit_rate?: number | null
+    hit_count?: number
+    broken_hit_count?: number
+    pick_count?: number
+    picks?: LimitUpPromotePick[]
+  } | null
   theme_used?: {
     news?: boolean
     hot_sectors?: boolean
@@ -736,9 +752,74 @@ export type LimitUpPromoteResponse = {
   }
 }
 
-export function fetchLimitUpPromote(force = false): Promise<LimitUpPromoteResponse> {
-  const q = force ? '?force=true' : ''
+export type LimitUpPromoteHistoryItem = {
+  trade_date: string
+  status: string
+  summary: string
+  candidate_count: number
+  pick_count: number
+  updated_at?: string | null
+}
+
+export type LimitUpPromoteAccuracy = {
+  trade_date: string
+  t1_date?: string
+  ok: boolean
+  pending?: boolean
+  error?: string
+  pick_count?: number
+  hit_count?: number
+  sealed_hit_count?: number
+  broken_hit_count?: number
+  miss_count?: number
+  hit_rate?: number | null
+  hits?: LimitUpPromotePick[]
+  broken_hits?: LimitUpPromotePick[]
+  misses?: LimitUpPromotePick[]
+}
+
+export function fetchLimitUpPromote(tradeDate?: string): Promise<LimitUpPromoteResponse> {
+  const q = tradeDate ? `?trade_date=${encodeURIComponent(tradeDate)}` : ''
   return authFetch(`/api/advisor/limitup/promote${q}`)
+}
+
+export function refreshLimitUpPromote(forcePool = false): Promise<LimitUpPromoteResponse> {
+  const q = forcePool ? '?force_pool=true' : ''
+  return authFetch(`/api/advisor/limitup/promote/refresh${q}`, { method: 'POST' })
+}
+
+export function fetchLimitUpPromoteStatus(
+  tradeDate?: string,
+): Promise<LimitUpPromoteResponse> {
+  const q = tradeDate ? `?trade_date=${encodeURIComponent(tradeDate)}` : ''
+  return authFetch(`/api/advisor/limitup/promote/status${q}`)
+}
+
+export function fetchLimitUpPromoteHistory(
+  limit = 30,
+): Promise<{ count: number; items: LimitUpPromoteHistoryItem[] }> {
+  const q = new URLSearchParams({ limit: String(limit) })
+  return authFetch(`/api/advisor/limitup/promote/history?${q}`)
+}
+
+export function fetchLimitUpPromoteHistoryDay(tradeDate: string): Promise<{
+  doc: LimitUpPromoteResponse
+  accuracy: LimitUpPromoteAccuracy | null
+}> {
+  return authFetch(
+    `/api/advisor/limitup/promote/history/${encodeURIComponent(tradeDate)}`,
+  )
+}
+
+export function fetchLimitUpPromoteAccuracy(opts?: {
+  trade_date?: string
+  limit?: number
+}): Promise<LimitUpPromoteAccuracy | { days: LimitUpPromoteAccuracy[]; hit_rate?: number | null }> {
+  const q = new URLSearchParams()
+  if (opts?.trade_date) q.set('trade_date', opts.trade_date)
+  if (opts?.limit != null) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return authFetch(`/api/advisor/limitup/promote/accuracy${qs ? `?${qs}` : ''}`)
 }
 
 export function fetchMonitorJobLogs(
