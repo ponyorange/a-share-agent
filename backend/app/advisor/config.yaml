@@ -210,6 +210,22 @@ agent_web:
     max_redirects: 3
     allowed_ports: [80, 443]
     max_calls_per_turn: 8
+    escalation:
+      enabled: true
+      min_text_chars: 200
+      max_total_seconds: 90
+      l2_timeout_seconds: 30
+      l3_timeout_seconds: 60
+      enable_stealth: true
+      solve_cloudflare: true
+      headless: true
+      block_patterns:
+        - "just a moment"
+        - "cf-browser-verification"
+        - "attention required"
+        - "access denied"
+        - "verify you are human"
+        - "checking your browser"
 
 # ---------- 图学习信号（A 股日频 SignalGraph）----------
 signal_graph:

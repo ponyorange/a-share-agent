@@ -32,6 +32,24 @@ DEFAULT_AGENT_WEB: dict[str, Any] = {
         "max_redirects": 3,
         "allowed_ports": [80, 443],
         "max_calls_per_turn": 8,
+        "escalation": {
+            "enabled": True,
+            "min_text_chars": 200,
+            "max_total_seconds": 90,
+            "l2_timeout_seconds": 30,
+            "l3_timeout_seconds": 60,
+            "enable_stealth": True,
+            "solve_cloudflare": True,
+            "headless": True,
+            "block_patterns": [
+                "just a moment",
+                "cf-browser-verification",
+                "attention required",
+                "access denied",
+                "verify you are human",
+                "checking your browser",
+            ],
+        },
     },
 }
 

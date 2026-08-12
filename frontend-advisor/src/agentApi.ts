@@ -61,6 +61,8 @@ export type SubagentProgress = {
     | 'web_research'
     | 'web_search'
     | 'fetch_url'
+    | 'fetch_url_l2'
+    | 'fetch_url_l3'
   status: 'started' | 'completed' | 'failed'
   message: string
   source?: string

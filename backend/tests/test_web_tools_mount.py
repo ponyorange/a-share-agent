@@ -1,14 +1,22 @@
 from app.advisor.agent.web_tools import build_web_tools
 
 
-def test_mount_defaults_research_only(monkeypatch):
+def test_mount_research_includes_fetch_url(monkeypatch):
     monkeypatch.setattr(
         "app.advisor.agent.web_tools.web_tool_flags",
         lambda uid: {"web_research": True, "tavily": False},
     )
-    tools = build_web_tools("u1")
-    names = {t.name for t in tools}
-    assert names == {"web_research"}
+    names = {t.name for t in build_web_tools("u1")}
+    assert names == {"web_research", "fetch_url"}
+
+
+def test_mount_tavily_only(monkeypatch):
+    monkeypatch.setattr(
+        "app.advisor.agent.web_tools.web_tool_flags",
+        lambda uid: {"web_research": False, "tavily": True},
+    )
+    names = {t.name for t in build_web_tools("u1")}
+    assert names == {"web_search", "fetch_url"}
 
 
 def test_mount_both(monkeypatch):

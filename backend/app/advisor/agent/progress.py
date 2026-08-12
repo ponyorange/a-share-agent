@@ -9,7 +9,7 @@ from typing import Callable, Iterator, Literal
 ProgressStep = Literal[
     "delegate", "list_sources", "search", "describe",
     "fetch", "sandbox", "submit", "run_python",
-    "web_research", "web_search", "fetch_url",
+    "web_research", "web_search", "fetch_url", "fetch_url_l2", "fetch_url_l3",
 ]
 ProgressPhase = Literal["data_agent", "main_agent"]
 ProgressStatus = Literal["started", "completed", "failed"]
@@ -18,7 +18,7 @@ ProgressSink = Callable[[dict[str, object]], None]
 PROGRESS_STEPS: frozenset[str] = frozenset({
     "delegate", "list_sources", "search", "describe",
     "fetch", "sandbox", "submit", "run_python",
-    "web_research", "web_search", "fetch_url",
+    "web_research", "web_search", "fetch_url", "fetch_url_l2", "fetch_url_l3",
 })
 PROGRESS_PHASES: frozenset[str] = frozenset({"data_agent", "main_agent"})
 PROGRESS_STATUSES: frozenset[str] = frozenset({"started", "completed", "failed"})
@@ -164,6 +164,20 @@ def _stage_message(
         if status == "completed":
             return "网页抓取完成"
         return "网页抓取失败"
+
+    if step == "fetch_url_l2":
+        if status == "started":
+            return "正在增强抓取（Scrapling）"
+        if status == "completed":
+            return "增强抓取完成"
+        return "增强抓取失败"
+
+    if step == "fetch_url_l3":
+        if status == "started":
+            return "正在浏览器增强抓取"
+        if status == "completed":
+            return "浏览器抓取完成"
+        return "浏览器抓取失败"
 
     if step == "submit":
         if status == "started":

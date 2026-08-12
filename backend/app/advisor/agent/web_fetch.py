@@ -75,7 +75,7 @@ def is_url_safe_for_fetch(url: str, *, allowed_ports: list[int]) -> tuple[bool, 
     return True, ""
 
 
-def _html_to_text(html: str, *, max_chars: int) -> str:
+def html_to_text(html: str, *, max_chars: int) -> str:
     text = _SCRIPT_RE.sub(" ", html)
     text = _STYLE_RE.sub(" ", text)
     text = _TAG_RE.sub(" ", text)
@@ -83,6 +83,9 @@ def _html_to_text(html: str, *, max_chars: int) -> str:
     if len(text) > max_chars:
         text = text[:max_chars]
     return text
+
+
+_html_to_text = html_to_text
 
 
 def _content_type_ok(content_type: str | None) -> bool:

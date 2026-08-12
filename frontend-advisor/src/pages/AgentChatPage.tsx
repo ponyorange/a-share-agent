@@ -58,9 +58,17 @@ const STEP_LABELS: Record<SubagentProgress['step'], string> = {
   web_research: '联网调研',
   web_search: '网页搜索',
   fetch_url: '网页抓取',
+  fetch_url_l2: '增强抓取',
+  fetch_url_l3: '浏览器抓取',
 }
 
-const WEB_STEPS = new Set(['web_research', 'web_search', 'fetch_url'])
+const WEB_STEPS = new Set([
+  'web_research',
+  'web_search',
+  'fetch_url',
+  'fetch_url_l2',
+  'fetch_url_l3',
+])
 
 function progressPanelTitle(items: SubagentProgress[]): string {
   if (items.length > 0 && items.every((item) => item.phase === 'main_agent')) {

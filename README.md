@@ -33,6 +33,10 @@ cd /opt/share-data
 发布包 compose 保持 API 无 Docker socket、Controller 仅在 Compose 内网
 `expose: 8090`、Runner 只由 Controller 拉起为一次性容器。
 
+Agent 精读网页（`fetch_url`）在困难页面会自动升级到 Scrapling / 无头浏览器；
+主镜像 `share-data:amd64` 已含浏览器依赖。本地开发未安装浏览器时，增强抓取的
+浏览器级（L3）会自动跳过，不影响 httpx / Scrapling HTTP 路径。
+
 ## 启动后端
 
 ```bash

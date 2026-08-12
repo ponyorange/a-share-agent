@@ -12,7 +12,7 @@ from ..llm_settings import (
     web_tool_flags,
 )
 from .progress import emit_progress
-from .web_fetch import fetch_url_text
+from .web_fetch_escalation import fetch_url_with_escalation
 from .web_limits import consume_web_quota
 from .web_research import run_web_research
 from .web_tavily import tavily_search
@@ -94,16 +94,36 @@ def build_web_tools(user_id: str) -> list[BaseTool]:
                 )
                 return f"错误：web_search 失败: {type(exc).__name__}"
 
+        tools.append(web_search)
+
+    if flags.get("web_research") or flags.get("tavily"):
+
         @tool
         def fetch_url(url: str) -> str:
             """抓取公网网页正文（http/https）。禁止内网/本机地址。
-            通常先 web_search 再对本工具传入候选 URL。"""
+            用户给出链接、或 web_research/web_search 得到候选 URL 后可调用。
+            困难页面会自动增强抓取。"""
             quota = consume_web_quota("fetch_url")
             if quota:
                 return quota
             emit_progress(step="fetch_url", status="started", phase="main_agent")
             try:
-                out = fetch_url_text(url)
+
+                def on_level(via: str) -> None:
+                    if via == "scrapling":
+                        emit_progress(
+                            step="fetch_url_l2",
+                            status="started",
+                            phase="main_agent",
+                        )
+                    elif via == "stealth":
+                        emit_progress(
+                            step="fetch_url_l3",
+                            status="started",
+                            phase="main_agent",
+                        )
+
+                out = fetch_url_with_escalation(url, on_level=on_level)
                 failed = out.startswith("错误：")
                 emit_progress(
                     step="fetch_url",
@@ -121,7 +141,7 @@ def build_web_tools(user_id: str) -> list[BaseTool]:
                 )
                 return f"错误：fetch_url 失败: {type(exc).__name__}"
 
-        tools.extend([web_search, fetch_url])
+        tools.append(fetch_url)
 
     return tools
 

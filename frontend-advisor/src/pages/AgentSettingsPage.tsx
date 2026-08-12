@@ -173,6 +173,9 @@ export default function AgentSettingsPage() {
       <p className="meta-line">
         可同时开启或同时关闭。DeepSeek 联网综述复用上方 Key；Tavily 需自备 API Key。
       </p>
+      <p className="meta-line">
+        精读网页在任一联网能力开启时可用；困难页面会自动增强抓取。
+      </p>
       <div className="strategy-grid" style={{ maxWidth: '28rem' }}>
         <label className="strategy-field">
           <span>
@@ -192,7 +195,7 @@ export default function AgentSettingsPage() {
               checked={tavilyEnabled}
               onChange={(e) => setTavilyEnabled(e.target.checked)}
             />{' '}
-            Tavily 搜索 + 网页抓取
+            Tavily 搜索（web_search）
           </span>
           <span className="meta-line">
             在{' '}
