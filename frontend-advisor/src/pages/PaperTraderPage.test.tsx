@@ -56,3 +56,19 @@ it('loads cockpit and starts trader', async () => {
     expect(startPaperTrader).toHaveBeenCalled()
   })
 })
+
+it('renders three cabin panels and selects first candidate for chart', async () => {
+  render(
+    <MemoryRouter>
+      <PaperTraderPage />
+    </MemoryRouter>,
+  )
+  await waitFor(() => {
+    expect(screen.getByText('候选池')).toBeInTheDocument()
+  })
+  expect(screen.getByText('迷你持仓')).toBeInTheDocument()
+  expect(screen.getByText('决策时间线')).toBeInTheDocument()
+  await waitFor(() => {
+    expect(screen.getByTestId('chart')).toHaveTextContent('chart:600000')
+  })
+})
