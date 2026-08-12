@@ -317,7 +317,9 @@ export default function PaperTraderPage() {
                 ))}
                 {!candidates.length ? (
                   <tr>
-                    <td colSpan={4}>暂无候选</td>
+                    <td colSpan={4}>
+                      暂无候选（需「今日关注」有归档，或自选/模拟盘持仓）
+                    </td>
                   </tr>
                 ) : null}
               </tbody>

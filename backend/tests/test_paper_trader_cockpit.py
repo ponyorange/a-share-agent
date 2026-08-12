@@ -12,7 +12,7 @@ def test_cockpit_stopped_without_session(monkeypatch):
             "positions": [],
         },
     )
-    monkeypatch.setattr(cp, "build_candidates", lambda uid, limit=None: [])
+    monkeypatch.setattr(cp, "build_candidates_light", lambda uid, limit=None: [])
     monkeypatch.setattr(
         cp,
         "list_decisions",
@@ -49,7 +49,7 @@ def test_cockpit_candidate_error_isolated(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("candidates down")
 
-    monkeypatch.setattr(cp, "build_candidates", boom)
+    monkeypatch.setattr(cp, "build_candidates_light", boom)
     monkeypatch.setattr(
         cp,
         "list_decisions",

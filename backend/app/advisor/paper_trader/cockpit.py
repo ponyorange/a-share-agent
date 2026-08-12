@@ -7,7 +7,7 @@ from typing import Any
 
 from ...quote import trading_session
 from ..paper import get_account
-from .candidates import build_candidates
+from .candidates import build_candidates_light
 from .store import get_session, list_decisions
 
 _POSITION_LIMIT = 20
@@ -57,7 +57,8 @@ def build_cockpit(
 
     candidates: list[dict[str, Any]] = []
     try:
-        candidates = build_candidates(user_id)
+        # Light path only: archived recs + watchlist + positions (fast for UI poll).
+        candidates = build_candidates_light(user_id)
     except Exception as exc:
         errors["candidates"] = f"{type(exc).__name__}: {exc}"
 
