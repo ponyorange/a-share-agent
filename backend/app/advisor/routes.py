@@ -1629,6 +1629,19 @@ def paper_trader_get(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
     return get_session(user["id"]) or {"status": "stopped"}
 
 
+@router.get("/paper-trader/cockpit")
+def paper_trader_cockpit(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    from .paper_trader.cockpit import build_cockpit
+
+    return build_cockpit(
+        user["id"], decisions_page=page, decisions_page_size=page_size
+    )
+
+
 @router.post("/paper-trader/start")
 def paper_trader_start(
     body: StartBody | None = None,

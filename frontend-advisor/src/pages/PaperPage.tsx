@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import {
   deletePaperPosition,
   fetchPaper,
@@ -293,6 +294,9 @@ export default function PaperPage() {
         <p>
           默认展示库内缓存价；点「刷新市值」才 SSE 逐只拉行情并写回。一键买入成交标记为
           rec_one_click。
+        </p>
+        <p>
+          <Link to="/paper/trader">打开交易员驾驶舱</Link>
         </p>
       </div>
 

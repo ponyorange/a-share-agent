@@ -23,6 +23,7 @@ import LeaderboardPage from './pages/LeaderboardPage'
 import LimitUpPage from './pages/LimitUpPage'
 import LoginPage from './pages/LoginPage'
 import PaperPage from './pages/PaperPage'
+import PaperTraderPage from './pages/PaperTraderPage'
 import PerformancePage from './pages/PerformancePage'
 import PortfolioPage from './pages/PortfolioPage'
 import RecommendationsPage from './pages/RecommendationsPage'
@@ -189,6 +190,7 @@ export default function App() {
             <Route path="/watchlist" element={<WatchlistPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/paper" element={<PaperPage />} />
+            <Route path="/paper/trader" element={<PaperTraderPage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
             <Route path="/regime" element={<RegimePage />} />
             <Route path="/signal-graph" element={<SignalGraphPage />} />

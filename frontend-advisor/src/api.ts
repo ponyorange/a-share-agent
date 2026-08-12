@@ -1489,6 +1489,123 @@ export function fetchPaperTrades(opts?: {
   }>(`/api/advisor/paper/trades?${q}`)
 }
 
+export type PaperTraderSession = {
+  id?: string
+  status: string
+  mode?: string
+  interval_sec?: number
+  risk?: Record<string, number | boolean | null>
+  stats_today?: Record<string, number>
+  next_run_at?: string | null
+  halt_reason?: string | null
+  [key: string]: unknown
+}
+
+export type PaperTraderCockpit = {
+  session: PaperTraderSession
+  paper: {
+    cash: number | null
+    equity: number | null
+    market_value: number | null
+    positions: Array<{
+      symbol?: string
+      name?: string
+      qty?: number
+      cost?: number
+      last?: number
+    }>
+    positions_count: number
+  }
+  candidates: Array<{
+    symbol: string
+    name?: string | null
+    direction?: string
+    rule_score?: number | null
+    graph_action?: string | null
+    in_watchlist?: boolean
+    in_recommendations?: boolean
+    held_qty?: number
+  }>
+  decisions: {
+    page: number
+    page_size: number
+    total: number
+    items: Record<string, unknown>[]
+  }
+  meta: {
+    is_trading: boolean
+    is_trading_day: boolean
+    server_now: string
+  }
+  errors?: Record<string, string>
+}
+
+export function fetchPaperTraderCockpit(opts?: {
+  page?: number
+  pageSize?: number
+}): Promise<PaperTraderCockpit> {
+  const q = new URLSearchParams()
+  q.set('page', String(opts?.page ?? 1))
+  q.set('page_size', String(opts?.pageSize ?? 20))
+  return authFetch(`/api/advisor/paper-trader/cockpit?${q}`)
+}
+
+export function startPaperTrader(body?: {
+  mode?: string
+  interval_sec?: number
+  risk?: Record<string, unknown>
+}): Promise<PaperTraderSession> {
+  return authFetch('/api/advisor/paper-trader/start', {
+    method: 'POST',
+    body: JSON.stringify(body ?? {}),
+  })
+}
+
+export function pausePaperTrader(): Promise<PaperTraderSession> {
+  return authFetch('/api/advisor/paper-trader/pause', { method: 'POST', body: '{}' })
+}
+
+export function stopPaperTrader(): Promise<PaperTraderSession> {
+  return authFetch('/api/advisor/paper-trader/stop', { method: 'POST', body: '{}' })
+}
+
+export function resumePaperTrader(opts?: {
+  confirm_halt_resume?: boolean
+}): Promise<PaperTraderSession> {
+  return authFetch('/api/advisor/paper-trader/resume', {
+    method: 'POST',
+    body: JSON.stringify({
+      confirm_halt_resume: Boolean(opts?.confirm_halt_resume),
+    }),
+  })
+}
+
+export function patchPaperTrader(body: {
+  mode?: string
+  interval_sec?: number
+  risk?: Record<string, unknown>
+}): Promise<PaperTraderSession> {
+  return authFetch('/api/advisor/paper-trader', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function fetchAdvisorKline(
+  symbol: string,
+  range: string = 'daily',
+): Promise<{
+  symbol?: string
+  name?: string
+  bars?: Array<Record<string, unknown>>
+  [key: string]: unknown
+}> {
+  const q = new URLSearchParams()
+  q.set('symbol', symbol)
+  q.set('range', range)
+  return authFetch(`/api/kline?${q}`)
+}
+
 export function formatPct(v: number | null | undefined, digits = 1): string {
   if (v == null || Number.isNaN(v)) return '—'
   return `${(v * 100).toFixed(digits)}%`

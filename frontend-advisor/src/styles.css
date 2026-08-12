@@ -4446,3 +4446,138 @@ body:has(.app-shell--agent-chat) {
   color: var(--color-market-down);
 }
 
+/* —— 交易员驾驶舱 —— */
+.paper-trader-page {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.paper-trader-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.paper-trader-toolbar-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.paper-trader-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.paper-trader-config {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem 0;
+}
+
+.paper-trader-config label {
+  display: grid;
+  gap: 0.25rem;
+  max-width: 16rem;
+}
+
+.paper-trader-risk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 0.65rem;
+}
+
+.paper-trader-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.paper-trader-col {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.paper-trader-chart-host {
+  width: 100%;
+  min-height: 280px;
+}
+
+.paper-trader-chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.paper-trader-positions,
+.paper-trader-decisions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.paper-trader-decision-detail {
+  margin: 0.35rem 0 0;
+  padding: 0.5rem;
+  overflow: auto;
+  max-height: 16rem;
+  font-size: 0.75rem;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.paper-trader-page .dir-buy {
+  color: var(--color-market-up, #d64545);
+}
+
+.paper-trader-page .dir-sell {
+  color: var(--color-market-down, #1a7f37);
+}
+
+.paper-trader-page tr.is-selected td {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent);
+}
+
+.badge.status-running {
+  background: #1a7f37;
+  color: #fff;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.badge.status-paused,
+.badge.status-stopped {
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.badge.status-halted {
+  background: #d64545;
+  color: #fff;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 900px) {
+  .paper-trader-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
