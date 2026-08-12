@@ -287,9 +287,9 @@ export default function PaperTraderPage() {
       ) : null}
 
       <div className="paper-trader-grid">
-        <div className="paper-trader-col">
+        <div className="paper-trader-panel cabin-candidates">
           <h3>候选池</h3>
-          <div className="table-wrap">
+          <div className="table-wrap paper-trader-scroll">
             <table className="data-table">
               <thead>
                 <tr>
@@ -325,28 +325,9 @@ export default function PaperTraderPage() {
               </tbody>
             </table>
           </div>
-
-          <h3>迷你持仓</h3>
-          <ul className="paper-trader-positions">
-            {positions.map((p) => (
-              <li key={String(p.symbol)}>
-                <button type="button" className="btn linkish" onClick={() => setSelectedSymbol(String(p.symbol))}>
-                  {p.symbol} {p.name || ''} · qty {p.qty}
-                </button>
-              </li>
-            ))}
-            {!positions.length ? <li>无持仓</li> : null}
-          </ul>
-          {cockpit ? (
-            <p className="muted">
-              今日：轮次 {cockpit.session.stats_today?.rounds ?? 0} / 成交{' '}
-              {cockpit.session.stats_today?.trades ?? 0} / 拦截{' '}
-              {cockpit.session.stats_today?.blocked ?? 0}
-            </p>
-          ) : null}
         </div>
 
-        <div className="paper-trader-col">
+        <div className="paper-trader-panel cabin-center">
           <div className="paper-trader-chart-head">
             <h3>日 K {selectedSymbol ? `· ${selectedSymbol}` : ''}</h3>
             {selectedSymbol ? (
@@ -358,7 +339,7 @@ export default function PaperTraderPage() {
           <PaperTraderChart symbol={selectedSymbol} />
 
           <h3>决策时间线</h3>
-          <ul className="paper-trader-decisions">
+          <ul className="paper-trader-decisions paper-trader-scroll">
             {decisions.map((d) => {
               const id = String(d.id || d.run_id || '')
               const open = expandedDecision === id
@@ -394,6 +375,31 @@ export default function PaperTraderPage() {
             })}
             {!decisions.length ? <li>尚无决策轮次</li> : null}
           </ul>
+        </div>
+
+        <div className="paper-trader-panel cabin-side">
+          <h3>迷你持仓</h3>
+          <ul className="paper-trader-positions paper-trader-scroll">
+            {positions.map((p) => (
+              <li key={String(p.symbol)}>
+                <button
+                  type="button"
+                  className="btn linkish"
+                  onClick={() => setSelectedSymbol(String(p.symbol))}
+                >
+                  {p.symbol} {p.name || ''} · qty {p.qty}
+                </button>
+              </li>
+            ))}
+            {!positions.length ? <li>无持仓</li> : null}
+          </ul>
+          {cockpit ? (
+            <p className="muted paper-trader-stats">
+              今日：轮次 {cockpit.session.stats_today?.rounds ?? 0} / 成交{' '}
+              {cockpit.session.stats_today?.trades ?? 0} / 拦截{' '}
+              {cockpit.session.stats_today?.blocked ?? 0}
+            </p>
+          ) : null}
         </div>
       </div>
     </section>
