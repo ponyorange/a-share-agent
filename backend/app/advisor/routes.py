@@ -82,6 +82,7 @@ from .agent_recs import (
 )
 
 from .signal_graph.routes import router as signal_graph_router
+from .paper_trader.models import PatchBody, ResumeBody, StartBody
 
 router = APIRouter(prefix="/api/advisor", tags=["advisor"])
 router.include_router(signal_graph_router)
@@ -1619,6 +1620,97 @@ def paper_one_click_perf(
     user: dict[str, Any] = Depends(_user),
 ) -> dict[str, Any]:
     return rec_one_click_performance(user["id"], page=page, page_size=page_size)
+
+
+@router.get("/paper-trader")
+def paper_trader_get(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    from .paper_trader.store import get_session
+
+    return get_session(user["id"]) or {"status": "stopped"}
+
+
+@router.post("/paper-trader/start")
+def paper_trader_start(
+    body: StartBody | None = None,
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    from .paper_trader.store import start_session
+
+    try:
+        return start_session(user["id"], body)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/paper-trader/pause")
+def paper_trader_pause(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    from .paper_trader.store import pause_session
+
+    try:
+        return pause_session(user["id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/paper-trader/stop")
+def paper_trader_stop(user: dict[str, Any] = Depends(_user)) -> dict[str, Any]:
+    from .paper_trader.store import stop_session
+
+    try:
+        return stop_session(user["id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/paper-trader/resume")
+def paper_trader_resume(
+    body: ResumeBody | None = None,
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    from .paper_trader.store import resume_session
+
+    try:
+        confirm = bool(body.confirm_halt_resume) if body else False
+        return resume_session(user["id"], confirm_halt_resume=confirm)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/paper-trader")
+def paper_trader_patch(
+    body: PatchBody,
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    from .paper_trader.store import patch_session
+
+    try:
+        return patch_session(user["id"], body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/paper-trader/decisions")
+def paper_trader_decisions(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    from .paper_trader.store import list_decisions
+
+    return list_decisions(user["id"], page=page, page_size=page_size)
+
+
+@router.get("/paper-trader/decisions/{decision_id}")
+def paper_trader_decision_get(
+    decision_id: str,
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    from .paper_trader.store import get_decision
+
+    doc = get_decision(user["id"], decision_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="decision not found")
+    return doc
 
 
 @router.get("/backtest/summary")

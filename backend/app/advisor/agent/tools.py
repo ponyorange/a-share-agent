@@ -1309,6 +1309,116 @@ def build_tools(
         )
 
     @tool
+    def get_paper_trader_status() -> str:
+        """查看模拟盘全自动交易员会话状态与今日统计。"""
+        _bind()
+        from ..paper_trader.store import get_session
+
+        return json.dumps(
+            get_session(user_id) or {"status": "stopped"},
+            ensure_ascii=False,
+            default=str,
+        )
+
+    @tool
+    def start_paper_trader(
+        mode: str = "signal_first",
+        interval_sec: int = 600,
+        confirm: bool = False,
+    ) -> str:
+        """启动模拟盘全自动交易员（worker 盘中自动下单）。须 confirm=true。"""
+        _bind()
+        preview = {"mode": mode, "interval_sec": interval_sec}
+        if not confirm:
+            return _need_confirm("start_paper_trader", preview)
+        from ..paper_trader.models import StartBody
+        from ..paper_trader.store import start_session
+
+        try:
+            body = StartBody(
+                mode=mode if mode in ("signal_first", "llm_first") else "signal_first",
+                interval_sec=int(interval_sec),
+            )
+            sess = start_session(user_id, body)
+        except Exception as exc:
+            return json.dumps(
+                {"applied": False, "error": f"{type(exc).__name__}: {exc}"},
+                ensure_ascii=False,
+            )
+        return json.dumps({"applied": True, "session": sess}, ensure_ascii=False, default=str)
+
+    @tool
+    def pause_paper_trader() -> str:
+        """暂停模拟盘全自动交易员（无需 confirm）。"""
+        _bind()
+        from ..paper_trader.store import pause_session
+
+        try:
+            sess = pause_session(user_id)
+        except Exception as exc:
+            return json.dumps(
+                {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                ensure_ascii=False,
+            )
+        return json.dumps({"ok": True, "session": sess}, ensure_ascii=False, default=str)
+
+    @tool
+    def stop_paper_trader() -> str:
+        """停止模拟盘全自动交易员（无需 confirm；不改持仓）。"""
+        _bind()
+        from ..paper_trader.store import stop_session
+
+        try:
+            sess = stop_session(user_id)
+        except Exception as exc:
+            return json.dumps(
+                {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                ensure_ascii=False,
+            )
+        return json.dumps({"ok": True, "session": sess}, ensure_ascii=False, default=str)
+
+    @tool
+    def resume_paper_trader(
+        confirm_halt_resume: bool = False,
+        confirm: bool = False,
+    ) -> str:
+        """恢复交易员。paused 可直接恢复；halted 须 confirm_halt_resume=true 且 confirm=true。"""
+        _bind()
+        from ..paper_trader.store import get_session, resume_session
+
+        cur = get_session(user_id) or {}
+        if str(cur.get("status") or "") == "halted":
+            if not confirm or not confirm_halt_resume:
+                return _need_confirm(
+                    "resume_paper_trader",
+                    {
+                        "status": "halted",
+                        "halt_reason": cur.get("halt_reason"),
+                        "confirm_halt_resume": True,
+                    },
+                )
+        try:
+            sess = resume_session(
+                user_id, confirm_halt_resume=bool(confirm_halt_resume)
+            )
+        except Exception as exc:
+            return json.dumps(
+                {"applied": False, "error": f"{type(exc).__name__}: {exc}"},
+                ensure_ascii=False,
+            )
+        return json.dumps({"applied": True, "session": sess}, ensure_ascii=False, default=str)
+
+    @tool
+    def list_paper_trader_decisions(limit: int = 20) -> str:
+        """列出模拟盘交易员近期决策日志。"""
+        _bind()
+        from ..paper_trader.store import list_decisions
+
+        n = max(1, min(int(limit), 50))
+        out = list_decisions(user_id, page=1, page_size=n)
+        return json.dumps(out, ensure_ascii=False, default=str)
+
+    @tool
     def list_recommendation_dates(limit: int = 20) -> str:
         """列出用户推荐归档日期（最近若干交易日）。"""
         _bind()
@@ -1975,6 +2085,12 @@ def build_tools(
         paper_sell_all,
         paper_reset_account,
         paper_delete_position,
+        get_paper_trader_status,
+        start_paper_trader,
+        pause_paper_trader,
+        stop_paper_trader,
+        resume_paper_trader,
+        list_paper_trader_decisions,
         get_symbol_advice,
         get_graph_signal,
         run_graph_signals,

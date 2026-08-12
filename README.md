@@ -69,7 +69,7 @@ cp .env.example .env
 前端入口：顶栏用户名 → `/account`；登录页「忘记密码」；Agent 面板「定时任务」页 `/agent/jobs`。
 
 盯盘 worker（与主应用同镜像）：本地 `python -m app.advisor.monitor.worker`；Docker Compose 服务名为 `monitor-worker`。  
-**须保持常开**（含盘前/盘后/节假日）：负责按 `next_run_at` 激活「明天盯盘」「定点 9:00」等调度，并在交易时段内对已激活的盯盘任务做规则/LLM 求值与邮件告警（不下单）。仅在盘中启动会错过夜间创建后的次日激活。
+**须保持常开**（含盘前/盘后/节假日）：负责按 `next_run_at` 激活「明天盯盘」「定点 9:00」等调度，并在交易时段内对已激活的盯盘任务做规则/LLM 求值与邮件告警（不下单）；同进程兼跑模拟盘全自动交易员（`paper_trader`，可自动下模拟单）。仅在盘中启动会错过夜间创建后的次日激活。
 
 生产启动必须显式设置 `APP_ENV=production`、`MONGODB_URI` 和至少 32 字节的
 高熵 `JWT_SECRET`。用户 LLM API Key 使用独立的

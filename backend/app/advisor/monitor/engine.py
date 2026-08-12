@@ -375,4 +375,21 @@ def run_monitor_tick(*, quote_limit: int = 200) -> dict[str, int]:
     if session.get("is_trading"):
         _evaluate_running_watches(now=now, quote_limit=quote_limit, stats=stats)
 
+    stats.setdefault("paper_trader_runs", 0)
+    stats.setdefault("paper_trader_errors", 0)
+    stats.setdefault("paper_trader_day_end", 0)
+    try:
+        from ..paper_trader.scheduler import (
+            finalize_paper_trader_day_ends,
+            run_due_paper_traders,
+        )
+
+        pt = run_due_paper_traders(now=now)
+        stats["paper_trader_runs"] = int(pt.get("ran") or 0)
+        stats["paper_trader_errors"] = int(pt.get("errors") or 0)
+        stats["paper_trader_day_end"] = int(finalize_paper_trader_day_ends(now=now))
+    except Exception:
+        logger.exception("paper trader tick failed")
+        stats["paper_trader_errors"] = int(stats.get("paper_trader_errors") or 0) + 1
+
     return stats

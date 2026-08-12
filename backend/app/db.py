@@ -122,6 +122,16 @@ def ensure_indexes() -> None:
         partial_filter={"external_idempotency_key": {"$type": "string"}},
     )
     db.paper_mutation_counters.create_index("user_id", unique=True)
+    db.paper_trader_sessions.create_index("user_id", unique=True)
+    db.paper_trader_sessions.create_index(
+        [("status", ASCENDING), ("next_run_at", ASCENDING)]
+    )
+    db.paper_trader_decisions.create_index(
+        [("user_id", ASCENDING), ("started_at", DESCENDING)]
+    )
+    db.paper_trader_decisions.create_index(
+        [("session_id", ASCENDING), ("started_at", DESCENDING)]
+    )
     db.committee_approvals.create_index(
         [
             ("user_id", ASCENDING),
