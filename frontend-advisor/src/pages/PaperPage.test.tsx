@@ -10,6 +10,7 @@ const fetchOneClickPerf = vi.hoisted(() => vi.fn())
 const fetchPaper = vi.hoisted(() => vi.fn())
 const fetchPaperPnl = vi.hoisted(() => vi.fn())
 const fetchPaperTrades = vi.hoisted(() => vi.fn())
+const fetchPaperTraderSession = vi.hoisted(() => vi.fn())
 const paperOrder = vi.hoisted(() => vi.fn())
 const resetPaper = vi.hoisted(() => vi.fn())
 const sellAllPaperPositions = vi.hoisted(() => vi.fn())
@@ -22,6 +23,7 @@ vi.mock('../api', () => ({
   fetchPaper,
   fetchPaperPnl,
   fetchPaperTrades,
+  fetchPaperTraderSession,
   formatPct: (v: number | null | undefined, digits = 1) =>
     v == null || Number.isNaN(v) ? '—' : `${(v * 100).toFixed(digits)}%`,
   paperOrder,
@@ -67,6 +69,7 @@ beforeEach(() => {
   setViewport(true)
   vi.restoreAllMocks()
   fetchPaper.mockResolvedValue(account)
+  fetchPaperTraderSession.mockResolvedValue({ status: 'stopped' })
   fetchPaperPnl.mockResolvedValue({
     total: { pnl: 500, return_pct: 0.005 },
     historical: {
@@ -131,6 +134,13 @@ it('移动端展示模拟盘摘要、折叠操作和默认卡片视图，并保�
   expect(within(summary).getByText('50000.00')).toBeInTheDocument()
   expect(within(summary).getByText('市值')).toBeInTheDocument()
   expect(within(summary).getByText('50500.00')).toBeInTheDocument()
+
+  expect(await screen.findByText('Agent 自动炒模拟盘')).toBeInTheDocument()
+  expect(screen.getByText('未开启')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: '打开交易员驾驶舱' })).toHaveAttribute(
+    'target',
+    '_blank',
+  )
 
   expect(screen.queryByText('持仓收益')).not.toBeInTheDocument()
   const holding = screen.getByText('总持仓收益').closest('section')
@@ -272,4 +282,14 @@ it('成交分页失败时保留已有数据并在对应区块展示错误', asyn
 
   expect(await within(section).findByRole('alert')).toHaveTextContent('成交加载失败')
   expect(within(section).getByRole('article', { name: '沪深300ETF 510300' })).toBeInTheDocument()
+})
+
+it('展示 Agent 自动炒模拟盘运行状态', async () => {
+  fetchPaperTraderSession.mockResolvedValue({
+    status: 'running',
+    mode: 'signal_first',
+  })
+  render(<PaperPage />)
+  expect(await screen.findByText('运行中')).toBeInTheDocument()
+  expect(screen.getByText(/模式 signal_first/)).toBeInTheDocument()
 })

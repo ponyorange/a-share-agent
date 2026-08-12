@@ -1501,6 +1501,10 @@ export type PaperTraderSession = {
   [key: string]: unknown
 }
 
+export function fetchPaperTraderSession(): Promise<PaperTraderSession> {
+  return authFetch('/api/advisor/paper-trader')
+}
+
 export type PaperTraderCockpit = {
   session: PaperTraderSession
   paper: {

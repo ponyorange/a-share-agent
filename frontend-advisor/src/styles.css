@@ -4446,6 +4446,13 @@ body:has(.app-shell--agent-chat) {
   color: var(--color-market-down);
 }
 
+.paper-page .paper-trader-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.55rem;
+}
+
 /* —— 交易员驾驶舱 —— */
 .paper-trader-page {
   display: grid;

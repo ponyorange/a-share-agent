@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
 import {
   deletePaperPosition,
   fetchPaper,
   fetchPaperPnl,
   fetchOneClickPerf,
   fetchPaperTrades,
+  fetchPaperTraderSession,
   formatPct,
   paperOrder,
   resetPaper,
@@ -13,6 +13,7 @@ import {
   sellPaperPosition,
   streamPaperMarkToMarket,
   type PaperAccount,
+  type PaperTraderSession,
 } from '../api'
 import { MobileDisclosure } from '../components/MobileDisclosure'
 import {
@@ -25,6 +26,21 @@ import { explorerKlineUrl } from '../explorerLinks'
 
 const TRADE_PAGE_SIZE = 20
 const PERF_PAGE_SIZE = 20
+const TRADER_POLL_MS = 30_000
+
+function paperTraderStatusLabel(status: string): string {
+  switch (status) {
+    case 'running':
+      return '运行中'
+    case 'paused':
+      return '已暂停'
+    case 'halted':
+      return '已熔断'
+    case 'stopped':
+    default:
+      return '未开启'
+  }
+}
 
 export default function PaperPage() {
   const [account, setAccount] = useState<PaperAccount | null>(null)
@@ -82,6 +98,13 @@ export default function PaperPage() {
   const [markProgress, setMarkProgress] = useState<{ done: number; total: number } | null>(
     null,
   )
+  const [traderSession, setTraderSession] = useState<PaperTraderSession | null>(null)
+
+  const loadTraderSession = useCallback(() => {
+    fetchPaperTraderSession()
+      .then((session) => setTraderSession(session))
+      .catch(() => setTraderSession({ status: 'stopped' }))
+  }, [])
 
   const loadTrades = useCallback((page: number) => {
     setTradesLoading(true)
@@ -125,12 +148,20 @@ export default function PaperPage() {
       .finally(() => setLoading(false))
     loadTrades(1)
     loadPerf(1)
+    loadTraderSession()
   }
 
   useEffect(() => {
     reload()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, [])
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      loadTraderSession()
+    }, TRADER_POLL_MS)
+    return () => window.clearInterval(id)
+  }, [loadTraderSession])
 
   async function refreshMarkToMarket() {
     if (marking) return
@@ -295,7 +326,19 @@ export default function PaperPage() {
           默认展示库内缓存价；点「刷新市值」才 SSE 逐只拉行情并写回。一键买入成交标记为
           rec_one_click。
         </p>
-        <p>
+        <p className="paper-trader-entry">
+          <span className="metric-label">Agent 自动炒模拟盘</span>{' '}
+          <span
+            className={`badge status-${String(traderSession?.status || 'stopped')}`}
+          >
+            {paperTraderStatusLabel(String(traderSession?.status || 'stopped'))}
+          </span>
+          {traderSession?.status === 'running' && traderSession.mode ? (
+            <span className="muted"> · 模式 {String(traderSession.mode)}</span>
+          ) : null}
+          {traderSession?.status === 'halted' && traderSession.halt_reason ? (
+            <span className="status error"> · {String(traderSession.halt_reason)}</span>
+          ) : null}{' '}
           <a href="/paper/trader" target="_blank" rel="noreferrer">
             打开交易员驾驶舱
           </a>
