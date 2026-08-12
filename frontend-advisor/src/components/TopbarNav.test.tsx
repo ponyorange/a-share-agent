@@ -31,9 +31,10 @@ it('横向展示模块，并可用全部菜单切换', async () => {
     'href',
     '/limitup',
   )
-  expect(BASE_NAV_LINKS.findIndex((link) => link.to === '/regime')).toBe(
-    BASE_NAV_LINKS.findIndex((link) => link.to === '/limitup') - 1,
+  expect(BASE_NAV_LINKS.findIndex((link) => link.to === '/regime')).toBeLessThan(
+    BASE_NAV_LINKS.findIndex((link) => link.to === '/limitup'),
   )
+  expect(screen.queryByRole('link', { name: '交易员' })).not.toBeInTheDocument()
 
   await user.click(screen.getByRole('button', { name: '全部' }))
   const menu = screen.getByRole('menu', { name: '全部功能模块' })

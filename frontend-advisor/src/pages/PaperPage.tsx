@@ -296,7 +296,9 @@ export default function PaperPage() {
           rec_one_click。
         </p>
         <p>
-          <Link to="/paper/trader">打开交易员驾驶舱</Link>
+          <a href="/paper/trader" target="_blank" rel="noreferrer">
+            打开交易员驾驶舱
+          </a>
         </p>
       </div>
 

@@ -124,10 +124,7 @@ it('认证后的基础页与 Agent chat 保留导航和面板切换结构', () =
     </MemoryRouter>,
   )
   expect(screen.getByRole('link', { name: '模拟盘' })).toHaveAttribute('href', '/paper')
-  expect(screen.getByRole('link', { name: '交易员' })).toHaveAttribute(
-    'href',
-    '/paper/trader',
-  )
+  expect(screen.queryByRole('link', { name: '交易员' })).not.toBeInTheDocument()
   expect(baseView.container.querySelector('.topbar-nav-wrap .nav')).toBeInTheDocument()
   baseView.unmount()
 

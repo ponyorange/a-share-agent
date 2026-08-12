@@ -15,7 +15,6 @@ export const BASE_NAV_LINKS: TopbarNavLink[] = [
   { to: '/watchlist', label: '我的收藏' },
   { to: '/history', label: '推荐历史' },
   { to: '/paper', label: '模拟盘' },
-  { to: '/paper/trader', label: '交易员' },
   { to: '/leaderboard', label: '龙虎榜' },
   { to: '/regime', label: '今日闸门' },
   { to: '/signal-graph', label: '图学习' },
