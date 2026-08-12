@@ -18,7 +18,7 @@ export default function PaperTraderChart({ symbol }: { symbol: string | null }) 
     const el = hostRef.current
     if (!el) return
     const chart = createChart(el, {
-      height: 280,
+      height: 300,
       layout: {
         background: { color: 'transparent' },
         textColor: '#9aa4b2',
@@ -55,8 +55,11 @@ export default function PaperTraderChart({ symbol }: { symbol: string | null }) 
   }, [])
 
   useEffect(() => {
-    if (!symbol || !seriesRef.current) {
-      seriesRef.current?.setData([])
+    if (!seriesRef.current) return
+    if (!symbol) {
+      seriesRef.current.setData([])
+      setError(null)
+      setLoading(false)
       return
     }
     let cancelled = false
@@ -100,13 +103,10 @@ export default function PaperTraderChart({ symbol }: { symbol: string | null }) 
     }
   }, [symbol])
 
-  if (!symbol) {
-    return <p className="status">选择左侧标的查看日 K</p>
-  }
-
   return (
     <div className="paper-trader-chart">
-      {loading ? <p className="status">K 线加载中…</p> : null}
+      {!symbol ? <p className="status">选择标的查看日 K</p> : null}
+      {symbol && loading ? <p className="status">K 线加载中…</p> : null}
       {error ? <p className="status error">{error}</p> : null}
       <div ref={hostRef} className="paper-trader-chart-host" />
     </div>
