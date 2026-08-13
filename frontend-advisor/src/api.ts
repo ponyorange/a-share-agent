@@ -2228,6 +2228,29 @@ export type GraphSignalEvidence = {
   scope_id?: string
 }
 
+export type GraphViewNode = {
+  id: string
+  layer: string
+  label: string
+}
+
+export type GraphViewEdge = {
+  src: string
+  dst: string
+  layer: string
+  confidence: number
+  sample_count: number
+  last_tick: number
+}
+
+export type GraphViewPayload = {
+  truncated: boolean
+  node_count: number
+  edge_count: number
+  nodes: GraphViewNode[]
+  edges: GraphViewEdge[]
+}
+
 export type GraphSignalItem = {
   symbol: string
   name?: string
@@ -2262,6 +2285,10 @@ export type SignalGraphSummary = {
 
 export function fetchSignalGraphSummary(): Promise<SignalGraphSummary> {
   return authFetch('/api/advisor/signal-graph/summary')
+}
+
+export function fetchSignalGraphView(): Promise<GraphViewPayload> {
+  return authFetch('/api/advisor/signal-graph/view')
 }
 
 export function fetchGraphSignal(

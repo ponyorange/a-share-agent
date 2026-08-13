@@ -9,6 +9,7 @@ from .service import (
     get_summary,
     settle_due,
     signal_graph_config,
+    view_graph,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "run_daily_evolve",
     "settle_due",
     "signal_graph_config",
+    "view_graph",
 ]

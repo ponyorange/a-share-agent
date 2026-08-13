@@ -73,6 +73,15 @@ def settle(
     return sg.settle_due(trade_date=body.trade_date, limit=body.limit)
 
 
+@router.get("/view")
+def signal_graph_view(
+    max_nodes: int | None = Query(default=None, ge=1, le=8000),
+    max_edges: int | None = Query(default=None, ge=1, le=20000),
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    return sg.view_graph(max_nodes=max_nodes, max_edges=max_edges)
+
+
 @router.get("/pending")
 def pending(
     limit: int = Query(default=50, ge=1, le=500),

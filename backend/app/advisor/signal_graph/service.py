@@ -417,3 +417,110 @@ def run_synthetic_demo(seed: int = 7, days: int = 60) -> dict[str, Any]:
 
 def normalize_symbol_to_ticker(symbol: str) -> str:
     return normalize_ticker(symbol)
+
+
+DEFAULT_VIEW_MAX_NODES = 8000
+DEFAULT_VIEW_MAX_EDGES = 20000
+
+
+def edge_strength(sample_count: int, confidence: float) -> float:
+    return float(sample_count) * (0.5 + abs(float(confidence)))
+
+
+def view_graph(
+    *,
+    owner: str | None = None,
+    max_nodes: int | None = None,
+    max_edges: int | None = None,
+) -> dict[str, Any]:
+    cfg = signal_graph_config()
+    oid = owner or str(cfg.get("owner") or "default")
+    cap_n = int(max_nodes or DEFAULT_VIEW_MAX_NODES)
+    cap_e = int(max_edges or DEFAULT_VIEW_MAX_EDGES)
+    graph, _ledger, _meta = graph_store.load_runtime(oid)
+
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for edge in graph.edges.values():
+        dst = str(edge.dst)
+        if not dst.startswith("action:"):
+            continue
+        key = (str(edge.src), dst)
+        sample = int(edge.sample_count or 0)
+        conf = float(edge.confidence or 0.0)
+        cur = merged.get(key)
+        if cur is None:
+            merged[key] = {
+                "src": key[0],
+                "dst": key[1],
+                "layer": edge.layer,
+                "confidence": conf,
+                "sample_count": sample,
+                "last_tick": int(edge.last_tick or 0),
+                "_wconf": conf * sample,
+            }
+            continue
+        cur["sample_count"] += sample
+        cur["_wconf"] += conf * sample
+        cur["last_tick"] = max(int(cur["last_tick"]), int(edge.last_tick or 0))
+        if cur["sample_count"] > 0:
+            cur["confidence"] = cur["_wconf"] / cur["sample_count"]
+        else:
+            cur["confidence"] = (float(cur["confidence"]) + conf) / 2.0
+
+    rows = []
+    for item in merged.values():
+        item.pop("_wconf", None)
+        rows.append(item)
+    rows.sort(
+        key=lambda r: (
+            -edge_strength(int(r["sample_count"]), float(r["confidence"])),
+            r["src"],
+            r["dst"],
+        )
+    )
+
+    truncated = False
+    chosen: list[dict[str, Any]] = []
+    nodes_acc: dict[str, dict[str, Any]] = {}
+
+    def _add_node(nid: str) -> bool:
+        if nid in nodes_acc:
+            return True
+        if len(nodes_acc) >= cap_n:
+            return False
+        raw = graph.nodes.get(nid)
+        nodes_acc[nid] = {
+            "id": nid,
+            "layer": raw.layer if raw is not None else (
+                "action" if nid.startswith("action:") else "stock"
+            ),
+            "label": (raw.label if raw is not None else nid.split(":", 1)[-1])
+            or nid,
+        }
+        return True
+
+    for row in rows:
+        if len(chosen) >= cap_e:
+            truncated = True
+            break
+        if row["src"] not in nodes_acc and len(nodes_acc) >= cap_n:
+            truncated = True
+            continue
+        if row["dst"] not in nodes_acc and len(nodes_acc) >= cap_n:
+            truncated = True
+            continue
+        if not _add_node(row["src"]) or not _add_node(row["dst"]):
+            truncated = True
+            continue
+        chosen.append(row)
+
+    if len(rows) > len(chosen):
+        truncated = True
+
+    return {
+        "truncated": truncated,
+        "node_count": len(nodes_acc),
+        "edge_count": len(chosen),
+        "nodes": sorted(nodes_acc.values(), key=lambda n: n["id"]),
+        "edges": chosen,
+    }
