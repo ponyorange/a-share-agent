@@ -87,6 +87,15 @@ def _llm_enrich(
                 "news": (news_map.get(str(p.get("symbol"))) or [])[:3],
             }
         )
+        graph = p.get("graph_signal")
+        if isinstance(graph, dict) and (graph.get("action") or graph.get("error")):
+            slim = {
+                "action": graph.get("action"),
+                "product_action": graph.get("product_action"),
+            }
+            if graph.get("error"):
+                slim["error"] = str(graph.get("error"))[:120]
+            slim_picks[-1]["graph_signal"] = slim
     cctv_items = [
         str(x.get("title") or x.get("内容") or x.get("新闻") or x)[:100]
         for x in (cctv.get("items") or [])[:8]
@@ -102,11 +111,12 @@ def _llm_enrich(
     }
     system = (
         "你是「投研助手」。根据多因子规则评分（tech量价/flow资金/sector板块/value估值，"
-        "以及 market 市场状态缩放）候选 + 新闻标题 + 宏观/联播要点，"
-        "用中文给出研究摘要。只输出 JSON，不要 Markdown 围栏。"
+        "以及 market 市场状态缩放）候选 + 可选 graph_signal（图学习 BUY/HOLD/SELL）"
+        " + 新闻标题 + 宏观/联播要点，用中文给出研究摘要。只输出 JSON，不要 Markdown 围栏。"
         '格式: {"market_brief":"...","macro_brief":"...","notes":{"600519":"一句话"}}。'
         "market_brief≤120字，可点出市场状态；macro_brief≤100字；"
         "notes 只覆盖候选代码，每条≤40字，勿只讲动量，可结合资金/板块/估值子分；"
+        "有 graph_signal 时可点一句图方向，勿改写图分，勿让图替代多因子结论；"
         "勿编造未提供的数据；勿给出保证收益的表述。"
     )
     resp = model.invoke(

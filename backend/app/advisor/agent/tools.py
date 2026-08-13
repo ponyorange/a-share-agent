@@ -76,6 +76,40 @@ def _fmt_ratio_pct(v: Any, digits: int = 2) -> str | None:
     return f"{sign}{x * 100:.{digits}f}%"
 
 
+def _slim_graph_signal(raw: Any) -> dict[str, Any] | None:
+    """Keep graph action/scores for Agent; drop bulky evidence lists."""
+    if not isinstance(raw, dict) or not raw:
+        return None
+    if raw.get("error"):
+        return {"error": str(raw.get("error"))[:160]}
+    action = raw.get("action")
+    if not action:
+        return None
+    out: dict[str, Any] = {
+        "action": action,
+        "product_action": raw.get("product_action"),
+    }
+    scores = raw.get("scores")
+    if isinstance(scores, dict):
+        slim_scores = {
+            k: scores.get(k)
+            for k in ("BUY", "HOLD", "SELL")
+            if scores.get(k) is not None
+        }
+        if slim_scores:
+            out["scores"] = slim_scores
+    if raw.get("blocked_reason"):
+        out["blocked_reason"] = raw.get("blocked_reason")
+    if raw.get("market_regime"):
+        out["market_regime"] = raw.get("market_regime")
+    patterns = raw.get("patterns") or []
+    if isinstance(patterns, list) and patterns:
+        out["patterns"] = [str(p) for p in patterns[:4]]
+    if raw.get("horizon_days") is not None:
+        out["horizon_days"] = raw.get("horizon_days")
+    return out
+
+
 def _slim_rec_items(items: list[dict[str, Any]], limit: int = 12) -> list[dict[str, Any]]:
     out = []
     for it in items[:limit]:
@@ -108,6 +142,9 @@ def _slim_rec_items(items: list[dict[str, Any]], limit: int = 12) -> list[dict[s
                 )
                 if layers.get(k) is not None
             }
+        graph = _slim_graph_signal(it.get("graph_signal"))
+        if graph:
+            row["graph_signal"] = graph
         out.append(row)
     return out
 
@@ -285,6 +322,8 @@ def build_tools(
         """获取当前用户「今日关注」多因子推荐列表摘要（综合分 + tech/flow/sector/value/market 子分）。
         用户问今日关注/今日推荐时优先调用。board 可选 etf/hs/star/all。
         regime_override=true 表示用户明确要求 risk_off 下仍看票/强制看推荐。
+        items 可能含 graph_signal（图学习 BUY/HOLD/SELL，原样引用，勿改写）；
+        与多因子 action 并列，不互相替代。
         返回的 archive_day_chg_* 是刷新归档时的涨跌快照，不是实时行情；
         若要报盘中今日涨跌，必须再调用 get_stock_quotes。
         无归档时提示去基础面板刷新候选池；可再配合联播/宏观工具补充叙事。
@@ -801,6 +840,7 @@ def build_tools(
     def get_symbol_advice(symbol: str) -> str:
         """对单个股票/ETF 做规则诊断摘要。symbol 为 6 位代码。
         day_chg_pct 为小数比例（0.19=涨19%）；对用户展示涨跌幅时必须用 day_chg 字段，勿把 0.19 写成 0.19%。
+        可能含 graph_signal（图学习 BUY/HOLD/SELL），与多因子 action 并列，勿改写图分。
         """
         _bind()
         try:
@@ -811,20 +851,25 @@ def build_tools(
                 ensure_ascii=False,
             )
         day_chg = row.get("day_chg_pct")
+        payload: dict[str, Any] = {
+            "symbol": row.get("symbol"),
+            "name": row.get("name"),
+            "score": row.get("score"),
+            "action": row.get("action"),
+            "action_label": row.get("action_label"),
+            "rationale": (row.get("rationale") or "")[:400],
+            "close": row.get("close"),
+            "prev_close": row.get("prev_close"),
+            "day_chg_pct": day_chg,
+            "day_chg": _fmt_ratio_pct(day_chg),
+            "pct_unit": "day_chg_pct 是小数比例(0.01=1%)，展示用 day_chg",
+        }
+        graph = _slim_graph_signal(row.get("graph_signal"))
+        if graph:
+            payload["graph_signal"] = graph
+            payload["graph_note"] = "graph_signal.action/scores 来自 SignalGraph，请原样引用"
         return json.dumps(
-            {
-                "symbol": row.get("symbol"),
-                "name": row.get("name"),
-                "score": row.get("score"),
-                "action": row.get("action"),
-                "action_label": row.get("action_label"),
-                "rationale": (row.get("rationale") or "")[:400],
-                "close": row.get("close"),
-                "prev_close": row.get("prev_close"),
-                "day_chg_pct": day_chg,
-                "day_chg": _fmt_ratio_pct(day_chg),
-                "pct_unit": "day_chg_pct 是小数比例(0.01=1%)，展示用 day_chg",
-            },
+            payload,
             ensure_ascii=False,
             default=str,
         )

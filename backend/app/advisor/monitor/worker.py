@@ -32,7 +32,8 @@ def main() -> None:
             sleep_sec = SLEEP_TRADING_SEC if is_trading else SLEEP_IDLE_SEC
             logger.info(
                 "tick jobs=%s quotes=%s alerts=%s errors=%s "
-                "activated=%s missed=%s run_at=%s finalized=%s sleep=%ss trading=%s",
+                "activated=%s missed=%s run_at=%s finalized=%s "
+                "graph_evolve=%s sleep=%ss trading=%s",
                 stats.get("jobs"),
                 stats.get("quotes"),
                 stats.get("alerts"),
@@ -41,6 +42,7 @@ def main() -> None:
                 stats.get("missed"),
                 stats.get("run_at"),
                 stats.get("finalized"),
+                stats.get("signal_graph_evolve"),
                 sleep_sec,
                 is_trading,
             )

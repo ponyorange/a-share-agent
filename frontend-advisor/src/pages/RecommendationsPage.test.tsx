@@ -132,6 +132,7 @@ beforeEach(() => {
             factors: [],
             hit_rate: 0.654,
             rationale: '测试推荐理由',
+            graph_signal: { action: 'HOLD', scores: { BUY: 0.2, HOLD: 0.8, SELL: 0.1 } },
           },
         ],
       },
@@ -249,4 +250,53 @@ it('移动端以推荐卡片展示今日关注并保留页面级买入操作', a
   await user.click(screen.getByRole('button', { name: '表格视图' }))
   await waitFor(() => expect(screen.getByRole('columnheader', { name: '代码' })).toBeInTheDocument())
   expect(screen.getByRole('columnheader', { name: '名称' })).toBeInTheDocument()
+  expect(screen.getByRole('columnheader', { name: '图' })).toBeInTheDocument()
+  expect(screen.getByText('图观望')).toBeInTheDocument()
+})
+
+it('刷新挂图阶段展示进度，而不是停在精算 75/75', async () => {
+  const user = userEvent.setup()
+  let release: (() => void) | undefined
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  streamRecommendationsRefresh.mockImplementation(
+    async (
+      _top: number,
+      _board: string,
+      handlers: {
+        onProgress?: (row: {
+          done?: number
+          total?: number
+          phase?: string
+          message?: string
+          symbol?: string
+          name?: string
+        }) => void
+        onDone?: () => void
+      },
+    ) => {
+      handlers.onProgress?.({
+        phase: 'graph',
+        done: 1,
+        total: 26,
+        symbol: '688702',
+        name: '盛科通信-U',
+        message: '挂图 1/26',
+      })
+      await held
+      handlers.onDone?.()
+    },
+  )
+
+  render(
+    <MemoryRouter>
+      <RecommendationsPage />
+    </MemoryRouter>,
+  )
+  await screen.findByText('标普油气ETF嘉实')
+  await user.click(screen.getByRole('button', { name: '刷新候选池' }))
+  expect(await screen.findByText('挂图 1/26 · 盛科通信-U')).toBeInTheDocument()
+  expect(screen.getByText('挂图 1/26（4%）')).toBeInTheDocument()
+  release?.()
 })

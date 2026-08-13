@@ -48,6 +48,49 @@ def _maybe_attach_graph(
         return row
 
 
+def _stamp_recommendation_picks(
+    picks: list[dict[str, Any]],
+    hit_map: dict[str, float | None],
+    *,
+    attach_graph: bool = True,
+) -> list[dict[str, Any]]:
+    """Attach hit_rate and optionally graph_signal onto ranked recommendation rows."""
+    for p in picks:
+        p["hit_rate"] = hit_map.get(p["symbol"])
+        if attach_graph:
+            _maybe_attach_graph(p, for_recommendations=True)
+    return picks
+
+
+def _iter_graph_stamp_events(picks: list[dict[str, Any]]):
+    """Yield SSE progress while attaching graph_signal onto ranked picks."""
+    total = len(picks)
+    if not total:
+        return
+    yield {
+        "event": "progress",
+        "data": {
+            "phase": "graph",
+            "done": 0,
+            "total": total,
+            "message": f"挂图 0/{total}",
+        },
+    }
+    for i, p in enumerate(picks, 1):
+        _maybe_attach_graph(p, for_recommendations=True)
+        yield {
+            "event": "progress",
+            "data": {
+                "phase": "graph",
+                "done": i,
+                "total": total,
+                "symbol": p.get("symbol"),
+                "name": p.get("name"),
+                "message": f"挂图 {i}/{total}",
+            },
+        }
+
+
 def _analyze_symbol(
     symbol: str,
     name_hint: str | None,
@@ -413,9 +456,7 @@ def get_recommendations(
         picks = precise_ok[:top]
         if len(picks) < min(5, top):
             picks = ranked[:top]
-        for p in picks:
-            p["hit_rate"] = hit_map.get(p["symbol"])
-            _maybe_attach_graph(p, for_recommendations=True)
+        _stamp_recommendation_picks(picks, hit_map)
 
         boards_out[bid] = {
             "id": bid,
@@ -705,8 +746,8 @@ def iter_recommendations_refresh_events(
             picks = precise_ok[:top]
             if len(picks) < min(5, top):
                 picks = ranked[:top]
-            for p in picks:
-                p["hit_rate"] = hit_map.get(p["symbol"])
+            # 先打命中率并落库，挂图单独报进度，避免卡在精算 75/75
+            _stamp_recommendation_picks(picks, hit_map, attach_graph=False)
             boards_out[bid] = {
                 "id": bid,
                 "label": BOARD_LABELS[bid],
@@ -801,6 +842,14 @@ def iter_recommendations_refresh_events(
                     "total": 1,
                 },
             }
+
+        for ev in _iter_graph_stamp_events(flat):
+            yield ev
+
+        if persist and user_id and td:
+            snap = save_snapshot(result, trade_date=td, user_id=user_id)
+            result["snapshot"] = snap
+            result["trade_date"] = td
 
         yield {"event": "done", "data": apply_regime_gate(result, get_regime_for_gate(allow_stale=True))}
     except Exception as exc:

@@ -8,6 +8,20 @@ export type FactorContribution = {
   contribution: number
 }
 
+export type GraphSignal = {
+  action?: 'BUY' | 'HOLD' | 'SELL' | string
+  raw_action?: string
+  scores?: Record<string, number>
+  margin?: number
+  prediction_id?: string | null
+  blocked_reason?: string | null
+  market_regime?: string
+  patterns?: string[]
+  horizon_days?: number
+  product_action?: string
+  error?: string
+}
+
 export type AdviceItem = {
   symbol: string
   name: string
@@ -38,6 +52,7 @@ export type AdviceItem = {
   rationale: string
   agent_note?: string
   news_headlines?: string[]
+  graph_signal?: GraphSignal | null
   disclaimer?: string
   error?: string
 }
@@ -2240,6 +2255,8 @@ export type SignalGraphSummary = {
   node_count?: number
   latest_trade_date?: string | null
   latest_trade_tick?: number | null
+  last_evolve_date?: string | null
+  last_evolve_at?: string | null
   config?: Record<string, unknown>
 }
 

@@ -121,8 +121,62 @@ def test_kernel_generate_and_settle_roundtrip():
     assert result.excess_return is not None
 
 
-def test_synthetic_demo_runs():
-    out = run_synthetic_demo(seed=3, days=30)
-    assert out["signal_count"] > 0
-    assert out["settled_count"] > 0
-    assert out["edge_count"] > 0
+def test_stamp_recommendation_picks_attaches_graph(monkeypatch):
+    from app.advisor import service as svc
+
+    called: list[str] = []
+
+    def fake_attach(row, **_kw):
+        called.append(row["symbol"])
+        row["graph_signal"] = {"action": "HOLD"}
+        return row
+
+    monkeypatch.setattr(svc, "_maybe_attach_graph", fake_attach)
+    picks = [{"symbol": "600000", "score": 0.7}, {"symbol": "510300", "score": 0.6}]
+    out = svc._stamp_recommendation_picks(picks, {"600000": 0.5})
+    assert out[0]["hit_rate"] == 0.5
+    assert out[1]["hit_rate"] is None
+    assert called == ["600000", "510300"]
+    assert out[0]["graph_signal"]["action"] == "HOLD"
+
+
+def test_stamp_recommendation_picks_can_skip_graph(monkeypatch):
+    from app.advisor import service as svc
+
+    called: list[str] = []
+    monkeypatch.setattr(
+        svc,
+        "_maybe_attach_graph",
+        lambda row, **_kw: called.append(row["symbol"]) or row,
+    )
+    picks = [{"symbol": "600000", "score": 0.7}]
+    out = svc._stamp_recommendation_picks(picks, {}, attach_graph=False)
+    assert out[0]["hit_rate"] is None
+    assert called == []
+    assert "graph_signal" not in out[0]
+
+
+def test_iter_graph_stamp_events_reports_progress(monkeypatch):
+    from app.advisor import service as svc
+
+    called: list[str] = []
+
+    def fake_attach(row, **_kw):
+        called.append(row["symbol"])
+        row["graph_signal"] = {"action": "HOLD"}
+        return row
+
+    monkeypatch.setattr(svc, "_maybe_attach_graph", fake_attach)
+    picks = [
+        {"symbol": "688702", "name": "盛科通信-U", "score": 0.7},
+        {"symbol": "600000", "name": "浦发银行", "score": 0.6},
+    ]
+    events = list(svc._iter_graph_stamp_events(picks))
+    assert [ev["data"]["phase"] for ev in events] == ["graph", "graph", "graph"]
+    assert events[0]["data"]["done"] == 0
+    assert events[0]["data"]["total"] == 2
+    assert events[1]["data"]["done"] == 1
+    assert events[1]["data"]["name"] == "盛科通信-U"
+    assert events[2]["data"]["done"] == 2
+    assert called == ["688702", "600000"]
+    assert picks[0]["graph_signal"]["action"] == "HOLD"

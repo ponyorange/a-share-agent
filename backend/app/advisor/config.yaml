@@ -239,6 +239,11 @@ signal_graph:
   owner: default
   # >0 时预留与多因子加权；当前默认 0 = 仅并列展示
   weight: 0.0
+  # 收盘后由 monitor-worker 自动结算到期预测并生成当日信号
+  auto_evolve: true
+  evolve_generate: true
+  evolve_settle_limit: 200
+  evolve_generate_limit: 40
 
 regime:
   use_for_market_score: true

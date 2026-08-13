@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import type { AdviceItem } from '../api'
 import { formatPct, formatScore } from '../api'
 import { explorerKlineUrl } from '../explorerLinks'
-import { ActionBadge } from './AdviceCard'
+import { ActionBadge, GraphSignalBadge } from './AdviceCard'
 import { StarToggle } from './StarToggle'
 
 function chgClass(v: number | null | undefined): string {
@@ -36,6 +36,7 @@ export function RecommendationCard({
             <strong>{formatScore(item.score)}</strong>
           </span>
           <ActionBadge action={item.action} label={item.action_label} />
+          <GraphSignalBadge signal={item.graph_signal} />
         </div>
       </header>
 

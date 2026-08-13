@@ -2845,6 +2845,22 @@ body:has(.app-shell--agent-chat) {
   background: color-mix(in srgb, var(--color-text-muted) 16%, transparent);
 }
 
+.graph-badge {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.advice-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.graph-signal-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+}
+
 .advice-card {
   margin-top: 1.25rem;
   padding: 1.25rem;

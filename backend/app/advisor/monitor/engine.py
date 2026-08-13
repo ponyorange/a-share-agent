@@ -392,4 +392,17 @@ def run_monitor_tick(*, quote_limit: int = 200) -> dict[str, int]:
         logger.exception("paper trader tick failed")
         stats["paper_trader_errors"] = int(stats.get("paper_trader_errors") or 0) + 1
 
+    stats.setdefault("signal_graph_evolve", 0)
+    try:
+        from ..signal_graph.evolve import run_daily_evolve
+
+        evolved = run_daily_evolve(now=now)
+        if evolved.get("ok") and not evolved.get("skipped"):
+            stats["signal_graph_evolve"] = 1
+        elif evolved.get("ok") is False:
+            stats["errors"] = int(stats.get("errors") or 0) + 1
+    except Exception:
+        logger.exception("signal graph evolve failed")
+        stats["errors"] = int(stats.get("errors") or 0) + 1
+
     return stats

@@ -15,7 +15,7 @@ import {
   type AdviceItem,
   type RecommendationsResponse,
 } from '../api'
-import { ActionBadge } from '../components/AdviceCard'
+import { ActionBadge, GraphSignalBadge } from '../components/AdviceCard'
 import { MobileDisclosure } from '../components/MobileDisclosure'
 import { RecommendationCard } from '../components/RecommendationCard'
 import { ResponsiveDataView } from '../components/ResponsiveDataView'
@@ -80,6 +80,7 @@ function BoardTable({
             <th>日涨幅</th>
             <th>评分</th>
             <th>建议</th>
+            <th>图</th>
             <th>命中率</th>
             <th></th>
           </tr>
@@ -96,6 +97,9 @@ function BoardTable({
               <td>{formatScore(item.score)}</td>
               <td>
                 <ActionBadge action={item.action} label={item.action_label} />
+              </td>
+              <td>
+                <GraphSignalBadge signal={item.graph_signal} />
               </td>
               <td>{formatPct(item.hit_rate)}</td>
               <td className="row-actions">
@@ -214,6 +218,14 @@ export default function RecommendationsPage() {
         setRefreshStatus(row.message || '写入归档…')
         return
       }
+      if (row.phase === 'graph') {
+        setRefreshStatus(
+          row.symbol
+            ? `挂图 ${row.done ?? 0}/${row.total ?? 0} · ${row.name || row.symbol}`
+            : row.message || `挂图 ${row.done ?? 0}/${row.total ?? 0}`,
+        )
+        return
+      }
       if (row.phase === 'precise') {
         setRefreshStatus(
           row.symbol
@@ -252,6 +264,16 @@ export default function RecommendationsPage() {
         }) => {
           if (reqId !== refreshReqRef.current) return
           applyProgress(row)
+          if (row.phase === 'persist' && (row.done ?? 0) >= 1) {
+            void fetchRecommendations(10, 'all', false, regimeOverride)
+              .then((payload) => {
+                if (reqId !== refreshReqRef.current) return
+                setQuotesLive(false)
+                setQuotesTrading(false)
+                setData(stripArchiveQuotes(payload))
+              })
+              .catch(() => {})
+          }
         },
         onDone: () => {
           completed = true
@@ -323,6 +345,16 @@ export default function RecommendationsPage() {
           total: p.total ?? 0,
           phase: p.phase,
         })
+        try {
+          const payload = await fetchRecommendations(10, 'all', false, regimeOverride)
+          if (reqId === refreshReqRef.current) {
+            setQuotesLive(false)
+            setQuotesTrading(false)
+            setData(stripArchiveQuotes(payload))
+          }
+        } catch {
+          // 刷新中仍尽量展示已有归档；失败则只看进度
+        }
         await attachRefreshStream(active.job.job_id, reqId, ac)
         return
       }
@@ -689,7 +721,9 @@ export default function RecommendationsPage() {
           {loading && refreshProgress
             ? refreshProgress.phase === 'precise' && refreshProgress.total
               ? `精算 ${refreshProgress.done}/${refreshProgress.total}`
-              : '刷新中…'
+              : refreshProgress.phase === 'graph' && refreshProgress.total
+                ? `挂图 ${refreshProgress.done}/${refreshProgress.total}`
+                : '刷新中…'
             : loading
               ? '加载中…'
               : '刷新候选池'}
@@ -817,7 +851,8 @@ export default function RecommendationsPage() {
             className="progress-bar-fill"
             style={{
               width: `${
-                refreshProgress.phase === 'precise' && refreshProgress.total > 0
+                (refreshProgress.phase === 'precise' || refreshProgress.phase === 'graph') &&
+                refreshProgress.total > 0
                   ? refreshPct
                   : Math.max(8, refreshPct || 8)
               }%`,
@@ -826,7 +861,9 @@ export default function RecommendationsPage() {
           <span className="progress-bar-label">
             {refreshProgress.phase === 'precise' && refreshProgress.total > 0
               ? `精算 ${refreshProgress.done}/${refreshProgress.total}（${refreshPct}%）`
-              : refreshProgress.phase === 'universe'
+              : refreshProgress.phase === 'graph' && refreshProgress.total > 0
+                ? `挂图 ${refreshProgress.done}/${refreshProgress.total}（${refreshPct}%）`
+                : refreshProgress.phase === 'universe'
                 ? '拉取候选池…'
                 : refreshProgress.phase === 'screen'
                   ? '粗筛中…'

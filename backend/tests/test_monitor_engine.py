@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from app.advisor.monitor import engine as engine_mod
+
+
+@pytest.fixture(autouse=True)
+def _skip_signal_graph_evolve(monkeypatch):
+    monkeypatch.setattr(
+        "app.advisor.signal_graph.evolve.run_daily_evolve",
+        lambda **_kw: {"ok": True, "skipped": "test"},
+    )
 
 
 def test_tick_sends_once_then_cooldown(monkeypatch):

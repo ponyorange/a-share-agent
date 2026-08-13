@@ -48,3 +48,21 @@ it('展示推荐关键字段并提供诊断、K 线与收藏入口', () => {
   )
   expect(screen.queryByRole('button', { name: '买入' })).not.toBeInTheDocument()
 })
+
+it('并列展示图学习信号', () => {
+  render(
+    <MemoryRouter>
+      <RecommendationCard
+        item={{
+          ...item,
+          graph_signal: {
+            action: 'BUY',
+            scores: { BUY: 1.2, HOLD: 0.3, SELL: 0.1 },
+          },
+        }}
+      />
+    </MemoryRouter>,
+  )
+  expect(screen.getByText('买入关注')).toBeInTheDocument()
+  expect(screen.getByText('图买入')).toBeInTheDocument()
+})

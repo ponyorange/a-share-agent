@@ -86,6 +86,10 @@ export default function SignalGraphPage() {
             <li>
               最近交易日 {summary.latest_trade_date || '—'} · tick {summary.latest_trade_tick ?? '—'}
             </li>
+            <li>
+              自进化 {summary.last_evolve_date || '尚未跑过'}
+              {summary.config?.auto_evolve === false ? '（已关闭）' : ''}
+            </li>
           </ul>
         ) : (
           <p className="status">加载中…</p>

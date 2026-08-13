@@ -27,6 +27,10 @@ def signal_graph_config() -> dict[str, Any]:
         "horizon_days": int(cfg.get("horizon_days") or 5),
         "owner": str(cfg.get("owner") or "default"),
         "weight": float(cfg.get("weight") or 0.0),
+        "auto_evolve": bool(cfg.get("auto_evolve", True)),
+        "evolve_generate": bool(cfg.get("evolve_generate", True)),
+        "evolve_settle_limit": int(cfg.get("evolve_settle_limit") or 200),
+        "evolve_generate_limit": int(cfg.get("evolve_generate_limit") or 40),
     }
 
 

@@ -114,6 +114,8 @@ def summary(owner: str = "default") -> dict[str, Any]:
         "tick_dates": len(meta.get("tick_by_date") or {}),
         "latest_trade_date": _latest_date(meta),
         "latest_trade_tick": _latest_tick(meta),
+        "last_evolve_date": meta.get("last_evolve_date"),
+        "last_evolve_at": meta.get("last_evolve_at"),
     }
 
 
