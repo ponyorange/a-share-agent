@@ -2,35 +2,34 @@
 
 ## 目标
 
-在顾问前端「图学习」页画出**真实 SignalGraph**：默认鸟瞰学得比较熟的边，点节点或输入代码进入局部子图，并与当前单票信号对齐。性能是硬约束：浏览器永不接收全图。
+在顾问前端「图学习」页画出**完整真实 SignalGraph**：一次加载全图（瘦节点/边），用 WebGL 缩放拖拽查看整体；点节点或输入代码在全图上高亮局部，并与当前单票信号对齐。
 
 ## 已确认决策
 
 | 项 | 决策 |
 |----|------|
 | 位置 | 现有 `/signal-graph` 页，「图状态」下方 |
-| 形态 | 分层 SVG：市场 / 行业 / 形态 / 个股 → BUY / HOLD / SELL |
-| 鸟瞰 | 按学习强度取 Top 边，默认 100、硬顶 120 |
-| 点选 | 展开该节点连到三个动作的全部边（单节点硬顶 80 条） |
-| 代码框 | 沿用现有「生成」；用返回的 `evidence` 画证据子图并高亮当前动作 |
+| 渲染 | **sigma.js v3 + graphology**（WebGL）；不用 SVG / Cytoscape / 力导向 |
+| 布局 | 前端按层赋坐标：市场 / 行业 / 形态 / 个股 → BUY / HOLD / SELL |
+| 全图 | 默认画出全部情境→动作边；冷启动（`sample_count==0`）用更淡的线，不隐藏 |
+| 点选 | 不换图。高亮该节点及其连到三个动作的边，其余降透明；镜头移近该节点 |
+| 代码框 | 沿用「生成」；用返回的 `evidence` 在全图上高亮证据边与当前动作，不重拉全图 |
 | 只读 | 不在图上改边权；不另存可视化副本 |
-| 图库 | 不用 Cytoscape / vis / 力导向；固定分层布局 |
-| 数据 | 进程内 `store.load_runtime` 已缓存的图；只序列化切片 |
+| 数据 | `store.load_runtime` 内存图；**只序列化节点+边瘦字段**，禁止带 ledger / snapshot |
 
 ## 性能硬限制
 
-当前规模约 742 节点 / 2370 边，会继续涨。约束如下，实现不得放宽：
+当前约 742 点 / 2370 边，WebGL 足够画全图。约束针对「别把错误的东西做大」：
 
-1. **禁止**把全图、`dump_snapshot`、ledger 预测列表作为可视化 payload。
-2. 鸟瞰：最多 **120 条边、200 个节点**；响应 JSON 目标 **< 80KB**。
-3. 焦点子图：最多 **80 条边**。个股 `evidence` 通常远小于此，原样使用，截断时保留 contribution 最大的边。
-4. 后端在内存图上 **O(E) 扫描 + 部分排序** 取 Top N；2 万边以内应在数十毫秒内完成。单测用 1 万边夹具断言 overview 仍 ≤120 边。
-5. 前端 **无力学模拟、无每帧重布局**。hover 只改 CSS / stroke，不重算坐标。
-6. 鸟瞰与焦点 **分请求**：点节点只拉焦点，不重拉鸟瞰。
-7. 单票「生成」**不再扫全图**：用已有 `generate_signal` 的 `evidence` 画局部。
-8. 页面进入时图视图与 pending/settled 列表并行；图接口失败不得拖垮摘要。
-
-超出上限时响应带 `truncated: true` 与 `total_edges`，前端显示「仅展示 Top N / 共 M 条」。
+1. **禁止**把 `dump_snapshot`、pending/settled/unresolved 预测作为可视化 payload。
+2. 节点字段仅 `id, layer, label`；边字段仅 `src, dst, layer, confidence, sample_count, last_tick`。
+3. 安全顶：节点 **8000**、边 **20000**。超出则按 `strength = sample_count * (0.5 + abs(confidence))` 截断，`truncated: true`，状态行提示。当前规模必须 `truncated: false` 且返回全边。
+4. 后端 O(E) 扫内存图一次构图；不按请求做力导向、不写盘。
+5. 前端 **禁止** ForceAtlas / 每帧重布局。坐标在构图时算一次；hover / 高亮只改 reducer（颜色/大小/标签），不重建 Graph。
+6. **标签 LOD**：默认远景只显示 `action:*` 与当前高亮节点的 label；放大或 hover 再出其余文字。禁止 700+ 个 DOM 标签。
+7. 全图只请求 **一次**；点选不重拉；生成信号用 `evidence` 高亮。刷新摘要/结算成功后再拉一次 `/view`。
+8. `/view` 与 pending/settled **并行**；图接口失败不得拖垮摘要。
+9. Sigma 容器固定高度（约 520px），WebGL context 在路由卸载时 `kill()`，避免泄漏。
 
 ## 架构
 
@@ -38,38 +37,43 @@
 store.load_runtime (内存)
         │
         ▼
-view_overview(limit)     view_focus(node_id)
-        │                         │
-        └──────────┬──────────────┘
-                   ▼
-        GET /api/advisor/signal-graph/view
-                   │
-                   ▼
-        SignalGraphView（分层 SVG）
-                   │
-    点节点 ──► 再请求 view?node_id=
-    生成信号 ──► 用 evidence 本地构图，不打 view
+view_graph()  →  瘦 nodes[] + edges[]
+        │
+        ▼
+GET /api/advisor/signal-graph/view
+        │
+        ▼
+graphology Graph + 分层 x/y
+        │
+        ▼
+sigma.js WebGL（缩放/拖拽）
+        │
+    点节点 ──► 高亮邻域（不请求）
+    生成信号 ──► evidence 高亮（不请求 /view）
+    返回全图 ──► 清除高亮，镜头复位
 ```
+
+## 依赖
+
+仅加在 `frontend-advisor`：
+
+- `sigma`（v3）
+- `graphology`
+- `graphology-types`（若 sigma peer 需要）
+
+不引入 `@react-sigma/core`（自己 `useRef` 挂载即可，少一层封装）。不引入 `graphology-layout-forceatlas2`。
 
 ## API
 
 `GET /api/advisor/signal-graph/view`
 
-| 查询 | 说明 |
-|------|------|
-| （无） | 鸟瞰 Top 边 |
-| `limit` | 1–120，默认 100 |
-| `node_id` | 焦点：该情境节点 → `action:*` 的边 |
-
-响应（鸟瞰与焦点同一形状）：
+无必填查询。可选 `max_nodes` / `max_edges` 仅供测试，生产默认用安全顶，前端不传。
 
 ```json
 {
-  "mode": "overview | focus",
-  "focus_id": "industry:电子 | null",
   "truncated": false,
-  "total_edges": 2370,
-  "shown_edges": 100,
+  "node_count": 742,
+  "edge_count": 2370,
   "nodes": [
     {"id": "regime:bull", "layer": "market", "label": "bull"}
   ],
@@ -86,54 +90,63 @@ view_overview(limit)     view_focus(node_id)
 }
 ```
 
-节点 `layer` 仅限：`market` | `industry` | `pattern` | `stock` | `action`。  
-边 `dst` 仅为 `action:BUY|HOLD|SELL`。不返回 `owner` / `scope_id` / `attrs` / `commits`（可视化用不到）。
+- `layer`：`market` | `industry` | `pattern` | `stock` | `action`
+- `dst` 仅为 `action:BUY|HOLD|SELL`
+- 不返回 `owner` / `scope_id` / `attrs` / `commits`
+- 空图或未启用：200 + 空数组，不是 500
 
-### 鸟瞰排序
-
-对每条边计算 `strength = sample_count * (0.5 + abs(confidence))`。  
-先排除 `sample_count == 0` 的冷启动边；若有效边 < 20，再按 `|confidence|` 回填。  
-取 `strength` 最大的 `limit` 条。节点集合 = 这些边的端点（含三个动作节点，即使某动作暂无入边也画出 BUY/HOLD/SELL）。
-
-### 焦点
-
-`node_id` 必须是已存在的情境节点（非 `action:*`）。返回其全部指向动作的边，超过 80 条时按 `strength` 截断并 `truncated: true`。未知 `node_id` → 400。
+同一 `src-dst` 若因不同 `scope_id` 有多条边，可视化 **合并**：`sample_count` 相加，`confidence` 取样本加权平均，`last_tick` 取 max。合并后边数 ≤ 原始边数，避免三条 scope 叠成看不清的平行线。
 
 ## 前端
 
-`frontend-advisor/src/components/SignalGraphView.tsx` 挂在 `SignalGraphPage`「图状态」下。
+`frontend-advisor/src/components/SignalGraphView.tsx` 挂在「图状态」下。
 
-- 五列固定 x：market / industry / pattern / stock / action。
-- 列内按 `label` 排序垂直堆叠；列过多时该列内部滚动，整图允许横向滚动。
-- 边：直线或二次贝塞尔；`strokeWidth` 由 `|confidence|` 映射到 1–5px；色随动作（买绿 / 持黄 / 卖红，沿用现有 badge 语义色）。
-- 点击情境节点：请求 `view?node_id=`，替换为焦点图；提供「返回鸟瞰」（用已缓存的 overview，不强制重拉）。
-- 现有代码框「生成」成功后：用 `one.evidence` 构图（`src` / `dst=action:{action}` / contribution 映射为粗细），高亮 `one.action`；不调用 `/view`。
-- 空态：无熟边时文案「还没有学熟的边（样本为 0 的冷启动边已隐藏）」。
-- 移动端同一组件，横向滑动，不另做力导向。
+分层坐标（构图时写到 graphology 节点属性）：
+
+| layer | x |
+|-------|---|
+| market | 0 |
+| industry | 1 |
+| pattern | 2 |
+| stock | 3 |
+| action | 4 |
+
+列内按 `label` 排序均匀分布 y∈[0,1]；动作三节点固定顺序 BUY / HOLD / SELL 且节点更大。
+
+边：颜色随 `dst`（买绿 / 持黄 / 卖红）；`size` 由 `|confidence|` 与 `sample_count` 映射；`sample_count==0` 透明度约 0.12。
+
+交互：
+
+- 滚轮缩放、拖拽平移（sigma 默认）。
+- 点情境节点：高亮该点 + 到 BUY/HOLD/SELL 的边；侧栏列出这三条的 confidence / sample_count。
+- 「返回全图」：清高亮、镜头复位到包含全部节点的相机。
+- 「生成」成功：按 `evidence[].src` 与 `action:*` 高亮；镜头对准该股票节点（若图中尚无该 stock 节点，只高亮 evidence 里已有的情境节点，不补点）。
+- 空态：「图还是空的，先生成或等自进化写入边」。
+
+jsdom 不能跑 WebGL：把「payload → graphology + x/y」抽成纯函数单测；组件对 Sigma 做 mock，不断言像素。
 
 ## 错误处理
 
-- `/view` 图未启用或空图：200 + 空 `nodes/edges`，不是 500。
-- 焦点 `node_id` 非法或不存在：400，前端保留上一幅图并显示错误。
-- 生成失败：现有错误条；图保持鸟瞰。
-- 截断：状态行提示，不弹窗。
+- `/view` 失败：摘要照常；图画区域显示错误，可重试。
+- 生成失败：现有错误条；高亮保持不变。
+- `truncated: true`：状态行「节点/边达上限，已按强度截断」，不弹窗。
 
 ## 测试
 
-- 后端：排序取 Top N；`sample_count==0` 默认剔除；1 万边夹具 overview ≤120；焦点只含该 `src`；payload 无 snapshot/ledger 字段。
-- 前端：fixture 鸟瞰可渲染；点击发出 `node_id`；生成后用 `evidence` 画图且不请求 `/view`。
+- 后端：瘦字段；无 snapshot/ledger 键；当前夹具全量返回且 `truncated` 为假；超过安全顶才截断；同 src-dst 合并。
+- 前端：分层 x 正确；LOD 规则（远景 action 有 label、stock 无）；高亮集合由 node_id / evidence 算出；卸载调用 kill。
 
 ## 非目标
 
-- 下载或绘制全图
-- WebGL / 3D / 力导向 / 缩放动画库
-- 在图上编辑、删除、手工加边
+- 力导向布局、3D、边编辑
 - WebSocket 实时刷新
-- 把可视化接到今日关注 / 诊断页（本迭代只在图学习页）
+- 可视化接到今日关注 / 诊断页
+- 把预测台账画进图里
 
 ## 验收
 
-- 打开图学习页，鸟瞰出现且边数 ≤120，网络响应不是全量 snapshot。
-- 点一个行业节点，只看到该节点到 BUY/HOLD/SELL 的边。
-- 输入 `600519` 生成后，图切到证据子图并标出当前动作。
-- 「返回鸟瞰」立即回到上一幅 Top 图。
+- 打开图学习页能看到全图（边数与摘要 `edge_count` 在未截断时一致），网络响应不含 pending 列表。
+- 缩小能看见整体边网；放大或 hover 才出个股文字。
+- 点行业节点：全图仍在，仅该节点邻域高亮，并列出到三个动作的边权。
+- 输入 `600519` 生成后，证据边高亮且标出当前动作，不再请求 `/view`。
+- 离开页面后 WebGL 上下文释放（无泄漏警告）。
