@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -17,6 +17,7 @@ from .store import list_due_sessions, touch_session
 
 logger = logging.getLogger(__name__)
 SH = ZoneInfo("Asia/Shanghai")
+_CLOSE = time(15, 5)
 
 
 def trading_is_open(now: datetime | None = None) -> bool:
@@ -87,10 +88,14 @@ def _shanghai_day(now: datetime) -> str:
 def finalize_paper_trader_day_ends(*, now: datetime | None = None) -> int:
     """Send day-end emails after the session closes on a trading day."""
     now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
     session = trading_session(now)
     if session.get("is_trading"):
         return 0
     if not session.get("is_trading_day"):
+        return 0
+    if now.astimezone(SH).time() < _CLOSE:
         return 0
 
     day = _shanghai_day(now)
