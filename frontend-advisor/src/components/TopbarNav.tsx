@@ -27,6 +27,7 @@ export const BASE_NAV_LINKS: TopbarNavLink[] = [
 export const AGENT_NAV_LINKS: TopbarNavLink[] = [
   { to: '/agent', end: true, label: '投研助手' },
   { to: '/agent/jobs', label: '定时任务' },
+  { to: '/agent/policy-watch', label: '政策雷达' },
   { to: '/agent/limitup-promote', label: '打板晋级' },
   { to: '/agent/config', label: 'Agent 配置' },
   { to: '/agent/strategy', label: '策略副驾' },

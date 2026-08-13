@@ -58,4 +58,12 @@ it('Agent 导航包含定时任务与打板晋级入口', () => {
     'href',
     '/agent/limitup-promote',
   )
+  expect(screen.getByRole('link', { name: '政策雷达' })).toHaveAttribute(
+    'href',
+    '/agent/policy-watch',
+  )
+  const jobsIdx = AGENT_NAV_LINKS.findIndex((l) => l.to === '/agent/jobs')
+  const radarIdx = AGENT_NAV_LINKS.findIndex((l) => l.to === '/agent/policy-watch')
+  expect(jobsIdx).toBeGreaterThanOrEqual(0)
+  expect(radarIdx).toBe(jobsIdx + 1)
 })

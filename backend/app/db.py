@@ -240,6 +240,27 @@ def ensure_indexes() -> None:
         )
     except Exception:
         pass
+    try:
+        db.policy_watch_settings.create_index(
+            [("user_id", ASCENDING)], unique=True
+        )
+        db.policy_watch_articles.create_index(
+            [("url_key", ASCENDING)], unique=True
+        )
+        db.policy_watch_items.create_index(
+            [("user_id", ASCENDING), ("article_id", ASCENDING)], unique=True
+        )
+        db.policy_watch_items.create_index(
+            [("user_id", ASCENDING), ("created_at", DESCENDING)]
+        )
+        db.policy_watch_seen.create_index(
+            [("source_key", ASCENDING), ("url_key", ASCENDING)], unique=True
+        )
+        db.policy_watch_source_scans.create_index(
+            [("source_key", ASCENDING)], unique=True
+        )
+    except Exception:
+        pass
 
 
 def ping() -> dict[str, Any]:

@@ -405,4 +405,26 @@ def run_monitor_tick(*, quote_limit: int = 200) -> dict[str, int]:
         logger.exception("signal graph evolve failed")
         stats["errors"] = int(stats.get("errors") or 0) + 1
 
+    stats.setdefault(
+        "policy_watch",
+        {
+            "sources": 0,
+            "articles": 0,
+            "interpreted": 0,
+            "items": 0,
+            "emailed": 0,
+            "errors": 0,
+        },
+    )
+    try:
+        from ..policy_watch import run_policy_watch_tick
+
+        pw = run_policy_watch_tick(now=now)
+        stats["policy_watch"] = pw
+        stats["errors"] = int(stats.get("errors") or 0) + int((pw or {}).get("errors") or 0)
+    except Exception:
+        logger.exception("policy watch tick failed")
+        stats["policy_watch"] = {"errors": 1}
+        stats["errors"] = int(stats.get("errors") or 0) + 1
+
     return stats

@@ -315,3 +315,34 @@ paper_trader:
     max_daily_loss_pct: 0.05
     lot_size: 100
     block_limit_board: true
+
+# ---------- 政策雷达 ----------
+policy_watch:
+  max_custom_sources: 8
+  max_list_links: 20
+  max_fetch_per_tick: 5
+  max_sources_per_tick: 4
+  max_tick_seconds: 8
+  max_article_chars: 8000
+  similar_title_hours: 24
+  interval_trading_min: 5
+  interval_trading_max: 180
+  interval_offhours_min: 15
+  interval_offhours_max: 360
+  default_interval_trading: 15
+  default_interval_offhours: 60
+  trading_start: "09:15"
+  trading_end: "15:05"
+  presets:
+    gov_zhengce:
+      name: 中国政府网 · 最新政策
+      list_url: https://www.gov.cn/zhengce/zuixin/
+    scio_news:
+      name: 国新办 · 新闻发布
+      list_url: https://www.scio.gov.cn/xwfb/
+    cctv:
+      name: 新闻联播
+      via: fetch_market_cctv_news
+    macro:
+      name: 宏观政策快照
+      via: fetch_macro_china_snapshot

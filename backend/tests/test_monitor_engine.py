@@ -13,6 +13,17 @@ def _skip_signal_graph_evolve(monkeypatch):
         "app.advisor.signal_graph.evolve.run_daily_evolve",
         lambda **_kw: {"ok": True, "skipped": "test"},
     )
+    monkeypatch.setattr(
+        "app.advisor.policy_watch.run_policy_watch_tick",
+        lambda **_k: {
+            "sources": 0,
+            "articles": 0,
+            "interpreted": 0,
+            "items": 0,
+            "emailed": 0,
+            "errors": 0,
+        },
+    )
 
 
 def test_tick_sends_once_then_cooldown(monkeypatch):

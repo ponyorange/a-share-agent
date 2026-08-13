@@ -31,6 +31,7 @@ import RegimePage from './pages/RegimePage'
 import SignalGraphPage from './pages/SignalGraphPage'
 import WatchlistPage from './pages/WatchlistPage'
 import MonitorJobsPage from './pages/MonitorJobsPage'
+import PolicyWatchPage from './pages/PolicyWatchPage'
 import LimitUpPromotePage from './pages/LimitUpPromotePage'
 import SettingsPage from './pages/SettingsPage'
 import StrategyPage from './pages/StrategyPage'
@@ -201,6 +202,7 @@ export default function App() {
             <Route path="/account" element={<AccountPage />} />
             <Route path="/agent" element={<AgentChatPage />} />
             <Route path="/agent/jobs" element={<MonitorJobsPage />} />
+            <Route path="/agent/policy-watch" element={<PolicyWatchPage />} />
             <Route path="/agent/limitup-promote" element={<LimitUpPromotePage />} />
             <Route path="/agent/committee" element={<CommitteePage />} />
             <Route path="/agent/config" element={<KnowledgePage />} />

@@ -82,10 +82,12 @@ from .agent_recs import (
 )
 
 from .signal_graph.routes import router as signal_graph_router
+from .policy_watch.routes import router as policy_watch_router
 from .paper_trader.models import PatchBody, ResumeBody, StartBody
 
 router = APIRouter(prefix="/api/advisor", tags=["advisor"])
 router.include_router(signal_graph_router)
+router.include_router(policy_watch_router)
 
 
 def _sse(event: str, data: Any) -> str:

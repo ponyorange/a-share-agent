@@ -33,7 +33,7 @@ def main() -> None:
             logger.info(
                 "tick jobs=%s quotes=%s alerts=%s errors=%s "
                 "activated=%s missed=%s run_at=%s finalized=%s "
-                "graph_evolve=%s sleep=%ss trading=%s",
+                "graph_evolve=%s policy_watch=%s sleep=%ss trading=%s",
                 stats.get("jobs"),
                 stats.get("quotes"),
                 stats.get("alerts"),
@@ -43,6 +43,7 @@ def main() -> None:
                 stats.get("run_at"),
                 stats.get("finalized"),
                 stats.get("signal_graph_evolve"),
+                stats.get("policy_watch"),
                 sleep_sec,
                 is_trading,
             )

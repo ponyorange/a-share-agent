@@ -2364,3 +2364,83 @@ export function postSignalGraphSynthetic(body?: {
     body: JSON.stringify(body || { seed: 7, days: 60 }),
   })
 }
+
+export type PolicyWatchSensitivity = 'low' | 'medium' | 'high'
+export type PolicyWatchScanMode = 'always' | 'trading_only' | 'offhours_only'
+export type PolicyWatchNotifyStatus = 'skipped' | 'sent' | 'failed'
+
+export type PolicyWatchSettings = {
+  enabled: boolean
+  sensitivity: PolicyWatchSensitivity
+  scan_mode: PolicyWatchScanMode
+  interval_trading_min: number
+  interval_offhours_min: number
+  preset_ids: string[]
+  custom_sources: { id: string; url: string; title?: string }[]
+  notify_email?: string | null
+  source_status?: Record<string, { state?: string; last_ok_at?: string; last_error?: string }>
+  last_error?: string | null
+  llm_configured?: boolean
+  email_verified?: boolean
+}
+
+export type PolicyWatchPreset = {
+  id: string
+  name: string
+  description?: string
+  list_url?: string
+}
+
+export type PolicyWatchItem = {
+  id: string
+  article_id: string
+  title: string
+  source_label: string
+  url: string
+  created_at: string
+  summary?: string
+  direction?: string
+  impact_score?: number
+  sectors?: { name: string; reason?: string }[]
+  symbols?: { symbol?: string; name?: string; reason?: string; verified?: boolean }[]
+  notify_status: PolicyWatchNotifyStatus
+  body_ok?: boolean
+  read_at?: string | null
+}
+
+export function fetchPolicyWatchPresets(): Promise<{ presets: PolicyWatchPreset[] }> {
+  return authFetch('/api/advisor/policy-watch/presets')
+}
+
+export function fetchPolicyWatchSettings(): Promise<PolicyWatchSettings> {
+  return authFetch('/api/advisor/policy-watch/settings')
+}
+
+export function savePolicyWatchSettings(
+  body: Partial<PolicyWatchSettings>,
+): Promise<PolicyWatchSettings> {
+  return authFetch('/api/advisor/policy-watch/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+export function fetchPolicyWatchItems(opts?: {
+  filter?: 'all' | 'emailed' | 'inbox'
+  cursor?: string
+  limit?: number
+}): Promise<{ items: PolicyWatchItem[]; next_cursor?: string | null }> {
+  const q = new URLSearchParams()
+  if (opts?.filter) q.set('filter', opts.filter)
+  if (opts?.cursor) q.set('cursor', opts.cursor)
+  if (opts?.limit) q.set('limit', String(opts.limit))
+  const qs = q.toString()
+  return authFetch(`/api/advisor/policy-watch/items${qs ? `?${qs}` : ''}`)
+}
+
+export function markPolicyWatchItemRead(id: string): Promise<PolicyWatchItem> {
+  return authFetch(`/api/advisor/policy-watch/items/${encodeURIComponent(id)}/read`, {
+    method: 'POST',
+  })
+}
