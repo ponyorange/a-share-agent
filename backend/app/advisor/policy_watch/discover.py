@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -9,6 +10,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from ..agent.unstructured import fetch_macro_china_snapshot, fetch_market_cctv_news
+from ..agent.web_fetch import fetch_url_html
 from ..agent.web_fetch_escalation import fetch_url_with_escalation, strip_fetch_via_meta
 from .config import policy_watch_config
 from .schedule import _in_trading_session, current_interval_minutes, in_user_scan_window
@@ -20,9 +22,19 @@ from .store import (
     touch_source_scan,
     upsert_article,
 )
-from .urls import normalize_title, normalize_url_key
+from .urls import article_open_url, normalize_title, normalize_url_key
 
 _ARTICLE_PATH = re.compile(r"(content|zhengce|xwfb|/n/|\d{4})", re.I)
+_AJAX_JSON_RE = re.compile(r"""url:\s*["'](\./[^"']+\.json)["']""", re.I)
+_URL_KEYS = ("url", "link", "href", "网址", "链接")
+
+
+def _structured_item_url(item: dict[str, Any]) -> str | None:
+    for key in _URL_KEYS:
+        found = article_open_url(str(item.get(key) or ""))
+        if found:
+            return found
+    return None
 
 
 class _AnchorParser(HTMLParser):
@@ -87,11 +99,45 @@ def extract_article_links(
 
 
 def fetch_list_html(url: str) -> str:
-    text = fetch_url_with_escalation(url)
-    body = strip_fetch_via_meta(text or "")
-    if body.startswith("错误："):
+    body = fetch_url_html(url)
+    if (body or "").startswith("错误："):
         raise RuntimeError(body)
-    return body
+    return body or ""
+
+
+def parse_gov_json_feed(raw: str, *, max_links: int = 20) -> list[dict[str, str]]:
+    text = (raw or "").lstrip("\ufeff").strip()
+    if not text or text.startswith("错误："):
+        return []
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        url = article_open_url(str(item.get("URL") or item.get("url") or ""))
+        title = " ".join(str(item.get("TITLE") or item.get("title") or "").split())
+        if not url:
+            continue
+        out.append({"url": url, "title": title or url})
+        if len(out) >= max_links:
+            break
+    return out
+
+
+def load_page_links(page_url: str, *, max_links: int = 20) -> list[dict[str, str]]:
+    html = fetch_list_html(page_url)
+    match = _AJAX_JSON_RE.search(html)
+    if match:
+        feed = urljoin(page_url, match.group(1))
+        links = parse_gov_json_feed(fetch_url_html(feed), max_links=max_links)
+        if links:
+            return links
+    return extract_article_links(html, page_url, max_links=max_links)
 
 
 def structured_links(preset_id: str) -> list[dict[str, str]]:
@@ -107,7 +153,8 @@ def structured_links(preset_id: str) -> list[dict[str, str]]:
                 continue
             links.append(
                 {
-                    "url": f"policy://cctv/{day}/{normalize_title(title)}",
+                    "url": _structured_item_url(item)
+                    or f"policy://cctv/{day}/{normalize_title(title)}",
                     "title": title,
                 }
             )
@@ -131,7 +178,8 @@ def structured_links(preset_id: str) -> list[dict[str, str]]:
             label = f"{block_name} {title} {summary}".strip()
             links.append(
                 {
-                    "url": f"policy://macro/{block_name}/{normalize_title(label)}",
+                    "url": _structured_item_url(first)
+                    or f"policy://macro/{block_name}/{normalize_title(label)}",
                     "title": label,
                 }
             )
@@ -197,6 +245,7 @@ def collect_due_source_keys(*, now: datetime | None = None) -> list[dict[str, An
                     "kind": "preset",
                     "preset_id": pid,
                     "url": meta.get("list_url"),
+                    "feed_url": meta.get("feed_url"),
                     "label": meta.get("name") or pid,
                     "interval_min": interval,
                     "seeding": False,
@@ -237,20 +286,28 @@ def collect_due_source_keys(*, now: datetime | None = None) -> list[dict[str, An
     return due
 
 
+def _preset_meta(preset_id: str) -> dict[str, Any]:
+    cfg = policy_watch_config()
+    presets = cfg.get("presets") if isinstance(cfg.get("presets"), dict) else {}
+    meta = presets.get(preset_id) if isinstance(presets.get(preset_id), dict) else {}
+    return meta if isinstance(meta, dict) else {}
+
+
 def _load_links(spec: dict[str, Any], *, max_links: int) -> list[dict[str, str]]:
     preset_id = str(spec.get("preset_id") or "")
     if spec.get("kind") == "preset" and preset_id in {"cctv", "macro"}:
         return structured_links(preset_id)[:max_links]
-    url = str(spec.get("url") or "").strip()
-    if not url:
-        cfg = policy_watch_config()
-        presets = cfg.get("presets") if isinstance(cfg.get("presets"), dict) else {}
-        meta = presets.get(preset_id) if isinstance(presets.get(preset_id), dict) else {}
-        url = str(meta.get("list_url") or "").strip()
+    meta = _preset_meta(preset_id) if preset_id else {}
+    feed_url = str(spec.get("feed_url") or meta.get("feed_url") or "").strip()
+    if feed_url:
+        links = parse_gov_json_feed(fetch_url_html(feed_url), max_links=max_links)
+        if links:
+            return links
+        raise RuntimeError(f"栏目 JSON 无有效链接：{feed_url}")
+    url = str(spec.get("url") or meta.get("list_url") or "").strip()
     if not url:
         return []
-    html = fetch_list_html(url)
-    return extract_article_links(html, url, max_links=max_links)
+    return load_page_links(url, max_links=max_links)
 
 
 def _fetch_body(url: str) -> tuple[str | None, bool]:

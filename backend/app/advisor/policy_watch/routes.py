@@ -11,7 +11,7 @@ from .. import context
 from ..llm_settings import public_llm_settings
 from .config import policy_watch_config
 from .settings import get_settings, peek_verified_email, update_settings
-from .store import list_items, mark_item_read
+from .store import enrich_source_status, list_items, mark_item_read
 
 router = APIRouter(prefix="/policy-watch", tags=["policy-watch"])
 
@@ -28,7 +28,7 @@ def policy_watch_presets(_user: str = Depends(_uid)) -> dict[str, Any]:
     presets_raw = cfg.get("presets") if isinstance(cfg.get("presets"), dict) else {}
     descriptions = {
         "gov_zhengce": "中国政府网最新政策栏目",
-        "scio_news": "国新办新闻发布栏目",
+        "scio_news": "中国政府网发布栏目（含国新办新闻发布会）",
         "cctv": "新闻联播（结构化接口）",
         "macro": "宏观政策快照（结构化接口）",
     }
@@ -49,7 +49,7 @@ def policy_watch_presets(_user: str = Depends(_uid)) -> dict[str, Any]:
 
 @router.get("/settings")
 def policy_watch_settings_get(user_id: str = Depends(_uid)) -> dict[str, Any]:
-    out = get_settings(user_id)
+    out = enrich_source_status(get_settings(user_id))
     out["llm_configured"] = bool(public_llm_settings(user_id).get("configured"))
     out["email_verified"] = peek_verified_email(user_id) is not None
     return out
@@ -74,8 +74,9 @@ def policy_watch_items_get(
     filter: str = Query(default="all"),
     cursor: str | None = Query(default=None),
     limit: int = Query(default=30, ge=1, le=50),
+    page: int | None = Query(default=None, ge=1),
 ) -> dict[str, Any]:
-    return list_items(user_id, filter=filter, cursor=cursor, limit=limit)
+    return list_items(user_id, filter=filter, cursor=cursor, limit=limit, page=page)
 
 
 @router.post("/items/{item_id}/read")

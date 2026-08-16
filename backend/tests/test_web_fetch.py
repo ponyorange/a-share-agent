@@ -1,4 +1,4 @@
-from app.advisor.agent.web_fetch import fetch_url_text, is_url_safe_for_fetch
+from app.advisor.agent.web_fetch import fetch_url_html, fetch_url_text, is_url_safe_for_fetch
 
 
 def test_reject_localhost():
@@ -19,4 +19,9 @@ def test_reject_file_scheme():
 
 def test_fetch_url_text_rejects_unsafe_without_network():
     out = fetch_url_text("http://127.0.0.1/")
+    assert out.startswith("错误：")
+
+
+def test_fetch_url_html_rejects_unsafe_without_network():
+    out = fetch_url_html("http://127.0.0.1/")
     assert out.startswith("错误：")

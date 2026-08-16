@@ -34,6 +34,7 @@ class _Coll:
 class _DB:
     def __init__(self):
         self.policy_watch_settings = _Coll()
+        self.policy_watch_source_scans = _Coll()
 
 
 def _auth():
@@ -48,6 +49,7 @@ def test_presets_require_auth():
 def test_settings_get_and_clamp(monkeypatch):
     db = _DB()
     monkeypatch.setattr(settings_mod, "get_db", lambda: db)
+    monkeypatch.setattr("app.advisor.policy_watch.store.get_db", lambda: db)
     monkeypatch.setattr(settings_mod, "peek_verified_email", lambda _uid: "a@b.c")
     monkeypatch.setattr(
         "app.advisor.policy_watch.routes.public_llm_settings",

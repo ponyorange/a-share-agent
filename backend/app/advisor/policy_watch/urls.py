@@ -7,6 +7,14 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 _DROP_QUERY = {"from", "spm", "ref"}
 
 
+def article_open_url(url: str | None) -> str | None:
+    raw = (url or "").strip()
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return raw
+
+
 def normalize_url_key(url: str) -> str:
     raw = (url or "").strip()
     parsed = urlparse(raw)

@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.advisor.policy_watch.urls import (
+    article_open_url,
     normalize_title,
     normalize_url_key,
     titles_similar,
@@ -17,6 +18,16 @@ from app.advisor.policy_watch.schedule import (
 from app.advisor.policy_watch.sensitivity import direction_label, should_email
 
 SH = ZoneInfo("Asia/Shanghai")
+
+
+def test_article_open_url_only_http():
+    assert (
+        article_open_url("https://www.gov.cn/zhengce/content/2026-08/13/x.htm")
+        == "https://www.gov.cn/zhengce/content/2026-08/13/x.htm"
+    )
+    assert article_open_url("policy://cctv/20260813/title") is None
+    assert article_open_url("javascript:alert(1)") is None
+    assert article_open_url("") is None
 
 
 def test_normalize_url_key_strips_tracking():

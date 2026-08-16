@@ -8,7 +8,7 @@ from typing import Any
 from bson import ObjectId
 
 from ...db import get_db
-from .urls import normalize_title, normalize_url_key
+from .urls import article_open_url, normalize_title, normalize_url_key
 
 
 def _now() -> datetime:
@@ -76,7 +76,7 @@ def public_item(doc: dict[str, Any], article: dict[str, Any] | None = None) -> d
         "title": art.get("title"),
         "source_label": art.get("source_label"),
         "source_key": art.get("source_key"),
-        "url": art.get("url"),
+        "url": article_open_url(str(art.get("url") or "")),
         "summary": (interp or {}).get("summary"),
         "direction": (interp or {}).get("direction"),
         "impact_score": (interp or {}).get("impact_score"),
@@ -269,6 +269,7 @@ def list_items(
     filter: str = "all",
     cursor: str | None = None,
     limit: int = 30,
+    page: int | None = None,
 ) -> dict[str, Any]:
     cap = max(1, min(int(limit or 30), 50))
     rows = list(get_db().policy_watch_items.find({"user_id": user_id}))
@@ -281,19 +282,38 @@ def list_items(
         return _as_aware(row.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc)
 
     rows.sort(key=_created, reverse=True)
-    if cursor:
-        cur_dt = _as_aware(cursor)
-        if cur_dt is not None:
-            rows = [r for r in rows if _created(r) < cur_dt]
-    page = rows[:cap]
+    total = len(rows)
+    if page is not None:
+        page_n = max(1, int(page))
+        last_page = max(1, (total + cap - 1) // cap) if total else 1
+        if page_n > last_page:
+            page_n = last_page
+        offset = (page_n - 1) * cap
+        sliced = rows[offset : offset + cap]
+    else:
+        page_n = 1
+        if cursor:
+            cur_dt = _as_aware(cursor)
+            if cur_dt is not None:
+                rows = [r for r in rows if _created(r) < cur_dt]
+        sliced = rows[:cap]
     items = []
-    for row in page:
+    for row in sliced:
         art = get_article(str(row.get("article_id") or ""))
         items.append(public_item(row, art))
     next_cursor = None
-    if len(rows) > cap and page:
-        next_cursor = _iso(page[-1].get("created_at"))
-    return {"items": items, "next_cursor": next_cursor}
+    if page is not None:
+        if page_n * cap < total and sliced:
+            next_cursor = _iso(sliced[-1].get("created_at"))
+    elif len(rows) > cap and sliced:
+        next_cursor = _iso(sliced[-1].get("created_at"))
+    return {
+        "items": items,
+        "next_cursor": next_cursor,
+        "page": page_n,
+        "page_size": cap,
+        "total": total,
+    }
 
 
 def mark_item_read(user_id: str, item_id: str) -> dict[str, Any]:
@@ -328,6 +348,35 @@ def recent_notified_titles(
             continue
         titles.append(str(art.get("title") or ""))
     return titles
+
+
+def enrich_source_status(settings: dict[str, Any]) -> dict[str, Any]:
+    """Overlay shared scan last_error onto the user's per-source status."""
+    status = {
+        str(k): dict(v)
+        for k, v in (settings.get("source_status") or {}).items()
+        if isinstance(v, dict)
+    }
+    keys = set(status)
+    keys.update(str(x) for x in (settings.get("preset_ids") or []) if str(x).strip())
+    for item in settings.get("custom_sources") or []:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        if url:
+            keys.add(normalize_url_key(url))
+    for key in keys:
+        scan = get_source_scan(key)
+        if not scan:
+            continue
+        cur = dict(status.get(key) or {})
+        cur["last_error"] = scan.get("last_error")
+        if scan.get("last_fetch_at"):
+            cur["last_fetch_at"] = scan["last_fetch_at"]
+        status[key] = cur
+    out = dict(settings)
+    out["source_status"] = status
+    return out
 
 
 def get_source_scan(source_key: str) -> dict[str, Any] | None:

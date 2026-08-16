@@ -4915,7 +4915,6 @@ body:has(.app-shell--agent-chat) {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--color-surface, var(--bg1));
-  cursor: pointer;
 }
 
 .policy-watch-source.is-on {
@@ -4927,6 +4926,11 @@ body:has(.app-shell--agent-chat) {
   margin-top: 0.2rem;
 }
 
+.policy-watch-source-body {
+  display: grid;
+  gap: 0.15rem;
+}
+
 .policy-watch-source-name {
   font-weight: 600;
   font-size: 0.9rem;
@@ -4934,7 +4938,7 @@ body:has(.app-shell--agent-chat) {
 
 .policy-watch-source .cell-sub,
 .policy-watch-source .status {
-  grid-column: 2;
+  grid-column: auto;
 }
 
 .policy-watch-custom {
@@ -4966,6 +4970,11 @@ body:has(.app-shell--agent-chat) {
 
 .policy-watch-inbox-wrap {
   min-height: 220px;
+}
+
+.policy-watch-inbox-wrap .pager {
+  justify-content: flex-end;
+  margin: 0.75rem 0 0;
 }
 
 .policy-watch-inbox-wrap .home-tile-title {
@@ -5020,6 +5029,10 @@ body:has(.app-shell--agent-chat) {
   border-radius: 999px;
   background: var(--bg2);
   font-size: 0.78rem;
+}
+
+a.policy-watch-chip:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 860px) {

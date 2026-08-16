@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .sensitivity import direction_label
+from .urls import article_open_url
 
 DISCLAIMER = "研究参考，不构成投资建议。"
 
@@ -51,7 +52,7 @@ def build_policy_watch_email(rows: list[dict[str, Any]]) -> tuple[str, str]:
         direction = direction_label(str(row.get("direction") or ""))
         lines = [
             f"来源：{row.get('source_label') or '—'}",
-            f"原文：{row.get('url') or '—'}",
+            f"原文：{article_open_url(str(row.get('url') or '')) or '—'}",
             "",
             str(row.get("summary") or row.get("title") or "").strip(),
             "",

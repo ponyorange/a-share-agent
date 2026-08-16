@@ -2430,11 +2430,19 @@ export function fetchPolicyWatchItems(opts?: {
   filter?: 'all' | 'emailed' | 'inbox'
   cursor?: string
   limit?: number
-}): Promise<{ items: PolicyWatchItem[]; next_cursor?: string | null }> {
+  page?: number
+}): Promise<{
+  items: PolicyWatchItem[]
+  next_cursor?: string | null
+  page?: number
+  page_size?: number
+  total?: number
+}> {
   const q = new URLSearchParams()
   if (opts?.filter) q.set('filter', opts.filter)
   if (opts?.cursor) q.set('cursor', opts.cursor)
   if (opts?.limit) q.set('limit', String(opts.limit))
+  if (opts?.page) q.set('page', String(opts.page))
   const qs = q.toString()
   return authFetch(`/api/advisor/policy-watch/items${qs ? `?${qs}` : ''}`)
 }

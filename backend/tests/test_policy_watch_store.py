@@ -98,3 +98,96 @@ def test_article_and_item_unique(monkeypatch):
     listed = store_mod.list_items("u1", filter="emailed", cursor=None, limit=30)
     assert len(listed["items"]) == 1
     assert listed["items"][0]["notify_status"] == "sent"
+    assert listed["total"] == 1
+    assert listed["page"] == 1
+
+
+def test_list_items_page(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    db = _DB()
+    monkeypatch.setattr(store_mod, "get_db", lambda: db)
+    base = datetime(2026, 8, 16, 4, 0, tzinfo=timezone.utc)
+    for i in range(3):
+        art = store_mod.upsert_article(
+            url=f"https://www.gov.cn/{i}.htm",
+            title=f"文{i}",
+            source_key="gov_zhengce",
+            source_label="政府网",
+            body_excerpt="正文",
+            body_ok=True,
+        )
+        db.policy_watch_items.insert_one(
+            {
+                "user_id": "u1",
+                "article_id": art["id"],
+                "created_at": base + timedelta(minutes=i),
+                "notify_status": "skipped",
+            }
+        )
+    page1 = store_mod.list_items("u1", page=1, limit=2)
+    assert page1["total"] == 3
+    assert page1["page"] == 1
+    assert [x["title"] for x in page1["items"]] == ["文2", "文1"]
+    page2 = store_mod.list_items("u1", page=2, limit=2)
+    assert page2["page"] == 2
+    assert [x["title"] for x in page2["items"]] == ["文0"]
+
+
+def test_enrich_source_status_uses_scan_error(monkeypatch):
+    db = _DB()
+    db.policy_watch_source_scans.insert_one(
+        {
+            "source_key": "gov_zhengce",
+            "last_error": "该页不像列表，请换栏目 URL",
+            "last_fetch_at": "2026-08-16T05:13:18+00:00",
+        }
+    )
+    monkeypatch.setattr(store_mod, "get_db", lambda: db)
+    out = store_mod.enrich_source_status(
+        {
+            "preset_ids": ["gov_zhengce", "scio_news"],
+            "custom_sources": [],
+            "source_status": {"gov_zhengce": {"state": "seeding"}},
+        }
+    )
+    assert out["source_status"]["gov_zhengce"]["state"] == "seeding"
+    assert "不像列表" in (out["source_status"]["gov_zhengce"].get("last_error") or "")
+
+
+def test_enrich_source_status_clears_stale_error(monkeypatch):
+    db = _DB()
+    db.policy_watch_source_scans.insert_one(
+        {
+            "source_key": "gov_zhengce",
+            "last_error": None,
+            "last_fetch_at": "2026-08-16T08:20:00+00:00",
+        }
+    )
+    monkeypatch.setattr(store_mod, "get_db", lambda: db)
+    out = store_mod.enrich_source_status(
+        {
+            "preset_ids": ["gov_zhengce"],
+            "custom_sources": [],
+            "source_status": {
+                "gov_zhengce": {
+                    "state": "ok",
+                    "last_error": "该页不像列表，请换栏目 URL",
+                }
+            },
+        }
+    )
+    assert out["source_status"]["gov_zhengce"].get("last_error") is None
+
+
+def test_public_item_hides_non_http_url():
+    item = store_mod.public_item(
+        {"_id": "i1", "article_id": "a1", "notify_status": "skipped"},
+        {
+            "title": "联播",
+            "source_label": "新闻联播",
+            "url": "policy://cctv/20260813/title",
+            "interpretation": {},
+        },
+    )
+    assert item["url"] is None

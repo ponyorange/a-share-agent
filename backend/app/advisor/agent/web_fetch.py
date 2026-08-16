@@ -25,6 +25,11 @@ _ALLOWED_CONTENT_HINTS = (
     "application/javascript",
 )
 
+_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
 
 def _host_ips(hostname: str) -> list[str]:
     infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
@@ -95,12 +100,13 @@ def _content_type_ok(content_type: str | None) -> bool:
     return any(ct.startswith(h) for h in _ALLOWED_CONTENT_HINTS)
 
 
-def fetch_url_text(url: str, *, cfg: dict[str, Any] | None = None) -> str:
+def _fetch_url_raw(
+    url: str, *, cfg: dict[str, Any] | None = None, user_agent: str
+) -> str:
     section = cfg if cfg is not None else get_agent_web_config().get("fetch_url") or {}
     allowed_ports = [int(p) for p in (section.get("allowed_ports") or [80, 443])]
     timeout = float(section.get("timeout_seconds") or 20)
     max_bytes = int(section.get("max_bytes") or 524288)
-    max_text = int(section.get("max_text_chars") or 80000)
     max_redirects = int(section.get("max_redirects") or 3)
 
     current = (url or "").strip()
@@ -110,7 +116,7 @@ def fetch_url_text(url: str, *, cfg: dict[str, Any] | None = None) -> str:
                 ok, reason = is_url_safe_for_fetch(current, allowed_ports=allowed_ports)
                 if not ok:
                     return f"错误：{reason}"
-                response = client.get(current, headers={"User-Agent": "share-data-agent/1.0"})
+                response = client.get(current, headers={"User-Agent": user_agent})
                 if response.is_redirect:
                     loc = response.headers.get("location")
                     if not loc:
@@ -124,8 +130,21 @@ def fetch_url_text(url: str, *, cfg: dict[str, Any] | None = None) -> str:
                 data = response.content[: max_bytes + 1]
                 if len(data) > max_bytes:
                     data = data[:max_bytes]
-                text = data.decode(response.encoding or "utf-8", errors="replace")
-                return _html_to_text(text, max_chars=max_text)
+                return data.decode(response.encoding or "utf-8", errors="replace")
         return "错误：重定向次数过多"
     except Exception as exc:  # noqa: BLE001
         return f"错误：抓取失败: {type(exc).__name__}"
+
+
+def fetch_url_text(url: str, *, cfg: dict[str, Any] | None = None) -> str:
+    section = cfg if cfg is not None else get_agent_web_config().get("fetch_url") or {}
+    max_text = int(section.get("max_text_chars") or 80000)
+    raw = _fetch_url_raw(url, cfg=section, user_agent="share-data-agent/1.0")
+    if raw.startswith("错误："):
+        return raw
+    return _html_to_text(raw, max_chars=max_text)
+
+
+def fetch_url_html(url: str, *, cfg: dict[str, Any] | None = None) -> str:
+    """SSRF-safe fetch that keeps HTML tags (for list-page link extraction)."""
+    return _fetch_url_raw(url, cfg=cfg, user_agent=_BROWSER_UA)

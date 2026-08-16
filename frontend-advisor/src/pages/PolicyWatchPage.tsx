@@ -11,9 +11,12 @@ import {
   type PolicyWatchSensitivity,
   type PolicyWatchSettings,
 } from '../api'
+import { explorerKlineUrl } from '../explorerLinks'
 
 const EMPTY_HINT =
   '勾选来源并开启后，新文章会出现在这里；只有可能影响股价的才发邮件。刚开启不会把旧闻刷进来。'
+
+const INBOX_PAGE_SIZE = 10
 
 const DIR_LABEL: Record<string, string> = {
   up: '利好',
@@ -53,11 +56,23 @@ function dirClass(direction?: string): string {
   return 'muted'
 }
 
+function isHttpUrl(url?: string | null): boolean {
+  if (!url) return false
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export default function PolicyWatchPage() {
   const [settings, setSettings] = useState<PolicyWatchSettings | null>(null)
   const [presets, setPresets] = useState<PolicyWatchPreset[]>([])
   const [items, setItems] = useState<PolicyWatchItem[]>([])
   const [filter, setFilter] = useState<'all' | 'emailed' | 'inbox'>('all')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
   const [customUrl, setCustomUrl] = useState('')
   const [tradingDraft, setTradingDraft] = useState('15')
   const [offhoursDraft, setOffhoursDraft] = useState('60')
@@ -75,12 +90,14 @@ export default function PolicyWatchPage() {
     const [s, p, inbox] = await Promise.all([
       fetchPolicyWatchSettings(),
       fetchPolicyWatchPresets(),
-      fetchPolicyWatchItems({ filter, limit: 30 }),
+      fetchPolicyWatchItems({ filter, page, limit: INBOX_PAGE_SIZE }),
     ])
     applySettings(s)
     setPresets(p.presets || [])
     setItems(inbox.items || [])
-  }, [applySettings, filter])
+    setTotal(Number(inbox.total) || 0)
+    if (inbox.page && inbox.page !== page) setPage(inbox.page)
+  }, [applySettings, filter, page])
 
   useEffect(() => {
     let cancelled = false
@@ -115,6 +132,7 @@ export default function PolicyWatchPage() {
   }
 
   const current = settings || defaultSettings()
+  const pageCount = Math.max(1, Math.ceil(total / INBOX_PAGE_SIZE) || 1)
 
   return (
     <section className="page policy-watch">
@@ -237,7 +255,7 @@ export default function PolicyWatchPage() {
               const checked = current.preset_ids.includes(preset.id)
               const st = current.source_status?.[preset.id]
               return (
-                <label
+                <div
                   key={preset.id}
                   className={checked ? 'policy-watch-source is-on' : 'policy-watch-source'}
                 >
@@ -245,6 +263,7 @@ export default function PolicyWatchPage() {
                     type="checkbox"
                     checked={checked}
                     disabled={saving}
+                    aria-label={preset.name}
                     onChange={(e) => {
                       const next = e.target.checked
                         ? [...current.preset_ids, preset.id]
@@ -252,17 +271,30 @@ export default function PolicyWatchPage() {
                       void patch({ preset_ids: next })
                     }}
                   />
-                  <span className="policy-watch-source-name">{preset.name}</span>
-                  {preset.description ? (
-                    <span className="cell-sub">{preset.description}</span>
-                  ) : null}
-                  {st?.state === 'seeding' ? (
-                    <span className="cell-sub">首次扫描中，不会回放旧闻</span>
-                  ) : null}
-                  {st?.last_error ? (
-                    <span className="status error">{st.last_error}</span>
-                  ) : null}
-                </label>
+                  <div className="policy-watch-source-body">
+                    {preset.list_url ? (
+                      <a
+                        className="text-link policy-watch-source-name"
+                        href={preset.list_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {preset.name}
+                      </a>
+                    ) : (
+                      <span className="policy-watch-source-name">{preset.name}</span>
+                    )}
+                    {preset.description ? (
+                      <span className="cell-sub">{preset.description}</span>
+                    ) : null}
+                    {st?.state === 'seeding' ? (
+                      <span className="cell-sub">首次扫描中，不会回放旧闻</span>
+                    ) : null}
+                    {st?.last_error ? (
+                      <span className="status error">{st.last_error}</span>
+                    ) : null}
+                  </div>
+                </div>
               )
             })}
           </div>
@@ -331,7 +363,10 @@ export default function PolicyWatchPage() {
                 role="tab"
                 aria-selected={filter === key}
                 className={filter === key ? 'btn' : 'btn ghost'}
-                onClick={() => setFilter(key)}
+                onClick={() => {
+                  setPage(1)
+                  setFilter(key)
+                }}
               >
                 {label}
               </button>
@@ -385,24 +420,70 @@ export default function PolicyWatchPage() {
                 </div>
               ) : null}
               {item.symbols?.length ? (
-                <p className="cell-sub">
-                  {item.symbols
-                    .map((s) =>
-                      [s.symbol, s.name, s.verified === false ? '待核实' : '']
-                        .filter(Boolean)
-                        .join(' '),
+                <div className="policy-watch-chips">
+                  {item.symbols.map((s, i) => {
+                    const code = (s.symbol || '').trim()
+                    const label = [code, s.name, s.verified === false ? '待核实' : '']
+                      .filter(Boolean)
+                      .join(' ')
+                    if (!code) {
+                      return (
+                        <span key={`${label}-${i}`} className="policy-watch-chip">
+                          {label}
+                        </span>
+                      )
+                    }
+                    return (
+                      <a
+                        key={`${code}-${i}`}
+                        className="text-link policy-watch-chip"
+                        href={explorerKlineUrl(code)}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`查看 ${code} K线`}
+                      >
+                        {label}
+                      </a>
                     )
-                    .join(' · ')}
-                </p>
+                  })}
+                </div>
               ) : null}
-              {item.url ? (
-                <a className="text-link" href={item.url} target="_blank" rel="noreferrer">
+              {isHttpUrl(item.url) ? (
+                <a
+                  className="text-link"
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   打开原文
                 </a>
               ) : null}
             </li>
           ))}
         </ul>
+        {pageCount > 1 || page > 1 ? (
+          <div className="pager" aria-label="收件箱分页">
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((n) => Math.max(1, n - 1))}
+            >
+              上一页
+            </button>
+            <span className="pager-info">
+              {page} / {pageCount}
+            </span>
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={page >= pageCount || loading}
+              onClick={() => setPage((n) => n + 1)}
+            >
+              下一页
+            </button>
+          </div>
+        ) : null}
       </section>
     </section>
   )
