@@ -690,6 +690,53 @@ def test_executor_reads_sanitized_error_archive_without_docker_logs():
     assert container.removed is True
 
 
+def test_executor_forwards_exception_type_for_generated_code_failed():
+    error = {
+        "error": "generated_code_failed",
+        "message": "generated_code_failed TOKEN-secret",
+        "exception_type": "KeyError",
+    }
+    container = FakeContainer(
+        wait_result={"StatusCode": 1},
+        archives={"/output/error.json": _archive("error.json", error)},
+    )
+    executor, _ = _executor(container)
+    response = executor.execute(controller.ExecuteRequest(**REQUEST))
+    assert response["ok"] is False
+    assert response["error"] == "generated_code_failed"
+    assert isinstance(response["error"], str)
+    assert response["exception_type"] == "KeyError"
+    assert "TOKEN-secret" not in json.dumps(response)
+
+
+def test_executor_drops_unknown_exception_type():
+    error = {
+        "error": "generated_code_failed",
+        "exception_type": "SecretTokenError",
+    }
+    container = FakeContainer(
+        wait_result={"StatusCode": 1},
+        archives={"/output/error.json": _archive("error.json", error)},
+    )
+    executor, _ = _executor(container)
+    response = executor.execute(controller.ExecuteRequest(**REQUEST))
+    assert response["error"] == "generated_code_failed"
+    assert "exception_type" not in response
+    assert "SecretTokenError" not in json.dumps(response)
+
+
+def test_executor_forwards_syntax_error_line():
+    error = {"error": "syntax_error", "message": "syntax_error", "line": 3}
+    container = FakeContainer(
+        wait_result={"StatusCode": 1},
+        archives={"/output/error.json": _archive("error.json", error)},
+    )
+    executor, _ = _executor(container)
+    response = executor.execute(controller.ExecuteRequest(**REQUEST))
+    assert response["error"] == "syntax_error"
+    assert response["line"] == 3
+
+
 @pytest.mark.parametrize(
     "member_name",
     ["../result.json", "/output/result.json", "nested/result.json"],

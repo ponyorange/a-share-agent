@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..config_loader import default_config
 from .data_agent.models import DataAgentLimits
-from .data_agent.sandbox import SandboxClient
+from .data_agent.sandbox import SandboxClient, format_sandbox_tool_error
 from .progress import emit_progress
 
 _DATASET_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -92,15 +92,6 @@ def _tool_error(code: str) -> str:
         },
         ensure_ascii=False,
     )
-
-
-def _map_runtime_error(exc: RuntimeError) -> str:
-    code = str(exc)
-    if code.startswith("sandbox_rejected:"):
-        return "sandbox_rejected"
-    if code in _ERROR_MESSAGES:
-        return code
-    return "sandbox_rejected"
 
 
 def _rows_byte_size(rows: list[dict[str, Any]]) -> int:
@@ -198,8 +189,9 @@ def build_agent_python_tools(user_id: str) -> list[BaseTool]:
         inline_datasets_json: str = "{}",
     ) -> str:
         """在沙箱运行 Python。已预置 pd/np（推荐直接用，也可 import pandas/numpy）；
-        仅允许 pandas/numpy/math/statistics/datetime/time/zoneinfo。可用 datasets['id']。
-        优先赋值 result；否则回传 stdout/stderr。小计算用本工具；大表/跨源仍用 delegate_data_task。"""
+        仅允许 pandas/numpy/math/statistics/datetime/time/zoneinfo/json/re/collections/itertools/functools。
+        可用 datasets['id']。优先赋值 result；否则回传 stdout/stderr。
+        失败时按 error.code / exception_type / line 改代码。小计算用本工具；大表/跨源仍用 delegate_data_task。"""
         emit_progress(step="run_python", status="started", phase="main_agent")
         if not workspace.begin_python_call():
             emit_progress(
@@ -239,14 +231,15 @@ def build_agent_python_tools(user_id: str) -> list[BaseTool]:
                 require_result=False,
             )
         except RuntimeError as exc:
-            error_code = _map_runtime_error(exc)
+            formatted = format_sandbox_tool_error(exc)
+            error_code = json.loads(formatted)["error"]["code"]
             emit_progress(
                 step="run_python",
                 status="failed",
                 phase="main_agent",
                 error_code=error_code,
             )
-            return _tool_error(error_code)
+            return formatted
 
         emit_progress(step="run_python", status="completed", phase="main_agent")
         return json.dumps(payload, ensure_ascii=False, allow_nan=False)

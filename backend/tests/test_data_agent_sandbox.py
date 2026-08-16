@@ -5,7 +5,11 @@ import pytest
 
 from app.advisor.agent.progress import bind_progress_sink
 from app.advisor.agent.data_agent.models import DataAgentLimits
-from app.advisor.agent.data_agent.sandbox import SandboxClient, build_python_tool
+from app.advisor.agent.data_agent.sandbox import (
+    SandboxClient,
+    SandboxRejected,
+    build_python_tool,
+)
 from app.advisor.agent.data_agent.workspace import DatasetWorkspace
 
 
@@ -173,6 +177,60 @@ def test_sandbox_client_maps_http_error_status_with_string_error():
     client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
     with pytest.raises(RuntimeError, match="^sandbox_rejected:invalid_request$"):
         client.execute("result={}", {}, DataAgentLimits())
+
+
+def test_sandbox_client_attaches_exception_type_and_line():
+    def handler(_request):
+        return httpx.Response(
+            200,
+            json={
+                "ok": False,
+                "error": "generated_code_failed",
+                "exception_type": "NameError",
+                "metrics": {"elapsed_ms": 1},
+            },
+        )
+
+    client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
+    with pytest.raises(SandboxRejected) as caught:
+        client.execute("result={}", {}, DataAgentLimits())
+    assert str(caught.value) == "sandbox_rejected:generated_code_failed"
+    assert caught.value.code == "generated_code_failed"
+    assert caught.value.exception_type == "NameError"
+    assert caught.value.line is None
+
+
+def test_sandbox_client_attaches_syntax_line():
+    def handler(_request):
+        return httpx.Response(
+            200,
+            json={"ok": False, "error": "syntax_error", "line": 4, "metrics": {"elapsed_ms": 1}},
+        )
+
+    client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
+    with pytest.raises(SandboxRejected) as caught:
+        client.execute("result={}", {}, DataAgentLimits())
+    assert caught.value.code == "syntax_error"
+    assert caught.value.line == 4
+
+
+def test_sandbox_client_drops_unknown_exception_type():
+    def handler(_request):
+        return httpx.Response(
+            200,
+            json={
+                "ok": False,
+                "error": "generated_code_failed",
+                "exception_type": "SecretTokenError",
+                "metrics": {"elapsed_ms": 1},
+            },
+        )
+
+    client = SandboxClient("http://sandbox", "token", transport=httpx.MockTransport(handler))
+    with pytest.raises(SandboxRejected) as caught:
+        client.execute("result={}", {}, DataAgentLimits())
+    assert caught.value.exception_type is None
+    assert "SecretTokenError" not in str(caught.value)
 
 
 def test_sandbox_client_runtime_errors_drop_original_exception_chain():
@@ -561,6 +619,56 @@ def test_python_analysis_tool_description_documents_datasets_contract(tmp_path):
     assert "datasets[" in tool.description
     assert "result" in tool.description
     assert "read_csv" in tool.description or "csv" in tool.description.lower()
+    assert "json/re/collections/itertools/functools" in tool.description
+    assert "exception_type" in tool.description
+
+
+def test_python_analysis_tool_surfaces_exception_type(tmp_path):
+    def handler(_request):
+        return httpx.Response(
+            200,
+            json={
+                "ok": False,
+                "error": "generated_code_failed",
+                "exception_type": "NameError",
+                "metrics": {"elapsed_ms": 1},
+            },
+        )
+
+    with DatasetWorkspace(DataAgentLimits(), root=tmp_path / "r") as workspace:
+        meta = workspace.create_dataset(
+            "akshare",
+            "demo",
+            {},
+            {
+                "columns": ["x"],
+                "rows": [{"x": 1}],
+                "returned": 1,
+                "total": 1,
+                "truncated": False,
+            },
+        )
+        client = SandboxClient(
+            "http://sandbox", "token", transport=httpx.MockTransport(handler)
+        )
+        tool = build_python_tool(workspace, client)
+        payload = json.loads(
+            tool.invoke(
+                {
+                    "code": "missing_name",
+                    "dataset_ids_json": json.dumps([meta.dataset_id]),
+                }
+            )
+        )
+
+    assert payload == {
+        "error": {
+            "code": "generated_code_failed",
+            "message": "生成代码执行失败：NameError",
+            "exception_type": "NameError",
+        }
+    }
+    assert "missing_name" not in json.dumps(payload)
 
 
 @pytest.mark.parametrize(

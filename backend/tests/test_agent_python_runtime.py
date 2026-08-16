@@ -170,3 +170,57 @@ def test_run_python_emits_main_agent_progress(monkeypatch):
         ("main_agent", "run_python", "started"),
         ("main_agent", "run_python", "completed"),
     ]
+
+
+def test_run_python_script_surfaces_import_and_runtime_errors(monkeypatch):
+    def handler(_request):
+        return httpx.Response(
+            200,
+            json={
+                "ok": False,
+                "error": "import_not_allowed",
+                "metrics": {"elapsed_ms": 1},
+            },
+        )
+
+    _patch_client(monkeypatch, handler)
+    tools = {t.name: t for t in build_agent_python_tools("u1")}
+    payload = json.loads(tools["run_python_script"].invoke({"code": "import os"}))
+    assert payload == {
+        "error": {"code": "import_not_allowed", "message": "不允许的 import"}
+    }
+
+
+def test_run_python_script_surfaces_exception_type(monkeypatch):
+    def handler(_request):
+        return httpx.Response(
+            200,
+            json={
+                "ok": False,
+                "error": "generated_code_failed",
+                "exception_type": "NameError",
+                "metrics": {"elapsed_ms": 1},
+            },
+        )
+
+    _patch_client(monkeypatch, handler)
+    tools = {t.name: t for t in build_agent_python_tools("u1")}
+    payload = json.loads(tools["run_python_script"].invoke({"code": "missing"}))
+    assert payload["error"]["code"] == "generated_code_failed"
+    assert payload["error"]["exception_type"] == "NameError"
+    assert payload["error"]["message"] == "生成代码执行失败：NameError"
+    assert "missing" not in json.dumps(payload)
+
+
+def test_run_python_script_unknown_runner_code_stays_rejected(monkeypatch):
+    def handler(_request):
+        return httpx.Response(
+            200,
+            json={"ok": False, "error": "unknown_internal_detail", "metrics": {"elapsed_ms": 1}},
+        )
+
+    _patch_client(monkeypatch, handler)
+    tools = {t.name: t for t in build_agent_python_tools("u1")}
+    payload = json.loads(tools["run_python_script"].invoke({"code": "print(1)"}))
+    assert payload == {"error": {"code": "sandbox_rejected", "message": "计算失败"}}
+    assert "unknown_internal_detail" not in json.dumps(payload)

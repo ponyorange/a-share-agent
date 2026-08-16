@@ -29,9 +29,7 @@ _ERROR_MESSAGES = {
     "sandbox_invalid_output": "计算结果无效",
     "sandbox_rejected": "计算失败",
     "python_retry_limit_exceeded": "Python 分析重试次数已达上限",
-    "generated_code_failed": (
-        "生成代码执行失败：请用 datasets['dataset_id'] 读取数据，并赋值给 result"
-    ),
+    "generated_code_failed": "生成代码执行失败",
     "result_not_assigned": "必须把最终结果赋值给变量 result",
     "syntax_error": "代码语法错误",
     "import_not_allowed": "不允许的 import",
@@ -52,6 +50,43 @@ _SAFE_RUNNER_ERROR_CODES = frozenset(
         "syntax_error",
     }
 )
+SAFE_EXCEPTION_TYPES = frozenset(
+    {
+        "ArithmeticError",
+        "AttributeError",
+        "Exception",
+        "ImportError",
+        "IndexError",
+        "KeyError",
+        "LookupError",
+        "ModuleNotFoundError",
+        "NameError",
+        "RuntimeError",
+        "TypeError",
+        "ValueError",
+        "ZeroDivisionError",
+    }
+)
+
+
+class SandboxRejected(RuntimeError):
+    def __init__(
+        self,
+        code: str,
+        *,
+        exception_type: str | None = None,
+        line: int | None = None,
+    ) -> None:
+        self.code = code
+        self.exception_type = (
+            exception_type if exception_type in SAFE_EXCEPTION_TYPES else None
+        )
+        self.line = (
+            line
+            if isinstance(line, int) and not isinstance(line, bool) and line > 0
+            else None
+        )
+        super().__init__(f"sandbox_rejected:{code}")
 
 
 def _validate_value(value: Any, depth: int = 0) -> None:
@@ -158,7 +193,13 @@ class SandboxClient:
                 raise RuntimeError("sandbox_timeout") from None
             if code == "sandbox_failed":
                 raise RuntimeError("sandbox_unavailable") from None
-            raise RuntimeError(f"sandbox_rejected:{code}") from None
+            exception_type = payload.get("exception_type")
+            line = payload.get("line")
+            raise SandboxRejected(
+                code,
+                exception_type=exception_type if isinstance(exception_type, str) else None,
+                line=line if isinstance(line, int) and not isinstance(line, bool) else None,
+            ) from None
 
         result = payload.get("result")
         self.last_metrics = _safe_metrics(payload.get("metrics"))
@@ -206,12 +247,33 @@ def _map_runtime_error_code(exc: RuntimeError) -> str:
     return code_value
 
 
+def format_sandbox_tool_error(exc: RuntimeError) -> str:
+    code = _map_runtime_error_code(exc)
+    error: dict[str, Any] = {
+        "code": code,
+        "message": _ERROR_MESSAGES.get(code, "计算失败"),
+    }
+    if isinstance(exc, SandboxRejected):
+        if code == "generated_code_failed" and exc.exception_type in SAFE_EXCEPTION_TYPES:
+            error["exception_type"] = exc.exception_type
+            error["message"] = f"生成代码执行失败：{exc.exception_type}"
+        if (
+            code == "syntax_error"
+            and isinstance(exc.line, int)
+            and not isinstance(exc.line, bool)
+            and exc.line > 0
+        ):
+            error["line"] = exc.line
+    return json.dumps({"error": error}, ensure_ascii=False)
+
+
 def build_python_tool(workspace: DatasetWorkspace, client: SandboxClient) -> BaseTool:
     @tool
     def run_python_analysis(code: str, dataset_ids_json: str) -> str:
         """在沙箱中运行只读 Python 分析。已预置 pd/np（推荐直接用，也可 import pandas/numpy）；
         用 datasets['dataset_id'] 取 DataFrame；必须赋值给 result。
-        仅允许 pandas/numpy/math/statistics/datetime/time/zoneinfo；
+        仅允许 pandas/numpy/math/statistics/datetime/time/zoneinfo/json/re/collections/itertools/functools。
+        失败时按 error.code / exception_type / line 改代码。
         禁止 read_csv/打开文件或访问网络。"""
         emit_progress(step="sandbox", status="started")
         if not workspace.begin_python_analysis():
@@ -269,6 +331,6 @@ def build_python_tool(workspace: DatasetWorkspace, client: SandboxClient) -> Bas
                 status="failed",
                 error_code=error_code,
             )
-            return _tool_error(error_code)
+            return format_sandbox_tool_error(exc)
 
     return run_python_analysis

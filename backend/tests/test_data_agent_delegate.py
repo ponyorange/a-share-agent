@@ -439,6 +439,8 @@ def test_main_agent_registers_delegate_last_and_preserves_specialized_rules():
     assert "自动调用 delegate_data_task" in SYSTEM_PROMPT
     assert "持仓、模拟盘、策略和推荐归档仍使用现有专用工具" in SYSTEM_PROMPT
     assert "run_python_script" in SYSTEM_PROMPT
+    assert "json/re/collections/itertools/functools" in SYSTEM_PROMPT
+    assert "exception_type" in SYSTEM_PROMPT
     assert "send_chat_summary_email" in SYSTEM_PROMPT
     assert "fetch_market_indices" in SYSTEM_PROMPT
     assert "fetch_symbol_daily_ma" in SYSTEM_PROMPT

@@ -35,10 +35,35 @@ def test_execute_task_exposes_dataframes_and_requires_result():
             "result = str(ZoneInfo('Asia/Shanghai'))",
             "Asia/Shanghai",
         ),
+        ("import json\nresult = json.dumps({'a': 1})", '{"a": 1}'),
+        ("import re\nresult = bool(re.search(r'\\d', 'a1'))", True),
+        ("from collections import Counter\nresult = Counter('ab')['a']", 1),
+        ("from itertools import chain\nresult = list(chain([1], [2]))", [1, 2]),
+        ("from functools import reduce\nresult = reduce(lambda a, b: a + b, [1, 2], 0)", 3),
     ],
 )
 def test_execute_task_allows_every_declared_import(statement: str, expected):
     assert execute_task(statement, {}, max_output_bytes=1024) == expected
+
+
+def test_execute_task_exposes_usability_builtins():
+    code = (
+        "result = {"
+        "'isinstance': isinstance({'a': 1}, dict), "
+        "'map': list(map(lambda x: x + 1, [1])), "
+        "'pow': pow(2, 3)"
+        "}\n"
+        "try:\n"
+        "    raise ValueError('x')\n"
+        "except Exception as exc:\n"
+        "    result['exc'] = type(exc).__name__"
+    )
+    assert execute_task(code, {}, max_output_bytes=4096) == {
+        "isinstance": True,
+        "map": [2],
+        "pow": 8,
+        "exc": "ValueError",
+    }
 
 
 def test_execute_task_exposes_common_safe_builtins():

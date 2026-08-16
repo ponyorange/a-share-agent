@@ -41,6 +41,21 @@ SAFE_RUNNER_ERRORS = {
     "runner_failed",
     "syntax_error",
 }
+SAFE_EXCEPTION_TYPES = {
+    "ArithmeticError",
+    "AttributeError",
+    "Exception",
+    "ImportError",
+    "IndexError",
+    "KeyError",
+    "LookupError",
+    "ModuleNotFoundError",
+    "NameError",
+    "RuntimeError",
+    "TypeError",
+    "ValueError",
+    "ZeroDivisionError",
+}
 
 
 class Settings(BaseModel):
@@ -318,6 +333,8 @@ class DockerExecutor:
             error: str | None = None,
             stdout: str = "",
             stderr: str = "",
+            exception_type: str | None = None,
+            line: int | None = None,
         ):
             payload: dict[str, Any] = {
                 "ok": ok,
@@ -334,6 +351,18 @@ class DockerExecutor:
                 payload["result"] = result
             else:
                 payload["error"] = error or "sandbox_failed"
+                if (
+                    error == "generated_code_failed"
+                    and exception_type in SAFE_EXCEPTION_TYPES
+                ):
+                    payload["exception_type"] = exception_type
+                if (
+                    error == "syntax_error"
+                    and isinstance(line, int)
+                    and not isinstance(line, bool)
+                    and line > 0
+                ):
+                    payload["line"] = line
             return payload
 
         if any(not DATASET_NAME.fullmatch(name) for name in request.datasets):
@@ -474,7 +503,18 @@ class DockerExecutor:
             )
             if error_code not in SAFE_RUNNER_ERRORS:
                 error_code = "runner_failed"
-            return response(False, error=error_code)
+            exception_type = (
+                error_payload.get("exception_type")
+                if isinstance(error_payload, dict)
+                else None
+            )
+            line = error_payload.get("line") if isinstance(error_payload, dict) else None
+            return response(
+                False,
+                error=error_code,
+                exception_type=exception_type if isinstance(exception_type, str) else None,
+                line=line if isinstance(line, int) and not isinstance(line, bool) else None,
+            )
         except OverflowError:
             return response(False, error="output_too_large")
         except Exception:

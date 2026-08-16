@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import builtins
 import contextlib
 import importlib
 import io
@@ -35,6 +36,11 @@ ALLOWED_IMPORT_ROOTS = {
     "datetime",
     "time",
     "zoneinfo",
+    "json",
+    "re",
+    "collections",
+    "itertools",
+    "functools",
 }
 VALIDATION_ERROR_CODES = {
     "import_not_allowed",
@@ -98,29 +104,47 @@ def _safe_import(
     return module if fromlist else importlib.import_module(root)
 
 
+_EXCEPTION_BUILTINS = {name: getattr(builtins, name) for name in SAFE_EXCEPTION_TYPES}
+
 SAFE_BUILTINS = {
     "__import__": _safe_import,
     "abs": abs,
     "all": all,
     "any": any,
     "bool": bool,
+    "chr": chr,
     "dict": dict,
+    "divmod": divmod,
     "enumerate": enumerate,
+    "filter": filter,
     "float": float,
+    "format": format,
+    "getattr": getattr,
+    "hasattr": hasattr,
     "int": int,
+    "isinstance": isinstance,
+    "iter": iter,
     "len": len,
     "list": list,
+    "map": map,
     "max": max,
     "min": min,
+    "next": next,
+    "ord": ord,
+    "pow": pow,
     "print": print,
     "range": range,
+    "repr": repr,
+    "reversed": reversed,
     "round": round,
     "set": set,
     "sorted": sorted,
     "str": str,
     "sum": sum,
     "tuple": tuple,
+    "type": type,
     "zip": zip,
+    **_EXCEPTION_BUILTINS,
 }
 
 
