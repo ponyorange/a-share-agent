@@ -85,6 +85,8 @@ class ExecuteResponse(BaseModel):
     stdout: str = ""
     stderr: str = ""
     error: str | None = None
+    exception_type: str | None = None
+    line: int | None = None
     metrics: dict[str, int]
 
 

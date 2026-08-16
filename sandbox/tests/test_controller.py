@@ -583,6 +583,30 @@ def test_execute_endpoint_accepts_stdout_stderr_in_response_model():
     assert response.json()["result"] is None
 
 
+def test_execute_endpoint_forwards_exception_type_and_line():
+    class ErrorExecutor:
+        def execute(self, request):
+            return {
+                "ok": False,
+                "error": "generated_code_failed",
+                "exception_type": "NameError",
+                "stdout": "",
+                "stderr": "",
+                "metrics": {"elapsed_ms": 1},
+            }
+
+    controller.app.dependency_overrides[controller.get_executor] = lambda: ErrorExecutor()
+    response = TestClient(controller.app).post(
+        "/v1/execute",
+        headers={"X-Sandbox-Token": TOKEN},
+        json=REQUEST,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["error"] == "generated_code_failed"
+    assert payload["exception_type"] == "NameError"
+
+
 @pytest.mark.parametrize(
     "dataset_name",
     ["../escape", "/absolute", "nested/name", "dot..dot", "", "name.json"],
