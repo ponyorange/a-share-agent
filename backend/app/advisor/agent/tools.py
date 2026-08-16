@@ -1572,58 +1572,6 @@ def build_tools(
         )
 
     @tool
-    def list_committee_runs(limit: int = 10) -> str:
-        """只读列出当前用户最近的委员会会议；不得据此直接下单。"""
-        _bind()
-        from ..committee.repository import CommitteeRepository, encode_api
-
-        rows = CommitteeRepository.from_default_database().list_runs(
-            user_id,
-            limit=max(1, min(int(limit), 30)),
-        )
-        return json.dumps(
-            {
-                "runs": [
-                    {
-                        "run_id": item.run_id,
-                        "status": item.status.value,
-                        "strategy_version": item.strategy_version,
-                        "created_at": encode_api(item.created_at),
-                    }
-                    for item in rows
-                ],
-                "read_only": True,
-                "approval_required": True,
-            },
-            ensure_ascii=False,
-        )
-
-    @tool
-    def get_committee_final_decision(run_id: str) -> str:
-        """只读查询当前用户某次委员会最终决定；执行必须走 approve API。"""
-        _bind()
-        from ..committee.repository import CommitteeRepository
-
-        repository = CommitteeRepository.from_default_database()
-        artifact = repository.latest_artifact(
-            user_id,
-            run_id,
-            "final_decision",
-        )
-        return json.dumps(
-            {
-                "run_id": run_id,
-                "decision": (
-                    None if artifact is None else artifact.get("payload")
-                ),
-                "read_only": True,
-                "approval_required": True,
-            },
-            ensure_ascii=False,
-            default=str,
-        )
-
-    @tool
     def list_unstructured_data_sources() -> str:
         """列出可用的 AKShare 非结构化/资讯/宏观类数据工具及覆盖范围说明。"""
         return json.dumps(ustr.list_unstructured_capabilities(), ensure_ascii=False)
@@ -2148,8 +2096,6 @@ def build_tools(
         get_recommendation_archive,
         get_leaderboard_brief,
         get_user_data_overview,
-        list_committee_runs,
-        get_committee_final_decision,
         list_unstructured_data_sources,
         fetch_stock_news,
         fetch_stock_notices,

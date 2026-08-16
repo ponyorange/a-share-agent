@@ -27,7 +27,7 @@ from app.advisor.committee.tasks import (
     reconcile_checkpoint_to_mongo,
 )
 from app.auth import get_current_user
-from app.main import app
+from tests.committee_http_app import leftover_committee_app
 from tests.test_paper_atomic_flow import Collection, Database
 
 
@@ -212,13 +212,14 @@ def test_authenticated_run_to_sse_approval_and_exactly_once_paper(monkeypatch):
         "get_account_snapshot_atomic",
         paper.get_account_snapshot_atomic,
     )
-    app.dependency_overrides[get_current_user] = lambda: {
+    test_app = leftover_committee_app()
+    test_app.dependency_overrides[get_current_user] = lambda: {
         "id": "u",
         "username": "u",
     }
 
     try:
-        client = TestClient(app)
+        client = TestClient(test_app)
         created = client.post(
             "/api/advisor/committee/runs",
             headers={"Idempotency-Key": "create-e2e"},
@@ -369,7 +370,7 @@ def test_authenticated_run_to_sse_approval_and_exactly_once_paper(monkeypatch):
             ]
         ) == 1
     finally:
-        app.dependency_overrides.clear()
+        test_app.dependency_overrides.clear()
 
 
 def test_checkpoint_crash_repairs_mongo_and_auto_resumes_same_run(monkeypatch):

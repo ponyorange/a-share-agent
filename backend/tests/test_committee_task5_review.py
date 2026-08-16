@@ -10,8 +10,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.auth import get_current_user
+from tests.committee_http_app import leftover_committee_app
 from app.advisor.committee import routes as committee_routes
 from app.advisor.agent.tools import build_tools
 from app.advisor.committee.approval import (
@@ -61,7 +61,7 @@ def _plan(price: float = 10) -> ApprovalPlan:
 
 
 def test_http_committee_routes_require_authentication():
-    client = TestClient(app)
+    client = TestClient(leftover_committee_app())
     for method, path, kwargs in (
         ("get", "/api/advisor/committee/runs", {}),
         (
@@ -108,16 +108,17 @@ def test_http_run_list_uses_authenticated_user_scope(monkeypatch):
             return []
 
     monkeypatch.setattr(committee_routes, "_repository", lambda: Repository())
-    app.dependency_overrides[get_current_user] = lambda: {
+    test_app = leftover_committee_app()
+    test_app.dependency_overrides[get_current_user] = lambda: {
         "id": "alice",
         "username": "alice",
     }
     try:
-        response = TestClient(app).get(
+        response = TestClient(test_app).get(
             "/api/advisor/committee/runs?limit=7"
         )
     finally:
-        app.dependency_overrides.clear()
+        test_app.dependency_overrides.clear()
     assert response.status_code == 200
     assert response.json() == {"runs": []}
     assert seen == [("alice", 7)]
@@ -127,16 +128,17 @@ def test_http_delete_run_is_user_scoped_and_maps_domain_errors(monkeypatch):
     repository = Mock()
     repository.soft_delete_run.return_value = SimpleNamespace()
     monkeypatch.setattr(committee_routes, "_plain_repository", lambda: repository)
-    app.dependency_overrides[get_current_user] = lambda: {
+    test_app = leftover_committee_app()
+    test_app.dependency_overrides[get_current_user] = lambda: {
         "id": "alice",
         "username": "alice",
     }
     try:
-        response = TestClient(app).delete(
+        response = TestClient(test_app).delete(
             "/api/advisor/committee/runs/run-1"
         )
     finally:
-        app.dependency_overrides.clear()
+        test_app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert response.json() == {"run_id": "run-1", "deleted": True}
@@ -166,16 +168,17 @@ def test_http_delete_run_does_not_touch_task_infrastructure(monkeypatch):
     ):
         monkeypatch.setattr(committee_routes, name, fail_if_called)
 
-    app.dependency_overrides[get_current_user] = lambda: {
+    test_app = leftover_committee_app()
+    test_app.dependency_overrides[get_current_user] = lambda: {
         "id": "alice",
         "username": "alice",
     }
     try:
-        response = TestClient(app).delete(
+        response = TestClient(test_app).delete(
             "/api/advisor/committee/runs/run-1"
         )
     finally:
-        app.dependency_overrides.clear()
+        test_app.dependency_overrides.clear()
 
     assert response.status_code == 200
     repository.soft_delete_run.assert_called_once()
@@ -193,16 +196,17 @@ def test_http_delete_run_maps_errors(monkeypatch, error, status):
     repository = Mock()
     repository.soft_delete_run.side_effect = error
     monkeypatch.setattr(committee_routes, "_plain_repository", lambda: repository)
-    app.dependency_overrides[get_current_user] = lambda: {
+    test_app = leftover_committee_app()
+    test_app.dependency_overrides[get_current_user] = lambda: {
         "id": "alice",
         "username": "alice",
     }
     try:
-        response = TestClient(app).delete(
+        response = TestClient(test_app).delete(
             "/api/advisor/committee/runs/run-1"
         )
     finally:
-        app.dependency_overrides.clear()
+        test_app.dependency_overrides.clear()
     assert response.status_code == status
 
 
@@ -869,31 +873,18 @@ def test_sse_emits_heartbeat_when_mongo_and_redis_are_idle():
     assert asyncio.run(first()) == ": heartbeat\n\n"
 
 
-def test_agent_adds_only_readonly_committee_tools(monkeypatch):
+def test_agent_exposes_no_committee_tools(monkeypatch):
     monkeypatch.setattr(
         "app.advisor.agent.tools.load_portfolio",
         lambda _uid: {"positions": []},
     )
     tools = build_tools("u")
-    committee = {item.name for item in tools if "committee" in item.name}
-    assert committee == {
-        "list_committee_runs",
-        "get_committee_final_decision",
-    }
-    assert not any(
-        token in name
-        for name in committee
-        for token in ("approve", "execute", "order", "cancel", "retry")
-    )
+    assert {item.name for item in tools if "committee" in item.name} == set()
 
 
 def test_no_committee_run_write_tool_accepts_run_id():
     for tool in build_tools("u"):
-        if tool.name in {
-            "list_committee_runs",
-            "get_committee_final_decision",
-        }:
-            continue
+        assert "committee" not in tool.name
         signature = inspect.signature(tool.func)
         assert not (
             "run_id" in signature.parameters

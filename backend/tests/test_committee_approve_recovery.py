@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.auth import get_current_user
+from tests.committee_http_app import leftover_committee_app
 from app.advisor import paper
 from app.advisor.config_loader import load_config
 from app.advisor.committee import routes
@@ -138,15 +138,16 @@ def _setup(monkeypatch):
     )
     monkeypatch.setattr(paper, "get_db", lambda: database)
     monkeypatch.setattr(routes, "get_account_snapshot_atomic", paper.get_account_snapshot_atomic)
-    app.dependency_overrides[get_current_user] = lambda: {
+    test_app = leftover_committee_app()
+    test_app.dependency_overrides[get_current_user] = lambda: {
         "id": "u",
         "username": "u",
     }
-    return database, plan
+    return database, plan, test_app
 
 
-def _approve(plan):
-    return TestClient(app).post(
+def _approve(plan, test_app):
+    return TestClient(test_app).post(
         "/api/advisor/committee/runs/r/approve",
         headers={"Idempotency-Key": "approve-key"},
         json={
@@ -160,12 +161,12 @@ def _approve(plan):
 
 
 def test_approve_api_recovers_same_key_without_duplicate(monkeypatch):
-    database, plan = _setup(monkeypatch)
+    database, plan, test_app = _setup(monkeypatch)
     try:
-        response = _approve(plan)
-        replay = _approve(plan)
+        response = _approve(plan, test_app)
+        replay = _approve(plan, test_app)
     finally:
-        app.dependency_overrides.clear()
+        test_app.dependency_overrides.clear()
     assert response.status_code == 200, response.text
     assert replay.status_code == 200
     assert response.json()["approval"] == replay.json()["approval"]
@@ -176,7 +177,7 @@ def test_approve_api_recovers_same_key_without_duplicate(monkeypatch):
 
 @pytest.mark.parametrize("kind", ["lineage", "state", "quote"])
 def test_approve_recovery_rejects_mismatch(monkeypatch, kind):
-    database, plan = _setup(monkeypatch)
+    database, plan, test_app = _setup(monkeypatch)
     if kind == "lineage":
         mutation = database.paper_mutations.find_one(
             {"external_idempotency_key": "approve-key"}
@@ -206,7 +207,7 @@ def test_approve_recovery_rejects_mismatch(monkeypatch, kind):
             },
         )
     try:
-        response = _approve(plan)
+        response = _approve(plan, test_app)
     finally:
-        app.dependency_overrides.clear()
+        test_app.dependency_overrides.clear()
     assert response.status_code == 409

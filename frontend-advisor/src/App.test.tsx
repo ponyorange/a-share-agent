@@ -35,8 +35,8 @@ vi.mock('./theme/themeStorage', () => ({
   bootstrapTheme,
 }))
 
-vi.mock('./committee/CommitteePage', () => ({
-  default: () => <h1>投委会实时工作台</h1>,
+vi.mock('./pages/SignalGraphPage', () => ({
+  default: () => <h1>图学习</h1>,
 }))
 
 vi.mock('./pages/AgentChatPage', () => ({
@@ -71,7 +71,7 @@ beforeEach(() => {
 
 it('收到统一认证变更事件后立即返回登录页', async () => {
   render(
-    <MemoryRouter initialEntries={['/agent/committee']}>
+    <MemoryRouter initialEntries={['/agent']}>
       <App />
     </MemoryRouter>,
   )
@@ -82,7 +82,7 @@ it('收到统一认证变更事件后立即返回登录页', async () => {
   expect(screen.queryByRole('link', { name: '投委会' })).not.toBeInTheDocument()
 })
 
-it('Agent 导航包含 Agent 配置且不含投委会；直链投委会仍可用', () => {
+it('Agent 导航不含投委会；直链投委会重定向到投研助手', () => {
   const { container } = render(
     <MemoryRouter initialEntries={['/agent/committee']}>
       <App />
@@ -93,7 +93,8 @@ it('Agent 导航包含 Agent 配置且不含投委会；直链投委会仍可用
     'href',
     '/agent/config',
   )
-  expect(screen.getByRole('heading', { name: '投委会实时工作台' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '投研助手' })).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: '投委会实时工作台' })).not.toBeInTheDocument()
   expect(container.querySelector('.app-shell')).toHaveClass('app-shell--agent-chat')
 })
 

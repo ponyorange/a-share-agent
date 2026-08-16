@@ -16,7 +16,6 @@ import AdvicePage from './pages/AdvicePage'
 import AgentChatPage from './pages/AgentChatPage'
 import AgentSettingsPage from './pages/AgentSettingsPage'
 import AgentStrategyPage from './pages/AgentStrategyPage'
-import CommitteePage from './committee/CommitteePage'
 import HistoryPage from './pages/HistoryPage'
 import KnowledgePage from './pages/KnowledgePage'
 import LeaderboardPage from './pages/LeaderboardPage'
@@ -52,8 +51,7 @@ export default function App() {
 
   // 以 URL 为准
   const isAgent = location.pathname.startsWith('/agent')
-  const isAgentChat =
-    location.pathname === '/agent' || location.pathname === '/agent/committee'
+  const isAgentChat = location.pathname === '/agent'
   const isAgentChatPage = location.pathname === '/agent'
 
   useEffect(() => {
@@ -204,7 +202,6 @@ export default function App() {
             <Route path="/agent/jobs" element={<MonitorJobsPage />} />
             <Route path="/agent/policy-watch" element={<PolicyWatchPage />} />
             <Route path="/agent/limitup-promote" element={<LimitUpPromotePage />} />
-            <Route path="/agent/committee" element={<CommitteePage />} />
             <Route path="/agent/config" element={<KnowledgePage />} />
             <Route
               path="/agent/knowledge"

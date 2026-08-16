@@ -12,7 +12,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_packaging_produces_worker_compose_and_committee_env(tmp_path):
+def test_packaging_produces_worker_compose_without_committee(tmp_path):
     package_root = tmp_path / "project"
     scripts = package_root / "scripts"
     deploy = package_root / "deploy"
@@ -82,13 +82,10 @@ def test_packaging_produces_worker_compose_and_committee_env(tmp_path):
     assert services["share-data"]["depends_on"] == {
         "sandbox-controller": {"condition": "service_healthy"}
     }
-    assert services["committee-worker"]["image"] == "share-data:test-review"
-    assert "env_file" not in services["committee-worker"]
-    assert "SANDBOX_TOKEN" not in "\n".join(
-        services["committee-worker"]["environment"]
-    )
+    assert "committee-worker" not in services
     assert "sandbox-runner" not in services
     assert "redis" not in services
+    assert services["monitor-worker"]["image"] == "share-data:test-review"
 
     controller = services["sandbox-controller"]
     assert controller["image"] == "share-data-sandbox-controller:test-review"
@@ -103,35 +100,24 @@ def test_packaging_produces_worker_compose_and_committee_env(tmp_path):
 
     env_template = (dist / ".env.example").read_text()
     for name in (
-        "COMMITTEE_ENABLED",
-        "REDIS_HOST",
-        "REDIS_PORT",
-        "REDIS_PASSWORD",
-        "REDIS_SSL",
-        "REDIS_DB",
-        "COMMITTEE_QUEUE_NAME",
-        "COMMITTEE_JOB_TIMEOUT",
-        "COMMITTEE_FAILURE_TTL",
+        "MONGODB_URI",
+        "JWT_SECRET",
+        "LLM_ENCRYPTION_KEY",
         "SANDBOX_TOKEN",
     ):
         assert f"{name}=" in env_template
-    assert "REDIS_HOST=\n" in env_template
-    assert "REDIS_PASSWORD=\n" in env_template
+    assert "COMMITTEE_ENABLED" not in env_template
+    assert "COMMITTEE_QUEUE_NAME" not in env_template
     assert "redis:" not in services
-    assert services["committee-worker"]["command"] == [
-        "python",
-        "-m",
-        "app.advisor.committee.worker",
-    ]
 
     release_readme = (dist / "README.md").read_text()
     assert "share-data-sandbox-controller-<tag>.tar.gz" in release_readme
     assert "share-data-python-sandbox-<tag>.tar.gz" in release_readme
     assert "SANDBOX_TOKEN" in release_readme
-    assert "/api/advisor/committee/health" in release_readme
-    assert "redis_stack_required" in release_readme
-    assert "scheduler" in release_readme
-    assert "密码轮换" in release_readme
+    assert "/api/advisor/committee/health" not in release_readme
+    assert "committee-worker" not in release_readme
+    assert "COMMITTEE_ENABLED" not in release_readme
+    assert "轮换" in release_readme
 
 
 def test_worker_module_command_is_importable():
@@ -171,9 +157,9 @@ def test_local_env_files_are_excluded_and_release_templates_have_no_secrets():
             "MONGODB_URI",
             "JWT_SECRET",
             "LLM_ENCRYPTION_KEY",
-            "REDIS_HOST",
-            "REDIS_PASSWORD",
         ):
             assert values[name] == ""
+        assert "REDIS_HOST" not in values
+        assert "COMMITTEE_ENABLED" not in values
         if template.name == ".env.example" and template.parent.name == "deploy":
             assert values["SANDBOX_TOKEN"] == ""

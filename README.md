@@ -100,35 +100,6 @@ Tushare 调用仍需在 `.env` 中配置 `TUSHARE_TOKEN`。
 不放入主 Agent 上下文。最终回答会说明使用的数据来源、数据时间、计算步骤、
 截断或预算限制，以及 Provider 部分失败和口径差异。
 
-### 启用投委会 worker
-
-投委会默认关闭，`COMMITTEE_ENABLED=0` 时旧行情、顾问和模拟盘接口无需
-Redis，仍按上述方式启动。启用前需准备外部 MongoDB 和 Redis Stack
-（必须包含 RedisJSON、RediSearch），并在本机 `.env` 中填写
-`COMMITTEE_ENABLED=1`、`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、
-`REDIS_SSL`。模板只保留占位符，真实地址和密码不得写入代码或发布产物。
-
-分别启动 API 与 worker：
-
-```bash
-cd backend
-source .venv/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-python -m app.advisor.committee.worker
-```
-
-worker 默认以 RQ `with_scheduler=True` 启动，负责把自动恢复产生的
-`enqueue_in` 延迟任务从 scheduled registry 移回执行队列；部署时不得另行
-关闭该调度器，除非已部署独立 RQ scheduler。
-
-登录后检查 `GET /api/advisor/committee/health`。若 Redis 可连接但缺少
-RedisJSON/RediSearch，checkpoint 状态会明确返回
-`redis_stack_required`，投委会任务不会降级为不持久的进程内执行。
-轮换 Redis 密码时，先在密钥系统或部署机 `.env` 更新密码，再依次重启
-worker 和 API，复查健康接口，最后撤销旧密码；不要把新旧密码写进日志。
-任何曾在源码、聊天、日志或发布包中出现过的 Redis、Mongo、JWT 与 LLM
-加密凭据均视为已暴露，部署前必须在服务端轮换并撤销旧值。
-
 ## 启动数据后台前端
 
 ```bash

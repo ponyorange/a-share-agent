@@ -61,12 +61,8 @@ cp .env.example .env
 # 3. 启动
 docker compose up -d
 
-# 4. 检查旧应用健康
+# 4. 检查应用健康
 curl -s http://127.0.0.1:8000/api/health
-
-# 5. 启用委员会后，用登录令牌检查 Redis 与 checkpoint
-curl -s -H "Authorization: Bearer <token>" \
-  http://127.0.0.1:8000/api/advisor/committee/health
 ```
 
 或直接：`./load-and-run.sh`。首次运行若没有 `.env`，脚本会复制
@@ -101,7 +97,7 @@ MongoDB 需自行准备；通过 `.env` 中的 `MONGODB_URI` 连接。
 `sandbox-controller` 是持有 Docker socket 的高权限控制面，只能在 Compose
 内部网络暴露给 `share-data`。不要为它配置 `ports`，不要发布到宿主机或公网。
 `share-data` 只通过 `SANDBOX_URL=http://sandbox-controller:8090` 和
-`SANDBOX_TOKEN` 调用 Controller；`share-data`、`committee-worker`、
+`SANDBOX_TOKEN` 调用 Controller；`share-data`、
 `monitor-worker` 和 Runner 均不得挂载 `/var/run/docker.sock`。Controller 固定使用
 `share-data-python-sandbox:amd64` 作为 Runner 镜像，客户端不能传入镜像、
 挂载、网络或其他容器参数。
@@ -202,32 +198,7 @@ SANDBOX_TOKEN= docker compose -f deploy/docker-compose.yml config
 
 Expected: 命令失败并提示 `SANDBOX_TOKEN` 必须设置；不得用空 token 启动部署。
 
-委员会 worker 默认由 `COMMITTEE_ENABLED=0` 关闭。启用时需在 `.env` 配置外部
-Redis，部署编排不会创建内置 Redis。普通队列需要 Redis；LangGraph checkpoint
-的首次 `setup()` 还要求 Redis Stack，或至少启用 RedisJSON 与 RediSearch。
-checkpoint 初始化失败会返回不可用状态，不影响主应用启动。
-若 Redis 可连接但缺少 RedisJSON/RediSearch，委员会健康接口会明确返回
-`redis_stack_required`，worker 不会回退到进程内 checkpoint。
-`committee-worker` 内置启用 RQ scheduler，用于执行自动恢复的延迟任务；
-本 compose 与打包产物均通过同一 worker 模块启动，无需额外 scheduler 服务。
-
-启用委员会的最小配置如下；尖括号内容必须由部署机密钥系统或本地 `.env`
-替换，不得写进镜像、compose 或打包目录：
-
-```dotenv
-COMMITTEE_ENABLED=1
-REDIS_HOST=<redis-host>
-REDIS_PORT=6379
-REDIS_PASSWORD=<redis-password>
-REDIS_SSL=1
-REDIS_DB=0
-```
-
-密码轮换顺序：先让 Redis 同时接受新旧凭据，在密钥系统或部署机 `.env`
-写入新密码，依次执行 `docker compose restart committee-worker share-data`，
-确认两个健康检查通过后撤销旧凭据。故障排查时只记录异常类型和脱敏端点，
-不要输出 `.env`、连接 URL 或密码。
-所有曾出现在源码、聊天、日志或旧发布包中的 Redis、Mongo、JWT 和 LLM
+所有曾出现在源码、聊天、日志或旧发布包中的 Mongo、JWT 和 LLM
 加密凭据必须立即轮换；新值应由密钥系统注入，不能复制到本目录。
 
 ## 架构说明
