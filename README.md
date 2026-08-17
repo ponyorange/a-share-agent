@@ -1,4 +1,4 @@
-# Share Data Explorer
+# Share Data Explorer Agent
 
 多数据源行情 / 接口浏览 Web 应用，外加独立的**短期交易顾问**前端。
 
