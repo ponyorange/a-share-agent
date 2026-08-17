@@ -1561,8 +1561,10 @@ def build_tools(
                 "recommendation_dates_sample": dates,
                 "llm": {
                     "configured": llm.get("configured"),
-                    "model": llm.get("model"),
-                    "key_hint": llm.get("key_hint"),
+                    "provider": ((llm.get("slots") or {}).get("agent") or {}).get(
+                        "provider"
+                    ),
+                    "model": ((llm.get("slots") or {}).get("agent") or {}).get("model"),
                 },
                 "hint": "可按需调用 get_portfolio_summary / get_paper_account_detail / "
                 "list_paper_trades / get_user_strategy_config / list_recommendation_dates 等深入查看。",

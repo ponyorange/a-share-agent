@@ -28,7 +28,7 @@ def test_persist_false_skips_chat_store(monkeypatch):
     )
     monkeypatch.setattr(graph_mod, "session_exists", lambda *a, **k: True)
     monkeypatch.setattr(graph_mod, "build_context_history", lambda *a, **k: [])
-    monkeypatch.setattr(graph_mod, "build_chat_model", lambda *_: object())
+    monkeypatch.setattr(graph_mod, "build_chat_model", lambda *_a, **_k: object())
     monkeypatch.setattr(graph_mod, "build_tools", lambda *_a, **_k: [])
     monkeypatch.setattr(
         graph_mod, "build_system_prompt", lambda *_a, **_k: "sys"

@@ -158,10 +158,10 @@ export default function PolicyWatchPage() {
           </Link>
         )}
         {current.llm_configured ? (
-          <span className="policy-watch-pill">DeepSeek 已配置</span>
+          <span className="policy-watch-pill">模型已配置</span>
         ) : (
           <Link className="policy-watch-pill is-warn" to="/agent/settings">
-            未配置 DeepSeek
+            未配置模型
           </Link>
         )}
       </div>

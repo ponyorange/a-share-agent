@@ -297,7 +297,7 @@ def start_refresh(
     force_pool: bool = False,
 ) -> dict[str, Any]:
     """Start background LLM refresh; same-day overwrite when completed."""
-    resolve_llm_credentials(user_id)
+    resolve_llm_credentials(user_id, "limitup")
     day = (trade_date or last_trading_day())[:10]
     # Prefer pool date when refreshing "today"
     if not trade_date:
@@ -366,7 +366,7 @@ def start_refresh(
 
 def ensure_today(user_id: str) -> dict[str, Any]:
     """Return ready snapshot or start background refresh if missing."""
-    resolve_llm_credentials(user_id)
+    resolve_llm_credentials(user_id, "limitup")
     day = last_trading_day()
     try:
         from ..limitup import get_limit_up

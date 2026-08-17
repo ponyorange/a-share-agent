@@ -12,66 +12,57 @@ class FakeChatModel:
         self.kwargs = kwargs
 
 
-def test_build_chat_model_preserves_default_and_supports_tiers(monkeypatch):
-    monkeypatch.setattr(
-        llm,
-        "resolve_llm_credentials",
-        lambda user_id: {
+def test_build_chat_model_uses_slot_and_tier(monkeypatch):
+    def fake_resolve(user_id, slot):
+        models = {
+            "agent": "user-default",
+            "committee_quick": "fast",
+            "committee_deep": "reasoner",
+        }
+        return {
             "api_key": "secret",
             "base_url": "https://llm.example/v1",
-            "model": "user-default",
-        },
-    )
+            "model": models[slot],
+            "provider": "deepseek",
+        }
+
+    monkeypatch.setattr(llm, "resolve_llm_credentials", fake_resolve)
     monkeypatch.setattr(llm, "ChatOpenAI", FakeChatModel)
 
-    default = llm.build_chat_model("u")
-    quick = llm.build_chat_model(
-        "u",
-        tier="quick",
-        committee_config={"models": {"quick": "fast", "deep": "reasoner"}},
-    )
-    deep = llm.build_chat_model(
-        "u",
-        tier="deep",
-        committee_config={"models": {"quick": "fast", "deep": "reasoner"}},
-    )
-
+    default = llm.build_chat_model("u", slot="agent")
+    quick = llm.build_chat_model("u", tier="quick")
+    deep = llm.build_chat_model("u", tier="deep", request_timeout=12)
     assert default.kwargs["model"] == "user-default"
     assert quick.kwargs["model"] == "fast"
     assert deep.kwargs["model"] == "reasoner"
-    assert quick.kwargs["api_key"] == "secret"
-    assert quick.kwargs["base_url"] == "https://llm.example/v1"
+    assert deep.kwargs["timeout"] == 12
+    assert "temperature" in default.kwargs
 
 
-def test_tier_loads_committee_defaults_and_request_timeout(monkeypatch):
+def test_kimi_omits_temperature(monkeypatch):
     monkeypatch.setattr(
         llm,
         "resolve_llm_credentials",
-        lambda user_id: {
+        lambda user_id, slot: {
             "api_key": "secret",
-            "base_url": "https://llm.example/v1",
-            "model": "user-default",
+            "base_url": "https://api.moonshot.cn/v1",
+            "model": "kimi-k2.6",
+            "provider": "kimi",
         },
     )
     monkeypatch.setattr(llm, "ChatOpenAI", FakeChatModel)
-    monkeypatch.setattr(
-        llm,
-        "load_config",
-        lambda: {
-            "committee": {
-                "models": {"quick": "configured-quick", "deep": "configured-deep"}
-            }
-        },
-        raising=False,
-    )
+    model = llm.build_chat_model("u", slot="paper", temperature=0.2)
+    assert "temperature" not in model.kwargs
+    assert model.kwargs["model"] == "kimi-k2.6"
 
-    quick = llm.build_chat_model(
-        "u",
-        tier="quick",
-        request_timeout=12,
-    )
-    assert quick.kwargs["model"] == "configured-quick"
-    assert quick.kwargs["timeout"] == 12
+
+def test_build_chat_model_requires_slot_or_tier(monkeypatch):
+    monkeypatch.setattr(llm, "ChatOpenAI", FakeChatModel)
+    try:
+        llm.build_chat_model("u")
+        raise AssertionError("expected TypeError or ValueError")
+    except (TypeError, ValueError):
+        pass
 
 
 def test_yaml_contains_committee_models_and_budget_defaults():
@@ -85,5 +76,18 @@ def test_yaml_contains_committee_models_and_budget_defaults():
 def test_legacy_agent_chat_public_signatures_remain_compatible():
     run_parameters = inspect.signature(run_agent_chat).parameters
     event_parameters = inspect.signature(iter_agent_chat_events).parameters
-    assert list(run_parameters) == ["user_id", "message", "session_id", "history"]
-    assert list(event_parameters) == ["user_id", "message", "session_id"]
+    assert list(run_parameters) == [
+        "user_id",
+        "message",
+        "session_id",
+        "history",
+        "run_at_mode",
+        "persist",
+    ]
+    assert list(event_parameters) == [
+        "user_id",
+        "message",
+        "session_id",
+        "run_at_mode",
+        "persist",
+    ]

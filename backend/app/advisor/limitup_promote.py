@@ -333,7 +333,7 @@ def iter_promote_events(
     use_memory_cache: bool = True,
 ) -> Iterator[dict[str, Any]]:
     """Yield SSE events: progress* → thinking* → token* → done | error."""
-    resolve_llm_credentials(user_id)
+    resolve_llm_credentials(user_id, "limitup")
     yield {
         "event": "progress",
         "data": {"phase": "pool", "message": "正在获取当日封板池…"},
@@ -393,7 +393,7 @@ def iter_promote_events(
             "message": f"正在结合热点研判 {len(candidates)} 只封板摘要…",
         },
     }
-    model = build_chat_model(user_id, temperature=0.2, streaming=True)
+    model = build_chat_model(user_id, slot="limitup", temperature=0.2, streaming=True)
     human = (
         f"池日期 {trade_date}；封板总数 {ctx.get('candidate_count')}；"
         f"以下为摘要候选（已按连板优先截断至 {len(candidates)} 只）：\n"

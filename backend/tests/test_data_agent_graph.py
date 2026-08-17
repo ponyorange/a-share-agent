@@ -776,7 +776,11 @@ def test_run_data_agent_only_gives_provider_and_python_tools(tmp_path, caplog):
 
     assert result.answer == "ok"
     build_model.assert_called_once_with(
-        "u", streaming=False, temperature=0.1, request_timeout=120
+        "u",
+        slot="agent",
+        streaming=False,
+        temperature=0.1,
+        request_timeout=120,
     )
     assert captured["tool_names"] == [
         "list_data_sources",

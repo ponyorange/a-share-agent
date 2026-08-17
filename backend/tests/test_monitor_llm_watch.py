@@ -92,7 +92,7 @@ def test_run_llm_watch_hold_does_not_mail(monkeypatch):
     )
     monkeypatch.setattr(
         "app.advisor.llm_settings.resolve_llm_credentials",
-        lambda _uid: {"api_key": "x", "model": "m", "base_url": "http://x"},
+        lambda *_a, **_k: {"api_key": "x", "model": "m", "base_url": "http://x"},
     )
 
     out = run_llm_watch(
@@ -136,7 +136,7 @@ def test_run_llm_watch_buy_sends(monkeypatch):
     )
     monkeypatch.setattr(
         "app.advisor.llm_settings.resolve_llm_credentials",
-        lambda _uid: {"api_key": "x", "model": "m", "base_url": "http://x"},
+        lambda *_a, **_k: {"api_key": "x", "model": "m", "base_url": "http://x"},
     )
 
     out = run_llm_watch(

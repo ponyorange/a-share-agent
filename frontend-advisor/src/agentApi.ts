@@ -1,12 +1,32 @@
 import { authFetch, getToken } from './auth'
 
-export type LlmSettings = {
+export type LlmProviderId = 'deepseek' | 'kimi' | 'qwen'
+export type LlmSlotId =
+  | 'agent'
+  | 'paper'
+  | 'home'
+  | 'monitor'
+  | 'policy'
+  | 'limitup'
+  | 'committee_quick'
+  | 'committee_deep'
+
+export type LlmProviderPublic = {
   configured: boolean
-  provider?: string
-  model?: string
-  base_url?: string
   key_hint?: string | null
   last_validated_at?: string | null
+  available_models: { id: string }[]
+  enabled_models: string[]
+  default_model: string
+  models_synced_at?: string | null
+}
+
+export type LlmSlotValue = { provider: LlmProviderId; model: string } | null
+
+export type LlmSettings = {
+  configured: boolean
+  providers: Record<LlmProviderId, LlmProviderPublic>
+  slots: Record<LlmSlotId, LlmSlotValue>
   web_research_enabled?: boolean
   tavily_enabled?: boolean
   tavily_configured?: boolean
@@ -25,10 +45,36 @@ export function saveLlmSettings(body: {
   web_research_enabled?: boolean
   tavily_enabled?: boolean
   tavily_api_key?: string
+  enabled_models?: Partial<Record<LlmProviderId, string[]>>
+  slots?: Partial<Record<LlmSlotId, { provider: LlmProviderId; model: string }>>
 }): Promise<LlmSettings> {
   return authFetch('/api/advisor/llm/settings', {
     method: 'PUT',
     body: JSON.stringify(body),
+  })
+}
+
+export function saveLlmProvider(
+  providerId: LlmProviderId,
+  apiKey: string,
+): Promise<LlmSettings> {
+  return authFetch(`/api/advisor/llm/providers/${providerId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ api_key: apiKey }),
+  })
+}
+
+export function refreshLlmProviderModels(
+  providerId: LlmProviderId,
+): Promise<LlmSettings> {
+  return authFetch(`/api/advisor/llm/providers/${providerId}/models/refresh`, {
+    method: 'POST',
+  })
+}
+
+export function clearLlmProvider(providerId: LlmProviderId): Promise<LlmSettings> {
+  return authFetch(`/api/advisor/llm/providers/${providerId}`, {
+    method: 'DELETE',
   })
 }
 

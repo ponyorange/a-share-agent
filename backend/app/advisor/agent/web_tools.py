@@ -7,7 +7,7 @@ from typing import Any
 from langchain_core.tools import BaseTool, tool
 
 from ..llm_settings import (
-    resolve_llm_credentials,
+    resolve_deepseek_api_key,
     resolve_tavily_api_key,
     web_tool_flags,
 )
@@ -35,8 +35,16 @@ def build_web_tools(user_id: str) -> list[BaseTool]:
                 step="web_research", status="started", phase="main_agent"
             )
             try:
-                creds = resolve_llm_credentials(user_id)
-                out = run_web_research(creds["api_key"], query)
+                key = resolve_deepseek_api_key(user_id)
+                if not key:
+                    emit_progress(
+                        step="web_research",
+                        status="failed",
+                        phase="main_agent",
+                        error_code="web_research_failed",
+                    )
+                    return "错误：未配置 DeepSeek API Key"
+                out = run_web_research(key, query)
                 failed = out.startswith("错误：")
                 emit_progress(
                     step="web_research",

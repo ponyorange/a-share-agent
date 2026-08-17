@@ -162,7 +162,7 @@ it('Agent 聊天页提供更多菜单可切换基础面板与 Agent 标签', asy
     'href',
     '/agent/strategy',
   )
-  expect(screen.getByRole('menuitem', { name: 'DeepSeek 配置' })).toHaveAttribute(
+  expect(screen.getByRole('menuitem', { name: '模型配置' })).toHaveAttribute(
     'href',
     '/agent/settings',
   )

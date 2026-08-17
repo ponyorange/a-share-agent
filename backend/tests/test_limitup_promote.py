@@ -30,7 +30,7 @@ def test_generate_promote_picks_uses_cache(monkeypatch):
     monkeypatch.setattr(
         promote,
         "resolve_llm_credentials",
-        lambda uid: {"api_key": "k", "base_url": "u", "model": "m"},
+        lambda *a, **k: {"api_key": "k", "base_url": "u", "model": "m"},
     )
     monkeypatch.setattr(
         promote,
@@ -88,11 +88,11 @@ def test_generate_promote_picks_uses_cache(monkeypatch):
 def test_generate_requires_llm_key(monkeypatch):
     promote.clear_promote_cache()
 
-    def _raise(_uid):
-        raise ValueError("尚未配置 DeepSeek API Key，请先在 Agent 设置中填写")
+    def _raise(_uid, slot="agent"):
+        raise ValueError("尚未配置 API Key，请先在模型配置中填写")
 
     monkeypatch.setattr(promote, "resolve_llm_credentials", _raise)
-    with pytest.raises(ValueError, match="DeepSeek"):
+    with pytest.raises(ValueError, match="模型配置"):
         promote.generate_promote_picks("u1")
 
 
@@ -101,7 +101,7 @@ def test_iter_promote_events_streams_thinking(monkeypatch):
     monkeypatch.setattr(
         promote,
         "resolve_llm_credentials",
-        lambda uid: {"api_key": "k", "base_url": "u", "model": "m"},
+        lambda *a, **k: {"api_key": "k", "base_url": "u", "model": "m"},
     )
     monkeypatch.setattr(
         promote,

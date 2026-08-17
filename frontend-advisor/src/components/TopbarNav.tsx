@@ -31,7 +31,7 @@ export const AGENT_NAV_LINKS: TopbarNavLink[] = [
   { to: '/agent/limitup-promote', label: '打板晋级' },
   { to: '/agent/config', label: 'Agent 配置' },
   { to: '/agent/strategy', label: '策略副驾' },
-  { to: '/agent/settings', label: 'DeepSeek 配置' },
+  { to: '/agent/settings', label: '模型配置' },
 ]
 
 export default function TopbarNav({

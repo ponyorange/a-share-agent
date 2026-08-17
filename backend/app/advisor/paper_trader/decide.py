@@ -155,8 +155,8 @@ def run_llm_decide(
         from ..agent.llm import build_chat_model
         from ..llm_settings import resolve_llm_credentials
 
-        resolve_llm_credentials(user_id)
-        model = build_chat_model(user_id, temperature=0.2, streaming=False)
+        resolve_llm_credentials(user_id, "paper")
+        model = build_chat_model(user_id, slot="paper", temperature=0.2, streaming=False)
         prompt = _build_user_prompt(
             mode=mode,
             candidates=candidates,

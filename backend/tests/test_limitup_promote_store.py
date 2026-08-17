@@ -135,9 +135,11 @@ def test_start_refresh_requires_credentials(fake_col, monkeypatch):
     monkeypatch.setattr(
         store,
         "resolve_llm_credentials",
-        lambda _uid: (_ for _ in ()).throw(ValueError("请先配置 DeepSeek API Key")),
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            ValueError("请先在模型配置中填写 API Key")
+        ),
     )
-    with pytest.raises(ValueError, match="DeepSeek"):
+    with pytest.raises(ValueError, match="模型配置"):
         store.start_refresh("u1", force=True)
 
 

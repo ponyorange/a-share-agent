@@ -519,6 +519,7 @@ def run_data_agent(
     try:
         model = build_chat_model(
             user_id,
+            slot="agent",
             streaming=False,
             temperature=0.1,
             request_timeout=120,

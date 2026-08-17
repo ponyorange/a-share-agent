@@ -39,7 +39,7 @@ def test_generate_brief_parses_llm_json(monkeypatch):
 
             return R()
 
-    monkeypatch.setattr(hb, "resolve_llm_credentials", lambda uid: {"api_key": "x"})
+    monkeypatch.setattr(hb, "resolve_llm_credentials", lambda *a, **k: {"api_key": "x"})
     monkeypatch.setattr(hb, "build_chat_model", lambda uid, **k: FakeModel())
     monkeypatch.setattr(hb, "_optional_knowledge_titles", lambda uid: [])
     monkeypatch.setattr(hb, "_maybe_fetch_web_items", lambda uid: [])
@@ -120,7 +120,7 @@ def test_generate_brief_runs_stock_picks_after_summary(monkeypatch):
 
             return R()
 
-    monkeypatch.setattr(hb, "resolve_llm_credentials", lambda uid: {"api_key": "x"})
+    monkeypatch.setattr(hb, "resolve_llm_credentials", lambda *a, **k: {"api_key": "x"})
     monkeypatch.setattr(hb, "build_chat_model", lambda uid, **k: FakeModel())
     monkeypatch.setattr(hb, "_optional_knowledge_titles", lambda uid: [])
     monkeypatch.setattr(hb, "_maybe_fetch_web_items", lambda uid: [])
@@ -239,22 +239,22 @@ def test_refresh_rejects_without_llm_key(monkeypatch):
 
     monkeypatch.setattr(hb, "last_trading_day", lambda: "2026-08-01")
 
-    def _boom(uid):
-        raise ValueError("尚未配置 DeepSeek API Key，请先在 Agent 设置中填写")
+    def _boom(*_a, **_k):
+        raise ValueError("尚未配置 API Key，请先在模型配置中填写")
 
     monkeypatch.setattr(hb, "resolve_llm_credentials", _boom)
     try:
         hb.start_home_news_brief_refresh("u1")
         assert False, "expected ValueError"
     except ValueError as exc:
-        assert "DeepSeek" in str(exc)
+        assert "模型配置" in str(exc)
 
 
 def test_refresh_reuses_running(monkeypatch):
     from app.advisor import home_news_brief as hb
 
     monkeypatch.setattr(hb, "last_trading_day", lambda: "2026-08-01")
-    monkeypatch.setattr(hb, "resolve_llm_credentials", lambda uid: {"api_key": "x"})
+    monkeypatch.setattr(hb, "resolve_llm_credentials", lambda *a, **k: {"api_key": "x"})
     existing = {
         "user_id": "u1",
         "trade_date": "2026-08-01",
@@ -305,7 +305,7 @@ def test_brief_routes(monkeypatch):
     )
 
     def _refresh(uid):
-        raise ValueError("尚未配置 DeepSeek API Key，请先在 Agent 设置中填写")
+        raise ValueError("尚未配置 API Key，请先在模型配置中填写")
 
     monkeypatch.setattr(routes, "start_home_news_brief_refresh", _refresh)
     try:
@@ -315,6 +315,6 @@ def test_brief_routes(monkeypatch):
         assert g.json()["status"] == "idle"
         p = client.post("/api/advisor/home/news-brief/refresh")
         assert p.status_code == 400
-        assert "DeepSeek" in p.json()["detail"]
+        assert "模型配置" in p.json()["detail"]
     finally:
         app.dependency_overrides.clear()

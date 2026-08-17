@@ -60,10 +60,14 @@ from .user_strategy import (
     update_user_strategy,
 )
 from .llm_settings import (
+    HTTP_MISSING_KEY_DETAIL,
     clear_llm_settings,
+    clear_provider,
     clear_tavily_settings,
     public_llm_settings,
+    refresh_provider_models,
     resolve_llm_credentials,
+    save_provider_key,
     update_llm_settings,
 )
 from .ui_settings import get_ui_settings, save_ui_settings
@@ -194,8 +198,8 @@ def limitup_promote_get(
         return ensure_today(uid)
     except ValueError as exc:
         detail = str(exc)
-        if "DeepSeek" in detail or "API Key" in detail:
-            raise HTTPException(status_code=403, detail="请先配置 DeepSeek API Key") from exc
+        if "API Key" in detail or "模型配置" in detail:
+            raise HTTPException(status_code=403, detail=HTTP_MISSING_KEY_DETAIL) from exc
         raise HTTPException(status_code=400, detail=detail) from exc
     except Exception as exc:
         raise HTTPException(
@@ -217,8 +221,8 @@ def limitup_promote_refresh(
         return start_refresh(uid, force=True, force_pool=force_pool)
     except ValueError as exc:
         detail = str(exc)
-        if "DeepSeek" in detail or "API Key" in detail:
-            raise HTTPException(status_code=403, detail="请先配置 DeepSeek API Key") from exc
+        if "API Key" in detail or "模型配置" in detail:
+            raise HTTPException(status_code=403, detail=HTTP_MISSING_KEY_DETAIL) from exc
         raise HTTPException(status_code=400, detail=detail) from exc
     except Exception as exc:
         raise HTTPException(
@@ -304,11 +308,11 @@ def limitup_promote_stream(
     """SSE（兼容）：progress* → thinking* → token* → done。主路径推荐轮询 Mongo status。"""
     uid = _bind(user)
     try:
-        resolve_llm_credentials(uid)
+        resolve_llm_credentials(uid, "limitup")
     except ValueError as exc:
         detail = str(exc)
-        if "DeepSeek" in detail or "API Key" in detail:
-            raise HTTPException(status_code=403, detail="请先配置 DeepSeek API Key") from exc
+        if "API Key" in detail or "模型配置" in detail:
+            raise HTTPException(status_code=403, detail=HTTP_MISSING_KEY_DETAIL) from exc
         raise HTTPException(status_code=400, detail=detail) from exc
 
     def gen():
@@ -350,8 +354,8 @@ def limitup_promote_stream(
                 yield _sse(ev["event"], ev.get("data") or {})
         except ValueError as exc:
             detail = str(exc)
-            if "DeepSeek" in detail or "API Key" in detail:
-                yield _sse("error", {"detail": "请先配置 DeepSeek API Key"})
+            if "API Key" in detail or "模型配置" in detail:
+                yield _sse("error", {"detail": HTTP_MISSING_KEY_DETAIL})
             else:
                 yield _sse("error", {"detail": detail})
         except Exception as exc:
@@ -420,6 +424,12 @@ class LlmSettingsBody(BaseModel):
     web_research_enabled: bool | None = Field(default=None)
     tavily_enabled: bool | None = Field(default=None)
     tavily_api_key: str | None = Field(default=None)
+    enabled_models: dict[str, list[str]] | None = Field(default=None)
+    slots: dict[str, dict[str, str]] | None = Field(default=None)
+
+
+class LlmProviderKeyBody(BaseModel):
+    api_key: str
 
 
 class UiColorsBody(BaseModel):
@@ -484,6 +494,8 @@ def llm_settings_put(
             web_research_enabled=body.web_research_enabled,
             tavily_enabled=body.tavily_enabled,
             tavily_api_key=body.tavily_api_key,
+            enabled_models=body.enabled_models,
+            slots=body.slots,
             validate_deepseek=True,
         )
     except ValueError as exc:
@@ -491,8 +503,57 @@ def llm_settings_put(
     except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"DeepSeek 校验失败: {type(exc).__name__}",
+            detail=f"模型校验失败: {type(exc).__name__}",
         ) from exc
+
+
+@router.put("/llm/providers/{provider_id}")
+def llm_provider_put(
+    provider_id: str,
+    body: LlmProviderKeyBody,
+    user: dict[str, Any] = Depends(_user),
+) -> dict[str, Any]:
+    uid = _bind(user)
+    if provider_id not in ("deepseek", "kimi", "qwen"):
+        raise HTTPException(status_code=404, detail="未知模型提供方")
+    try:
+        return save_provider_key(uid, provider_id, body.api_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        label = {"deepseek": "DeepSeek", "kimi": "Kimi", "qwen": "千问"}[provider_id]
+        raise HTTPException(
+            status_code=502,
+            detail=f"{label} 校验失败: {type(exc).__name__}",
+        ) from exc
+
+
+@router.post("/llm/providers/{provider_id}/models/refresh")
+def llm_provider_refresh(
+    provider_id: str, user: dict[str, Any] = Depends(_user)
+) -> dict[str, Any]:
+    uid = _bind(user)
+    if provider_id not in ("deepseek", "kimi", "qwen"):
+        raise HTTPException(status_code=404, detail="未知模型提供方")
+    try:
+        return refresh_provider_models(uid, provider_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"刷新模型列表失败: {type(exc).__name__}",
+        ) from exc
+
+
+@router.delete("/llm/providers/{provider_id}")
+def llm_provider_delete(
+    provider_id: str, user: dict[str, Any] = Depends(_user)
+) -> dict[str, Any]:
+    uid = _bind(user)
+    if provider_id not in ("deepseek", "kimi", "qwen"):
+        raise HTTPException(status_code=404, detail="未知模型提供方")
+    return clear_provider(uid, provider_id)
 
 
 @router.delete("/llm/settings")
@@ -670,7 +731,7 @@ def agent_chat(
     uid = _bind(user)
     settings = public_llm_settings(uid)
     if not settings.get("configured"):
-        raise HTTPException(status_code=403, detail="请先配置 DeepSeek API Key")
+        raise HTTPException(status_code=403, detail=HTTP_MISSING_KEY_DETAIL)
     try:
         return run_agent_chat(
             uid, body.message, session_id=body.session_id, history=body.history
@@ -701,7 +762,7 @@ def agent_chat_stream(
             context.bind_user(uid)
             settings = public_llm_settings(uid)
             if not settings.get("configured"):
-                yield _sse("error", {"detail": "请先配置 DeepSeek API Key"})
+                yield _sse("error", {"detail": HTTP_MISSING_KEY_DETAIL})
                 return
             for ev in iter_agent_chat_events(
                 uid, message, session_id=session_id
@@ -729,7 +790,7 @@ def agent_strategy_apply(
     uid = _bind(user)
     settings = public_llm_settings(uid)
     if not settings.get("configured"):
-        raise HTTPException(status_code=403, detail="请先配置 DeepSeek API Key")
+        raise HTTPException(status_code=403, detail=HTTP_MISSING_KEY_DETAIL)
     if not body.confirm:
         raise HTTPException(status_code=400, detail="需要 confirm=true")
     allowed = set(STRATEGY_EDITABLE_KEYS)
@@ -765,7 +826,7 @@ def agent_recommendations(
     uid = _bind(user)
     settings = public_llm_settings(uid)
     if not settings.get("configured"):
-        raise HTTPException(status_code=403, detail="请先配置 DeepSeek API Key")
+        raise HTTPException(status_code=403, detail=HTTP_MISSING_KEY_DETAIL)
     trade_date = effective_rec_date(as_of)
     board_key = None if board in (None, "", "all") else board
     if has_agent_snapshot(trade_date, user_id=uid):
@@ -807,7 +868,7 @@ def agent_recommendations_stream(
             context.bind_user(uid)
             settings = public_llm_settings(uid)
             if not settings.get("configured"):
-                yield _sse("error", {"detail": "请先配置 DeepSeek API Key"})
+                yield _sse("error", {"detail": HTTP_MISSING_KEY_DETAIL})
                 return
             for ev in iter_agent_recommendation_events(
                 uid, top=top, force=force, as_of=as_of

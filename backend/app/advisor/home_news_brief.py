@@ -16,7 +16,11 @@ from .agent.web_research import run_web_research
 from .calendar_util import last_trading_day
 from .home_news import get_or_build_home_news, merge_web_group
 from .home_news_stock_picks import run_home_news_stock_picks
-from .llm_settings import resolve_llm_credentials, web_tool_flags
+from .llm_settings import (
+    resolve_deepseek_api_key,
+    resolve_llm_credentials,
+    web_tool_flags,
+)
 
 _lock = threading.Lock()
 _threads: dict[str, threading.Thread] = {}
@@ -232,13 +236,15 @@ def _parse_llm_json(text: str) -> dict[str, Any]:
 
 
 def _maybe_fetch_web_items(user_id: str) -> list[dict[str, Any]]:
-    flags = web_tool_flags(user_id)
+    flags = web_tool_flags(user_id, agent_tools=False)
     if not flags.get("web_research"):
         return []
     try:
-        creds = resolve_llm_credentials(user_id)
+        key = resolve_deepseek_api_key(user_id)
+        if not key:
+            return []
         raw = run_web_research(
-            creds["api_key"],
+            key,
             "今日A股市场政策与舆情热点摘要（简体中文，列要点）",
         )
         text = str(raw or "").strip()
@@ -282,7 +288,7 @@ def generate_home_news_brief(
     trade_date: str | None = None,
 ) -> dict[str, Any]:
     day = (trade_date or str(news.get("trade_date") or last_trading_day()))[:10]
-    resolve_llm_credentials(user_id)
+    resolve_llm_credentials(user_id, "home")
     web_items = _maybe_fetch_web_items(user_id)
     if web_items:
         merge_web_group(
@@ -303,7 +309,7 @@ def generate_home_news_brief(
         }
         news = {**news, "groups": groups}
 
-    model = build_chat_model(user_id, temperature=0.2, streaming=False)
+    model = build_chat_model(user_id, slot="home", temperature=0.2, streaming=False)
     prompt = {
         "news": _truncate_news_for_prompt(news),
         "knowledge_titles": _optional_knowledge_titles(user_id),
@@ -388,7 +394,7 @@ def start_home_news_brief_refresh(
     user_id: str, trade_date: str | None = None
 ) -> dict[str, Any]:
     day = (trade_date or last_trading_day())[:10]
-    resolve_llm_credentials(user_id)
+    resolve_llm_credentials(user_id, "home")
 
     existing = _load_brief(user_id, day)
     if (

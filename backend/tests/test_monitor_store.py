@@ -256,9 +256,9 @@ def test_create_llm_requires_key(monkeypatch):
     monkeypatch.setattr(logs_mod, "get_db", lambda: db)
     monkeypatch.setattr(
         "app.advisor.llm_settings.resolve_llm_credentials",
-        lambda _uid: (_ for _ in ()).throw(ValueError("no key")),
+        lambda *_a, **_k: (_ for _ in ()).throw(ValueError("no key")),
     )
-    with pytest.raises(ValueError, match="DeepSeek"):
+    with pytest.raises(ValueError, match="模型配置"):
         store_mod.create_job(
             str(uid),
             {
@@ -286,7 +286,7 @@ def test_create_with_flow_and_knowledge(monkeypatch):
     monkeypatch.setattr(logs_mod, "get_db", lambda: db)
     monkeypatch.setattr(
         "app.advisor.llm_settings.resolve_llm_credentials",
-        lambda _uid: {"api_key": "k", "model": "m", "base_url": "http://x"},
+        lambda *_a, **_k: {"api_key": "k", "model": "m", "base_url": "http://x"},
     )
     job = store_mod.create_job(
         str(uid),

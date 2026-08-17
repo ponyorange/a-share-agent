@@ -136,7 +136,9 @@ def interpret_pending(*, limit: int | None = None) -> dict[str, int]:
     for article in list_pending_interpret(limit=cap):
         try:
             if model is None:
-                model = build_chat_model(user_id, temperature=0.1, streaming=False)
+                model = build_chat_model(
+                    user_id, slot="policy", temperature=0.1, streaming=False
+                )
             excerpt = str(article.get("body_excerpt") or "")
             max_chars = int(cfg.get("max_article_chars") or 8000)
             prompt = {

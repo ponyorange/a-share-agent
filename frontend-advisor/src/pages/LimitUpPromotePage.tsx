@@ -26,7 +26,7 @@ function scoreLabel(score: number): string {
 }
 
 function isMissingKeyError(message: string): boolean {
-  return /DeepSeek|API Key/i.test(message)
+  return /模型配置|API Key/i.test(message)
 }
 
 function themeUsedLabel(used?: {
@@ -217,7 +217,7 @@ export default function LimitUpPromotePage() {
     <section className="page">
       <div className="page-hero">
         <p>
-          基于当日当前封板池，用你的 DeepSeek 做结构化研判，结果按天归档。
+          基于当日当前封板池，用你配置的模型做结构化研判，结果按天归档。
           无当日数据时自动后台刷新，可离开页面稍后回来查看。
           {DISCLAIMER}
         </p>
@@ -262,7 +262,7 @@ export default function LimitUpPromotePage() {
               <p>
                 请先在{' '}
                 <Link className="text-link" to="/agent/settings">
-                  DeepSeek 配置
+                  模型配置
                 </Link>{' '}
                 填写 API Key。
               </p>

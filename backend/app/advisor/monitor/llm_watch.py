@@ -272,8 +272,8 @@ def run_llm_watch(
         from ..agent.llm import build_chat_model
         from ..llm_settings import resolve_llm_credentials
 
-        resolve_llm_credentials(user_id)
-        model = build_chat_model(user_id, temperature=0.2, streaming=False)
+        resolve_llm_credentials(user_id, "monitor")
+        model = build_chat_model(user_id, slot="monitor", temperature=0.2, streaming=False)
         prompt = build_watch_context(user_id, job, symbols, quotes_by_symbol)
         msg = model.invoke(
             [

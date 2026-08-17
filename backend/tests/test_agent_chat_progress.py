@@ -50,9 +50,9 @@ def _install_chat_core(monkeypatch, fake_agent: FakeAgent, captured_messages: li
         "build_context_history",
         lambda *_args, **_kwargs: [{"role": "user", "content": "query"}],
     )
-    monkeypatch.setattr(agent_graph, "build_chat_model", lambda _user_id: object())
-    monkeypatch.setattr(agent_graph, "build_tools", lambda _user_id: [])
-    monkeypatch.setattr(agent_graph, "build_system_prompt", lambda _user_id: "SYSTEM")
+    monkeypatch.setattr(agent_graph, "build_chat_model", lambda *_a, **_k: object())
+    monkeypatch.setattr(agent_graph, "build_tools", lambda *_a, **_k: [])
+    monkeypatch.setattr(agent_graph, "build_system_prompt", lambda *_a, **_k: "SYSTEM")
     monkeypatch.setattr(
         knowledge,
         "build_always_knowledge_text",

@@ -62,9 +62,9 @@ def _llm_enrich(
     cctv: dict[str, Any],
     macro: dict[str, Any],
 ) -> dict[str, Any]:
-    """调用 DeepSeek，返回 market_brief / macro_brief / notes{symbol: text}。"""
-    resolve_llm_credentials(user_id)  # raise if missing
-    model = build_chat_model(user_id, temperature=0.2, streaming=False)
+    """调用用户配置的模型，返回 market_brief / macro_brief / notes{symbol: text}。"""
+    resolve_llm_credentials(user_id, "home")  # raise if missing
+    model = build_chat_model(user_id, slot="home", temperature=0.2, streaming=False)
 
     slim_picks = []
     for p in picks:
@@ -174,7 +174,7 @@ def iter_agent_recommendation_events(
     }
 
     try:
-        resolve_llm_credentials(user_id)
+        resolve_llm_credentials(user_id, "home")
     except ValueError as exc:
         yield {"event": "error", "data": {"detail": str(exc)}}
         return

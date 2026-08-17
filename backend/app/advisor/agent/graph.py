@@ -35,7 +35,7 @@ _DELEGATE_DATA_TASK_NAME = "delegate_data_task"
 _DELEGATE_DATA_TASK_SAFE_CONTENT = "数据子 Agent 已返回结构化结果"
 _AGENT_ERROR_DETAIL = "Agent 执行失败"
 
-SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）。
+SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾。
 默认对外自称「投研助手」；若下文「用户系统提示词」另有称呼、角色、对用户称呼或性格要求，必须以用户设定为准，覆盖上述默认自称。
 语气默认专业、简洁、务实，不卖弄术语，结论先行再补依据；若用户系统提示词另有语气要求，以用户设定为准。
 你可按需读取用户全部业务数据（真实持仓、模拟盘、策略、推荐归档、龙虎榜、LLM 配置状态），
@@ -126,7 +126,7 @@ SYSTEM_PROMPT = """你是次日顾问产品中的 AI 投研副驾（DeepSeek）�
    create_monitor_job。run_at：须有 run_time（HH:MM）与 prompt，到点跑主 Agent 并邮件。
    用户未给涨跌/价格阈值时，先据必选知识（必要时 load_knowledge）建议规则（可含资金异动
    flow_spike_in/out），复述确认后再创建。禁止创建「立刻永久 running、无调度」的任务。
-   开启看盘时设 llm_enabled=true（须已配置 DeepSeek）；说明默认约 15 分钟或涨跌异动约 3%
+   开启看盘时设 llm_enabled=true（须已配置 API Key）；说明默认约 15 分钟或涨跌异动约 3%
    触发，仅买/卖发邮件、观望不发、不下单。规则/资金命中仍即时邮件，与看盘并行。
    暂停/继续/删除用 pause_monitor_job / resume_monitor_job / delete_monitor_job。
 25. 买卖/仓位/今天能否交易：先 get_market_regime；展示 gate_level、position_cap、data_quality、1~3 条 evidence。
@@ -174,15 +174,15 @@ def _runtime_config_section(user_id: str) -> str:
     from ..llm_settings import public_llm_settings
 
     llm = public_llm_settings(user_id)
-    model = str(llm.get("model") or "（未配置）")
+    agent = (llm.get("slots") or {}).get("agent") or {}
+    pid = agent.get("provider") or "（未配置）"
+    model = agent.get("model") or "（未配置）"
     configured = "已配置" if llm.get("configured") else "未配置"
-    hint = llm.get("key_hint")
-    key_line = f"- API Key：{hint}\n" if hint else ""
     return (
         "## 运行配置\n"
-        f"- DeepSeek：{configured}\n"
+        f"- 模型：{configured}\n"
+        f"- 主对话提供方：{pid}\n"
         f"- 主对话模型：{model}\n"
-        f"{key_line}"
         "回答「当前模型」时以本节为准（此即本轮请求实际使用的模型名）。"
     )
 
@@ -286,7 +286,7 @@ def _iter_agent_chat_events_sync(
         from .web_limits import reset_web_turn_counters
 
         reset_web_turn_counters()
-        model = build_chat_model(user_id)
+        model = build_chat_model(user_id, slot="agent")
         exclude = (
             frozenset({"send_chat_summary_email"}) if run_at_mode else None
         )

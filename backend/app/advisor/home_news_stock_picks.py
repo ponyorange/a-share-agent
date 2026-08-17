@@ -144,7 +144,11 @@ def run_home_news_stock_picks(
     try:
         tools = build_home_news_stock_pick_tools(user_id)
         model = build_chat_model(
-            user_id, temperature=0.2, streaming=False, request_timeout=90
+            user_id,
+            slot="home",
+            temperature=0.2,
+            streaming=False,
+            request_timeout=90,
         )
         agent = create_react_agent(model, tools, prompt=STOCK_PICK_SYSTEM)
         payload = {

@@ -175,11 +175,9 @@ def create_job(
         from ..llm_settings import resolve_llm_credentials
 
         try:
-            resolve_llm_credentials(user_id)
+            resolve_llm_credentials(user_id, "monitor")
         except ValueError as exc:
-            raise ValueError(
-                "请先在 Agent 设置中配置 DeepSeek API Key"
-            ) from exc
+            raise ValueError("请先在模型配置中填写 API Key") from exc
 
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:

@@ -612,7 +612,7 @@ export default function AgentChatPage() {
   if (ready === null) {
     return (
       <section className="page">
-        <p className="status">检查 DeepSeek 配置…</p>
+        <p className="status">检查模型配置…</p>
       </section>
     )
   }

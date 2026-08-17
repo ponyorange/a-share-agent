@@ -81,7 +81,9 @@ it('renders archived picks on enter', async () => {
 })
 
 it('shows missing DeepSeek key guidance', async () => {
-  fetchLimitUpPromote.mockRejectedValueOnce(new Error('请先配置 DeepSeek API Key'))
+  fetchLimitUpPromote.mockRejectedValueOnce(
+    new Error('请先在模型配置中填写 API Key'),
+  )
   render(
     <MemoryRouter>
       <LimitUpPromotePage />
@@ -89,9 +91,9 @@ it('shows missing DeepSeek key guidance', async () => {
   )
 
   expect(
-    await screen.findByText('请先配置 DeepSeek API Key'),
+    await screen.findByText('请先在模型配置中填写 API Key'),
   ).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'DeepSeek 配置' })).toHaveAttribute(
+  expect(screen.getByRole('link', { name: '模型配置' })).toHaveAttribute(
     'href',
     '/agent/settings',
   )
