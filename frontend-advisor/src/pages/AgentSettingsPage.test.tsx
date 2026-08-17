@@ -73,15 +73,81 @@ describe('AgentSettingsPage web search', () => {
     vi.mocked(api.clearTavilySettings).mockResolvedValue(configuredFixture())
   })
 
-  it('shows provider cards and slot rows', async () => {
+  it('shows provider tabs and slot table', async () => {
     render(
       <MemoryRouter>
         <AgentSettingsPage />
       </MemoryRouter>,
     )
-    expect(await screen.findByRole('heading', { name: 'Kimi' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '千问' })).toBeInTheDocument()
-    expect(screen.getByText('主 Agent 对话')).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: 'DeepSeek' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Kimi 未配置' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '千问 未配置' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '模块' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '提供方' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '模型' })).toBeInTheDocument()
+    expect(screen.getByLabelText('主 Agent 对话 提供方')).toBeInTheDocument()
+  })
+
+  it('shows only the active provider panel', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <AgentSettingsPage />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByLabelText('搜索 DeepSeek 模型')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: '千问 未配置' }))
+    expect(screen.queryByLabelText('搜索 DeepSeek 模型')).not.toBeInTheDocument()
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('千问')
+    expect(screen.getByRole('tabpanel')).toHaveTextContent('未配置')
+  })
+
+  it('filters models and keeps selected matches first', async () => {
+    const user = userEvent.setup()
+    const available = [
+      { id: 'deepseek-v4-flash' },
+      { id: 'deepseek-chat' },
+      { id: 'deepseek-reasoner' },
+      { id: 'deepseek-v4-pro' },
+      { id: 'alpha-pro' },
+      { id: 'beta-lite' },
+      { id: 'gamma-max' },
+      { id: 'delta-coder' },
+      { id: 'echo-mini' },
+      { id: 'foxtrot-pro' },
+      { id: 'golf-base' },
+      { id: 'hotel-plus' },
+    ]
+    const base = configuredFixture()
+    vi.mocked(api.fetchLlmSettings).mockResolvedValue(
+      configuredFixture({
+        providers: {
+          ...base.providers,
+          deepseek: {
+            ...base.providers.deepseek,
+            available_models: available,
+            enabled_models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+          },
+        },
+      }),
+    )
+    render(
+      <MemoryRouter>
+        <AgentSettingsPage />
+      </MemoryRouter>,
+    )
+    const search = await screen.findByLabelText('搜索 DeepSeek 模型')
+    expect(screen.getByText('已选 2 / 共 12')).toBeInTheDocument()
+    await user.type(search, 'pro')
+    const list = screen.getByTestId('llm-settings-model-list')
+    expect(list).toHaveTextContent('deepseek-v4-pro')
+    expect(list).toHaveTextContent('alpha-pro')
+    expect(list).toHaveTextContent('foxtrot-pro')
+    expect(list).not.toHaveTextContent('deepseek-v4-flash')
+    const labels = within(list)
+      .getAllByRole('checkbox')
+      .map((el) => el.closest('label')?.textContent?.trim())
+    expect(labels[0]).toBe('deepseek-v4-pro')
   })
 
   it('hides unconfigured provider from slot dropdown', async () => {

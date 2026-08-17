@@ -11,43 +11,11 @@ import {
   type LlmSettings,
   type LlmSlotId,
 } from '../agentApi'
-
-const PROVIDER_META: {
-  id: LlmProviderId
-  label: string
-  docs: string
-  docsLabel: string
-}[] = [
-  {
-    id: 'deepseek',
-    label: 'DeepSeek',
-    docs: 'https://api-docs.deepseek.com/zh-cn/',
-    docsLabel: 'DeepSeek API',
-  },
-  {
-    id: 'kimi',
-    label: 'Kimi',
-    docs: 'https://platform.kimi.com/docs/api/overview',
-    docsLabel: 'Kimi API',
-  },
-  {
-    id: 'qwen',
-    label: '千问',
-    docs: 'https://platform.qianwenai.com/docs/developer-guides/getting-started/text-generation-models',
-    docsLabel: '千问 API',
-  },
-]
-
-const SLOT_ROWS: { id: LlmSlotId; label: string }[] = [
-  { id: 'agent', label: '主 Agent 对话' },
-  { id: 'paper', label: '模拟盘' },
-  { id: 'home', label: '首页解读' },
-  { id: 'monitor', label: '定时任务' },
-  { id: 'policy', label: '政策雷达' },
-  { id: 'limitup', label: '打板晋级' },
-  { id: 'committee_quick', label: '委员会·快速' },
-  { id: 'committee_deep', label: '委员会·深度' },
-]
+import {
+  PROVIDER_META,
+  SLOT_ROWS,
+  filterProviderModels,
+} from '../llmSettingsUi'
 
 function emptyProvider(defaultModel: string) {
   return {
@@ -98,6 +66,8 @@ export default function AgentSettingsPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
+  const [activeProvider, setActiveProvider] = useState<LlmProviderId>('deepseek')
+  const [modelQuery, setModelQuery] = useState('')
 
   useEffect(() => {
     fetchLlmSettings()
@@ -121,6 +91,19 @@ export default function AgentSettingsPage() {
       (id) => settings.providers[id]?.configured,
     )
   }, [settings])
+
+  const activeMeta =
+    PROVIDER_META.find((p) => p.id === activeProvider) || PROVIDER_META[0]
+  const activePub =
+    settings?.providers[activeMeta.id] || emptyProvider(activeMeta.defaultModel)
+  const activeAvailable = activePub.available_models.length
+    ? activePub.available_models
+    : enabled[activeMeta.id].map((id) => ({ id }))
+  const visibleModels = filterProviderModels(
+    activePub.available_models,
+    enabled[activeMeta.id] || [],
+    modelQuery,
+  )
 
   function onSettings(s: LlmSettings) {
     setSettings(s)
@@ -299,141 +282,189 @@ export default function AgentSettingsPage() {
       {msg ? <p className="status ok">{msg}</p> : null}
 
       <h2 className="section-title">模型提供方</h2>
-      {PROVIDER_META.map((meta) => {
-        const pub = settings?.providers[meta.id] || emptyProvider(meta.id === 'kimi' ? 'kimi-k2.6' : meta.id === 'qwen' ? 'qwen3.7-plus' : 'deepseek-v4-flash')
-        const available = pub.available_models.length
-          ? pub.available_models
-          : enabled[meta.id].map((id) => ({ id }))
-        return (
-          <div key={meta.id} className="strategy-grid" style={{ maxWidth: '36rem', marginBottom: '1.25rem' }}>
-            <h3 className="section-title">{meta.label}</h3>
-            <p className="meta-line">
-              文档见{' '}
-              <a className="text-link" href={meta.docs} target="_blank" rel="noreferrer">
-                {meta.docsLabel}
-              </a>
-              {pub.configured ? ` · 已配置（${pub.key_hint}）` : ' · 未配置'}
-            </p>
-            <label className="strategy-field">
-              <span>API Key</span>
-              <input
-                className="input mono"
-                type="password"
-                autoComplete="off"
-                placeholder={pub.configured ? '输入新 Key 以覆盖' : 'sk-…'}
-                value={keys[meta.id]}
-                onChange={(e) =>
-                  setKeys((prev) => ({ ...prev, [meta.id]: e.target.value }))
-                }
-              />
-            </label>
-            <div className="form-actions">
-              <button
-                type="button"
-                className="btn"
-                disabled={saving || !keys[meta.id].trim()}
-                onClick={() => handleSaveProvider(meta.id)}
-              >
-                {busy === `save-${meta.id}` ? '保存中…' : '保存并校验'}
-              </button>
-              {pub.configured ? (
-                <button
-                  type="button"
-                  className="btn ghost"
-                  disabled={saving}
-                  onClick={() => handleClearProvider(meta.id)}
-                >
-                  清除 {meta.label} Key
-                </button>
-              ) : null}
-              {pub.configured ? (
-                <button
-                  type="button"
-                  className="btn ghost"
-                  disabled={saving}
-                  onClick={() => handleRefresh(meta.id)}
-                >
-                  {busy === `refresh-${meta.id}` ? '刷新中…' : '刷新模型'}
-                </button>
-              ) : null}
+      <div className="board-tabs llm-settings-tabs" role="tablist" aria-label="模型提供方">
+        {PROVIDER_META.map((meta) => {
+          const configured = Boolean(settings?.providers[meta.id]?.configured)
+          const name = configured ? meta.label : `${meta.label} 未配置`
+          return (
+            <button
+              key={meta.id}
+              type="button"
+              role="tab"
+              className={`board-tab${activeProvider === meta.id ? ' active' : ''}`}
+              aria-selected={activeProvider === meta.id}
+              aria-label={name}
+              onClick={() => {
+                setActiveProvider(meta.id)
+                setModelQuery('')
+              }}
+            >
+              {name}
+            </button>
+          )
+        })}
+      </div>
+      <div className="home-tile llm-settings-panel" role="tabpanel">
+        <h3 className="home-tile-title">{activeMeta.label}</h3>
+        <p className="meta-line">
+          文档见{' '}
+          <a className="text-link" href={activeMeta.docs} target="_blank" rel="noreferrer">
+            {activeMeta.docsLabel}
+          </a>
+          {activePub.configured ? ` · 已配置（${activePub.key_hint}）` : ' · 未配置'}
+        </p>
+        <label className="strategy-field">
+          <span>API Key</span>
+          <input
+            className="input mono"
+            type="password"
+            autoComplete="off"
+            placeholder={activePub.configured ? '输入新 Key 以覆盖' : 'sk-…'}
+            value={keys[activeMeta.id]}
+            onChange={(e) =>
+              setKeys((prev) => ({ ...prev, [activeMeta.id]: e.target.value }))
+            }
+          />
+        </label>
+        <div className="form-actions">
+          <button
+            type="button"
+            className="btn"
+            disabled={saving || !keys[activeMeta.id].trim()}
+            onClick={() => handleSaveProvider(activeMeta.id)}
+          >
+            {busy === `save-${activeMeta.id}` ? '保存中…' : '保存并校验'}
+          </button>
+          {activePub.configured ? (
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={saving}
+              onClick={() => handleClearProvider(activeMeta.id)}
+            >
+              清除 {activeMeta.label} Key
+            </button>
+          ) : null}
+          {activePub.configured ? (
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={saving}
+              onClick={() => handleRefresh(activeMeta.id)}
+            >
+              {busy === `refresh-${activeMeta.id}` ? '刷新中…' : '刷新模型'}
+            </button>
+          ) : null}
+        </div>
+        {activePub.configured ? (
+          <div className="strategy-field">
+            <div className="llm-settings-model-head">
+              <span>可用模型</span>
+              <span className="meta-line">
+                已选 {enabled[activeMeta.id].length} / 共 {activeAvailable.length}
+              </span>
             </div>
-            {pub.configured ? (
-              <div className="strategy-field">
-                <span>可用模型</span>
-                {available.length === 0 ? (
-                  <p className="meta-line">模型列表为空，请点击刷新模型。</p>
-                ) : (
-                  available.map((m) => (
-                    <label key={m.id} className="meta-line" style={{ display: 'block' }}>
-                      <input
-                        type="checkbox"
-                        checked={enabled[meta.id].includes(m.id)}
-                        onChange={(e) =>
-                          toggleEnabled(meta.id, m.id, e.target.checked)
-                        }
-                      />{' '}
-                      {m.id}
-                    </label>
-                  ))
-                )}
-              </div>
-            ) : null}
+            <input
+              className="input"
+              type="search"
+              placeholder="搜索模型"
+              aria-label={`搜索 ${activeMeta.label} 模型`}
+              value={modelQuery}
+              onChange={(e) => setModelQuery(e.target.value)}
+            />
+            <div className="llm-settings-model-list" data-testid="llm-settings-model-list">
+              {visibleModels.length === 0 ? (
+                <p className="meta-line">
+                  {activeAvailable.length === 0
+                    ? '模型列表为空，请点击刷新模型。'
+                    : '无匹配模型'}
+                </p>
+              ) : (
+                visibleModels.map((m) => (
+                  <label key={m.id} className="llm-settings-model-item">
+                    <input
+                      type="checkbox"
+                      checked={enabled[activeMeta.id].includes(m.id)}
+                      onChange={(e) =>
+                        toggleEnabled(activeMeta.id, m.id, e.target.checked)
+                      }
+                    />
+                    {m.id}
+                  </label>
+                ))
+              )}
+            </div>
           </div>
-        )
-      })}
+        ) : null}
+      </div>
 
       <h2 className="section-title">功能模块</h2>
       {!settings?.configured ? (
         <p className="meta-line">请先配置至少一个模型提供方。</p>
       ) : (
-        <div className="strategy-grid" style={{ maxWidth: '36rem' }}>
-          {SLOT_ROWS.map((row) => {
-            const val = slots?.[row.id]
-            const pid = (val?.provider || configuredProviders[0]) as LlmProviderId
-            const models = enabled[pid] || []
-            return (
-              <div key={row.id} className="strategy-field">
-                <span>{row.label}</span>
-                <select
-                  className="input"
-                  aria-label={`${row.label} 提供方`}
-                  value={pid}
-                  disabled={!configuredProviders.length}
-                  onChange={(e) =>
-                    changeSlotProvider(row.id, e.target.value as LlmProviderId)
-                  }
-                >
-                  {configuredProviders.map((id) => (
-                    <option key={id} value={id}>
-                      {PROVIDER_META.find((p) => p.id === id)?.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="input"
-                  aria-label={`${row.label} 模型`}
-                  value={val?.model || models[0] || ''}
-                  disabled={!models.length}
-                  onChange={(e) =>
-                    setSlots((old) =>
-                      old
-                        ? {
-                            ...old,
-                            [row.id]: { provider: pid, model: e.target.value },
-                          }
-                        : old,
-                    )
-                  }
-                >
-                  {models.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )
-          })}
+        <div className="table-wrap llm-settings-slots">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>模块</th>
+                <th>提供方</th>
+                <th>模型</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SLOT_ROWS.map((row) => {
+                const val = slots?.[row.id]
+                const pid = (val?.provider || configuredProviders[0]) as LlmProviderId
+                const models = enabled[pid] || []
+                return (
+                  <tr key={row.id}>
+                    <td>{row.label}</td>
+                    <td>
+                      <select
+                        className="input"
+                        aria-label={`${row.label} 提供方`}
+                        value={pid}
+                        disabled={!configuredProviders.length}
+                        onChange={(e) =>
+                          changeSlotProvider(row.id, e.target.value as LlmProviderId)
+                        }
+                      >
+                        {configuredProviders.map((id) => (
+                          <option key={id} value={id}>
+                            {PROVIDER_META.find((p) => p.id === id)?.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        className="input"
+                        aria-label={`${row.label} 模型`}
+                        value={val?.model || models[0] || ''}
+                        disabled={!models.length}
+                        onChange={(e) =>
+                          setSlots((old) =>
+                            old
+                              ? {
+                                  ...old,
+                                  [row.id]: { provider: pid, model: e.target.value },
+                                }
+                              : old,
+                          )
+                        }
+                      >
+                        {models.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -444,7 +475,7 @@ export default function AgentSettingsPage() {
       <p className="meta-line">
         精读网页在任一联网能力开启时可用；困难页面会自动增强抓取。
       </p>
-      <div className="strategy-grid" style={{ maxWidth: '28rem' }}>
+      <div className="home-tile llm-settings-web">
         <label className="strategy-field">
           <span>
             <input
