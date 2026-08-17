@@ -58,3 +58,11 @@ export function filterProviderModels(
   const rest = filtered.filter((m) => !enabledSet.has(m.id))
   return [...selected, ...rest]
 }
+
+export function clampSlotModel(
+  model: string | undefined,
+  enabled: string[],
+): string {
+  if (model && enabled.includes(model)) return model
+  return enabled[0] || model || ''
+}

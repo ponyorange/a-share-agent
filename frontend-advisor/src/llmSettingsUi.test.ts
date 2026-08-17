@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { PROVIDER_META, SLOT_ROWS, filterProviderModels } from './llmSettingsUi'
+import {
+  PROVIDER_META,
+  SLOT_ROWS,
+  clampSlotModel,
+  filterProviderModels,
+} from './llmSettingsUi'
 
 describe('filterProviderModels', () => {
   const available = [
@@ -30,6 +35,20 @@ describe('filterProviderModels', () => {
     expect(filterProviderModels([], ['kimi-k2.6'], '').map((m) => m.id)).toEqual([
       'kimi-k2.6',
     ])
+  })
+})
+
+describe('clampSlotModel', () => {
+  it('keeps model when it is enabled', () => {
+    expect(clampSlotModel('kimi-k2.7-code', ['kimi-k2.6', 'kimi-k2.7-code'])).toBe(
+      'kimi-k2.7-code',
+    )
+  })
+
+  it('falls back to first enabled when stale', () => {
+    expect(clampSlotModel('kimi-k2.5', ['kimi-k2.6', 'kimi-k2.7-code'])).toBe(
+      'kimi-k2.6',
+    )
   })
 })
 

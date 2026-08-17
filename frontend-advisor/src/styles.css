@@ -5095,6 +5095,20 @@ a.policy-watch-chip:hover {
   margin: 0.75rem 0 1.5rem;
 }
 
+.llm-settings-slot-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.llm-settings-slot-toolbar-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .llm-settings-slots .input {
   width: 100%;
   min-width: 0;

@@ -14,6 +14,7 @@ import {
 import {
   PROVIDER_META,
   SLOT_ROWS,
+  clampSlotModel,
   filterProviderModels,
 } from '../llmSettingsUi'
 
@@ -195,14 +196,32 @@ export default function AgentSettingsPage() {
     })
   }
 
+  function slotModelForProvider(provider: LlmProviderId): string {
+    const def = settings?.providers[provider].default_model || ''
+    const allowed = enabled[provider] || []
+    return allowed.includes(def) ? def : allowed[0] || def
+  }
+
   function changeSlotProvider(slotId: LlmSlotId, provider: LlmProviderId) {
-    if (!settings) return
-    const def = settings.providers[provider].default_model
-    const allowed = enabled[provider]
-    const model = allowed.includes(def) ? def : allowed[0] || def
+    const model = slotModelForProvider(provider)
     setSlots((old) =>
       old ? { ...old, [slotId]: { provider, model } } : old,
     )
+  }
+
+  function applyAllSlots(provider: LlmProviderId) {
+    const model = slotModelForProvider(provider)
+    const label =
+      PROVIDER_META.find((p) => p.id === provider)?.label || provider
+    setSlots((old) => {
+      const next = { ...(old || {}) } as LlmSettings['slots']
+      for (const row of SLOT_ROWS) {
+        next[row.id] = { provider, model }
+      }
+      return next
+    })
+    setError(null)
+    setMsg(`已将全部功能模块改为 ${label}，请点底部保存。`)
   }
 
   async function handleSaveModules() {
@@ -222,8 +241,14 @@ export default function AgentSettingsPage() {
     setError(null)
     setMsg(null)
     try {
+      const packedEnabled: NonNullable<
+        Parameters<typeof saveLlmSettings>[0]['enabled_models']
+      > = {}
+      for (const id of configuredProviders) {
+        packedEnabled[id] = enabled[id] || []
+      }
       const body: Parameters<typeof saveLlmSettings>[0] = {
-        enabled_models: enabled,
+        enabled_models: packedEnabled,
         web_research_enabled: webResearchEnabled,
         tavily_enabled: tavilyEnabled,
       }
@@ -232,7 +257,12 @@ export default function AgentSettingsPage() {
           {}
         for (const row of SLOT_ROWS) {
           const val = slots[row.id]
-          if (val) packed[row.id] = val
+          if (!val) continue
+          const allow = packedEnabled[val.provider] || enabled[val.provider] || []
+          packed[row.id] = {
+            provider: val.provider,
+            model: clampSlotModel(val.model, allow),
+          }
         }
         body.slots = packed
       }
@@ -361,7 +391,9 @@ export default function AgentSettingsPage() {
             <div className="llm-settings-model-head">
               <span>可用模型</span>
               <span className="meta-line">
-                已选 {enabled[activeMeta.id].length} / 共 {activeAvailable.length}
+                {activePub.available_models.length
+                  ? `已选 ${enabled[activeMeta.id].length} / 共 ${activeAvailable.length}`
+                  : `已选 ${enabled[activeMeta.id].length}（目录未同步，请刷新模型）`}
               </span>
             </div>
             <input
@@ -403,6 +435,29 @@ export default function AgentSettingsPage() {
         <p className="meta-line">请先配置至少一个模型提供方。</p>
       ) : (
         <div className="table-wrap llm-settings-slots">
+          {configuredProviders.length >= 2 ? (
+            <div className="llm-settings-slot-toolbar">
+              <span className="llm-settings-slot-toolbar-label">
+                全部使用
+              </span>
+              {configuredProviders.map((id) => {
+                const label =
+                  PROVIDER_META.find((p) => p.id === id)?.label || id
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className="btn ghost"
+                    disabled={saving}
+                    aria-label={`全部使用${label}`}
+                    onClick={() => applyAllSlots(id)}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
           <table className="data-table">
             <thead>
               <tr>
@@ -440,7 +495,7 @@ export default function AgentSettingsPage() {
                       <select
                         className="input"
                         aria-label={`${row.label} 模型`}
-                        value={val?.model || models[0] || ''}
+                        value={clampSlotModel(val?.model, models)}
                         disabled={!models.length}
                         onChange={(e) =>
                           setSlots((old) =>
@@ -543,6 +598,8 @@ export default function AgentSettingsPage() {
       </div>
 
       <div className="form-actions">
+        {error ? <p className="status error">{error}</p> : null}
+        {msg ? <p className="status ok">{msg}</p> : null}
         <button
           type="button"
           className="btn"

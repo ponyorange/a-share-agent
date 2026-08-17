@@ -279,6 +279,54 @@ def test_update_enabled_and_slot_ok(db, monkeypatch):
     assert pub["slots"]["paper"]["model"] == "deepseek-v4-pro"
 
 
+def test_update_slots_coerces_model_not_in_enabled(db, monkeypatch):
+    monkeypatch.setattr(
+        llm_settings,
+        "list_model_ids",
+        _ok_list(["kimi-k2.6", "kimi-k2.7-code", "kimi-k2.5"]),
+    )
+    monkeypatch.setattr(llm_settings, "ping_chat", _ok_ping)
+    llm_settings.save_provider_key("u1", "kimi", "sk-kimi-test-key")
+    pub = llm_settings.update_llm_settings(
+        "u1",
+        enabled_models={"kimi": ["kimi-k2.6", "kimi-k2.7-code"]},
+        slots={"agent": {"provider": "kimi", "model": "kimi-k2.5"}},
+    )
+    assert pub["slots"]["agent"]["model"] == "kimi-k2.6"
+
+
+def test_update_enabled_allows_multiple_when_catalog_empty(db, monkeypatch):
+    def boom_list(*a, **k):
+        raise RuntimeError("models down")
+
+    monkeypatch.setattr(llm_settings, "list_model_ids", boom_list)
+    monkeypatch.setattr(llm_settings, "ping_chat", _ok_ping)
+    llm_settings.save_provider_key("u1", "kimi", "sk-kimi-test-key")
+    pub = llm_settings.update_llm_settings(
+        "u1",
+        enabled_models={"kimi": ["kimi-k2.6", "kimi-k2.7-code"]},
+    )
+    assert pub["providers"]["kimi"]["enabled_models"] == ["kimi-k2.6", "kimi-k2.7-code"]
+
+
+def test_update_enabled_ignores_empty_unconfigured_providers(db, monkeypatch):
+    monkeypatch.setattr(llm_settings, "list_model_ids", _ok_list(["deepseek-v4-flash"]))
+    monkeypatch.setattr(llm_settings, "ping_chat", _ok_ping)
+    llm_settings.save_provider_key("u1", "deepseek", "sk-ds-test-key")
+    pub = llm_settings.update_llm_settings(
+        "u1",
+        enabled_models={
+            "deepseek": ["deepseek-v4-flash"],
+            "kimi": [],
+            "qwen": [],
+        },
+        slots={"agent": {"provider": "deepseek", "model": "deepseek-v4-flash"}},
+    )
+    assert pub["providers"]["deepseek"]["configured"] is True
+    assert pub["providers"]["kimi"]["configured"] is False
+    assert pub["slots"]["agent"]["model"] == "deepseek-v4-flash"
+
+
 def test_legacy_api_key_writes_deepseek(db, monkeypatch):
     monkeypatch.setattr(llm_settings, "list_model_ids", _ok_list(["deepseek-v4-flash"]))
     monkeypatch.setattr(llm_settings, "ping_chat", _ok_ping)

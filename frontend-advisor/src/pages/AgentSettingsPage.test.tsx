@@ -161,6 +161,42 @@ describe('AgentSettingsPage web search', () => {
     expect(within(select).queryByRole('option', { name: 'Kimi' })).not.toBeInTheDocument()
   })
 
+  it('apply-all switches every slot to that provider default', async () => {
+    const user = userEvent.setup()
+    const qwen = {
+      configured: true,
+      key_hint: 'sk-q…wen1',
+      available_models: [{ id: 'qwen3.7-plus' }, { id: 'qwen3-max' }],
+      enabled_models: ['qwen3.7-plus', 'qwen3-max'],
+      default_model: 'qwen3.7-plus',
+      last_validated_at: null,
+      models_synced_at: '2026-08-17T00:00:00Z',
+    }
+    const base = configuredFixture()
+    vi.mocked(api.fetchLlmSettings).mockResolvedValue(
+      configuredFixture({
+        providers: { ...base.providers, qwen },
+      }),
+    )
+    render(
+      <MemoryRouter>
+        <AgentSettingsPage />
+      </MemoryRouter>,
+    )
+    await user.click(await screen.findByRole('button', { name: '全部使用千问' }))
+    expect(screen.getByLabelText('主 Agent 对话 提供方')).toHaveValue('qwen')
+    expect(screen.getByLabelText('主 Agent 对话 模型')).toHaveValue(
+      'qwen3.7-plus',
+    )
+    expect(screen.getByLabelText('委员会·深度 提供方')).toHaveValue('qwen')
+    expect(screen.getByLabelText('委员会·深度 模型')).toHaveValue(
+      'qwen3.7-plus',
+    )
+    expect(
+      screen.getAllByText('已将全部功能模块改为 千问，请点底部保存。').length,
+    ).toBeGreaterThan(0)
+  })
+
   it('switching provider sets default model', async () => {
     const user = userEvent.setup()
     const kimi = {
@@ -260,9 +296,26 @@ describe('AgentSettingsPage web search', () => {
     await user.click(tavily)
     await user.click(screen.getByRole('button', { name: '保存' }))
     expect(
-      await screen.findByText('开启 Tavily 前请先填写有效的 API Key'),
-    ).toBeInTheDocument()
+      (await screen.findAllByText('开启 Tavily 前请先填写有效的 API Key')).length,
+    ).toBeGreaterThan(0)
     expect(api.saveLlmSettings).not.toHaveBeenCalled()
+  })
+
+  it('saves enabled models only for configured providers', async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <AgentSettingsPage />
+      </MemoryRouter>,
+    )
+    await user.click(await screen.findByRole('button', { name: '保存' }))
+    await waitFor(() => {
+      expect(api.saveLlmSettings).toHaveBeenCalled()
+    })
+    const body = vi.mocked(api.saveLlmSettings).mock.calls[0][0]
+    expect(body.enabled_models).toEqual({
+      deepseek: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+    })
   })
 
   it('clears Tavily key', async () => {

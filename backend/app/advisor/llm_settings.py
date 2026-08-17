@@ -503,23 +503,26 @@ def update_llm_settings(
             if pid not in PROVIDERS:
                 raise ValueError("未知模型提供方")
             pdata = dict(providers.get(pid) or {})
-            if not pdata.get("api_key_enc"):
-                raise ValueError("请先配置该模型提供方")
             picked = [str(x).strip() for x in (chosen or []) if str(x).strip()]
+            if not pdata.get("api_key_enc"):
+                if not picked:
+                    continue
+                raise ValueError("请先配置该模型提供方")
             if not picked:
                 raise ValueError("至少勾选一个模型")
+            label = str(PROVIDERS[pid]["label"])
             avail_ids = [
                 str(x.get("id"))
                 for x in (pdata.get("available_models") or [])
                 if isinstance(x, dict) and x.get("id")
             ]
             if avail_ids:
-                if any(mid not in avail_ids for mid in picked):
-                    raise ValueError("模型未在可用列表中勾选")
-            else:
-                sys_default = str(PROVIDERS[pid]["default_model"])
-                if any(mid != sys_default for mid in picked):
-                    raise ValueError("模型未在可用列表中勾选")
+                kept = [mid for mid in picked if mid in avail_ids]
+                if not kept:
+                    raise ValueError(
+                        f"{label} 勾选的模型都不在可用列表中，请先点「刷新模型」"
+                    )
+                picked = kept
             default_model = compute_default_model(pid, picked)
             pdata["enabled_models"] = picked
             pdata["default_model"] = default_model
@@ -551,7 +554,9 @@ def update_llm_settings(
             if not allow:
                 allow = [str(pdata.get("default_model") or PROVIDERS[pid]["default_model"])]
             if mid not in allow:
-                raise ValueError("模型未在可用列表中勾选")
+                mid = allow[0]
+            if mid not in allow:
+                raise ValueError(f"模型 {mid} 未在已勾选列表中")
             current_slots[sid] = {"provider": pid, "model": mid}
         sets["slots"] = current_slots
         sets["providers"] = providers
